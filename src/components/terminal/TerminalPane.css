@@ -10,6 +10,8 @@
   box-sizing: border-box;
   overflow: hidden;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .terminal-pane__container {
