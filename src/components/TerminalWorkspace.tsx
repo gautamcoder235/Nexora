@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
@@ -10,14 +10,17 @@ import { TerminalPane } from "./terminal/TerminalPane";
 interface TerminalFrameProps {
   session: TerminalSession;
   isFocused: boolean;
-  onFocusToggle: () => void;
+  isAnimating: boolean;
+  onFocusToggle: (element: HTMLElement | null) => void;
 }
 
-const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFocusToggle }) => {
+const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, isAnimating, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
+  const frameRef = useRef<HTMLDivElement>(null);
   
   return (
     <div 
+      ref={frameRef}
       className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all h-full min-h-0 ${
         isFocused 
           ? "border-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.15)]" 
@@ -34,7 +37,7 @@ const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFoc
 
         <div className="flex items-center gap-2 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
           <button 
-            onClick={(e) => { e.stopPropagation(); onFocusToggle(); }} 
+            onClick={(e) => { e.stopPropagation(); onFocusToggle(frameRef.current); }} 
             title={isFocused ? "Exit Focus Mode" : "Focus Session"}
             className="hover:text-zinc-300 p-0.5 hover:bg-[#1a1a20] rounded"
           >
@@ -52,7 +55,7 @@ const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFoc
 
       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
       <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#0a0a0a]">
-        <TerminalPane paneId={session.id} isFocused={isFocused} />
+        <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} />
       </div>
     </div>
   );
@@ -72,6 +75,60 @@ export const TerminalWorkspace: React.FC = () => {
   const setTaskCenterVisible = useOrchestratorStore(s => s.setTaskCenterVisible);
   
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
+  const [animatingSessionId, setAnimatingSessionId] = useState<string | null>(null);
+  const [isExpanding, setIsExpanding] = useState(false);
+  
+  // Fallback timeout ref to prevent stuck animations
+  const animationFallbackTimeoutRef = useRef<any>(null);
+  const [transformStyle, setTransformStyle] = useState<React.CSSProperties>({});
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
+  // Measure and trigger collapse animation once layout has updated and grid geometry is restored
+  useEffect(() => {
+    if (animatingSessionId && !isExpanding && workspaceRef.current) {
+      const sessionId = animatingSessionId;
+      const frameEl = workspaceRef.current.querySelector(`[data-frame-id="${sessionId}"]`) as HTMLElement;
+      const placeholderEl = workspaceRef.current.querySelector(`[data-placeholder-id="${sessionId}"]`) as HTMLElement;
+
+      if (frameEl && placeholderEl) {
+        // Measure placeholder in its fully restored grid position
+        const startRect = frameEl.getBoundingClientRect();
+        const endRect = placeholderEl.getBoundingClientRect();
+        const workspaceRect = workspaceRef.current.getBoundingClientRect();
+
+        const scaleX = endRect.width / startRect.width;
+        const scaleY = endRect.height / startRect.height;
+        const translateX = endRect.left - workspaceRect.left;
+        const translateY = endRect.top - workspaceRect.top;
+
+        // Force browser layout reflow before starting the transition
+        void frameEl.offsetHeight;
+
+        requestAnimationFrame(() => {
+          setTransformStyle({
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            transform: `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`,
+            transformOrigin: 'top left',
+            zIndex: 50,
+            transition: 'transform 320ms cubic-bezier(0.16, 1, 0.3, 1)',
+          });
+        });
+      }
+    }
+  }, [animatingSessionId, isExpanding]);
+
+  // If the focused session is deleted, reset the focus state
+  useEffect(() => {
+    if (focusSessionId && !terminals.some(t => t.id === focusSessionId)) {
+      setFocusSessionId(null);
+      setAnimatingSessionId(null);
+      setTransformStyle({});
+    }
+  }, [terminals, focusSessionId]);
 
   if (!activeWorkspaceId) {
     return null;
@@ -111,6 +168,112 @@ export const TerminalWorkspace: React.FC = () => {
 
   // Check if we are using the grid fallback
   const isGridFallback = layout.type === 'grid' && terminals.length > 2;
+
+  const getNormalGridStyle = (sessId: string): React.CSSProperties => {
+    if (isGridFallback) return {};
+    
+    const isFirstTerminal = sessId === terminals[0].id;
+    const lockLeftTerminal = terminals.length > 1 && isFirstTerminal;
+    
+    return {
+      width: isVertical
+        ? (lockLeftTerminal ? "490px" : "auto")
+        : "100%",
+      height: !isVertical
+        ? "auto"
+        : "100%",
+      flexGrow: (isVertical && lockLeftTerminal ? 0 : 1),
+      flexShrink: 1,
+    };
+  };
+
+  const handleFocusToggle = (sessionId: string, frameEl: HTMLElement | null) => {
+    if (!frameEl || !workspaceRef.current) {
+      setFocusSessionId(prev => prev === sessionId ? null : sessionId);
+      return;
+    }
+
+    const isCurrentlyFocused = focusSessionId === sessionId;
+
+    if (isCurrentlyFocused) {
+      // Minimize (Exit Focus Mode)
+      setAnimatingSessionId(sessionId);
+      setIsExpanding(false);
+      
+      if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
+      animationFallbackTimeoutRef.current = setTimeout(() => {
+        if (animatingSessionId === sessionId) {
+          setFocusSessionId(null);
+          setAnimatingSessionId(null);
+          setTransformStyle({});
+        }
+      }, 400);
+
+      // Start state: full screen
+      setTransformStyle({
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        transform: 'translate(0px, 0px) scale(1, 1)',
+        transformOrigin: 'top left',
+        zIndex: 50,
+        transition: 'none',
+      });
+    } else {
+      // Maximize (Enter Focus Mode)
+      const startRect = frameEl.getBoundingClientRect();
+      const workspaceRect = workspaceRef.current.getBoundingClientRect();
+
+      const scaleX = startRect.width / workspaceRect.width;
+      const scaleY = startRect.height / workspaceRect.height;
+      const translateX = startRect.left - workspaceRect.left;
+      const translateY = startRect.top - workspaceRect.top;
+
+      setAnimatingSessionId(sessionId);
+      setIsExpanding(true);
+      setFocusSessionId(sessionId);
+      
+      if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
+      animationFallbackTimeoutRef.current = setTimeout(() => {
+        if (animatingSessionId === sessionId) {
+          setAnimatingSessionId(null);
+          setTransformStyle({});
+        }
+      }, 400);
+
+      // Start state: inverted (looks like it's still in the grid)
+      setTransformStyle({
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        transform: `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`,
+        transformOrigin: 'top left',
+        zIndex: 50,
+        transition: 'none',
+      });
+
+      // Animate to full screen
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setTransformStyle({
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            transform: 'translate(0px, 0px) scale(1, 1)',
+            transformOrigin: 'top left',
+            zIndex: 50,
+            transition: 'transform 320ms cubic-bezier(0.16, 1, 0.3, 1)',
+          });
+        });
+      });
+    }
+  };
 
   return (
     <div className="flex-grow flex flex-col h-full space-y-1.5 relative">
@@ -172,42 +335,86 @@ export const TerminalWorkspace: React.FC = () => {
       </div>
 
       {/* Render Grid/Splits of terminals with smooth expand animation */}
-      <div className={containerClass}>
+      <div ref={workspaceRef} className={`${containerClass} relative`}>
         {terminals.map((session) => {
           const isFocused = focusSessionId === session.id;
-          const hasAnyFocus = focusSessionId !== null;
-          const isHiddenByFocus = hasAnyFocus && !isFocused;
+          const isAnimating = animatingSessionId === session.id;
+          const showPlaceholder = isFocused || isAnimating;
 
-          // Compute wrapper styles for animation
-          const wrapperStyle: React.CSSProperties = isGridFallback
-            ? {
-                display: isHiddenByFocus ? "none" : "block",
-              }
-            : {
-                width: isVertical
-                  ? (isHiddenByFocus ? "0px" : isFocused ? "100%" : (is2Terminals && session.id === terminals[0].id ? "490px" : "auto"))
-                  : "100%",
-                height: !isVertical
-                  ? (isHiddenByFocus ? "0px" : isFocused ? "100%" : "auto")
-                  : "100%",
-                flexGrow: isHiddenByFocus ? 0 : isFocused ? 1 : (isVertical && is2Terminals && session.id === terminals[0].id ? 0 : 1),
-                flexShrink: isHiddenByFocus ? 0 : 1,
-                opacity: isHiddenByFocus ? 0 : 1,
-                pointerEvents: isHiddenByFocus ? "none" : "auto",
+          let wrapperStyle: React.CSSProperties = {};
+
+          if (isFocused || isAnimating) {
+            if (isAnimating) {
+              wrapperStyle = transformStyle;
+            } else {
+              wrapperStyle = {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: 50,
               };
+            }
+          } else if (focusSessionId !== null) {
+            // Another terminal is focused/maximized
+            if (animatingSessionId !== null) {
+              // Fade out other terminals during the transition
+              wrapperStyle = {
+                ...getNormalGridStyle(session.id),
+                opacity: 0.15,
+                transition: 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                pointerEvents: 'none',
+              };
+            } else {
+              // Hide them completely once maximized
+              wrapperStyle = {
+                display: 'none',
+              };
+            }
+          } else {
+            // Normal layout flow
+            wrapperStyle = getNormalGridStyle(session.id);
+            wrapperStyle.transition = 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), flex-grow 300ms, width 300ms, height 300ms';
+          }
 
           return (
-            <div
-              key={session.id}
-              className={isGridFallback ? "" : "transition-all duration-300 ease-in-out overflow-hidden flex flex-col h-full"}
-              style={wrapperStyle}
-            >
-              <TerminalFrame 
-                session={session} 
-                isFocused={isFocused}
-                onFocusToggle={() => setFocusSessionId(isFocused ? null : session.id)}
-              />
-            </div>
+            <React.Fragment key={session.id}>
+              {showPlaceholder && (
+                <div 
+                  key={`placeholder-${session.id}`}
+                  data-placeholder-id={session.id}
+                  style={{ ...getNormalGridStyle(session.id), pointerEvents: 'none' }}
+                  className="border border-dashed border-[#232329] rounded bg-[#08080a] min-h-0 min-w-0"
+                />
+              )}
+              <div
+                key={`frame-wrapper-${session.id}`}
+                data-frame-id={session.id}
+                className="overflow-hidden flex flex-col h-full"
+                style={wrapperStyle}
+                onTransitionEnd={(e) => {
+                  if (isAnimating && e.propertyName === 'transform') {
+                    if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
+                    if (isExpanding) {
+                      setAnimatingSessionId(null);
+                      setTransformStyle({});
+                    } else {
+                      setFocusSessionId(null);
+                      setAnimatingSessionId(null);
+                      setTransformStyle({});
+                    }
+                  }
+                }}
+              >
+                <TerminalFrame 
+                  session={session} 
+                  isFocused={isFocused}
+                  isAnimating={animatingSessionId !== null}
+                  onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
+                />
+              </div>
+            </React.Fragment>
           );
         })}
       </div>

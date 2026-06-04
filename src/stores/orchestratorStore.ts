@@ -67,6 +67,7 @@ interface OrchestratorState {
   killTerminal: (sessionId: string) => Promise<void>;
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
   updateTerminalHistory: (sessionId: string, history: string) => void;
+  updateTerminalStatus: (sessionId: string, status: import('../types').TerminalStatus) => void;
   reconnectTerminal: (sessionId: string) => Promise<void>;
   
   // Logger
@@ -580,16 +581,24 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     }));
   },
 
+  updateTerminalStatus: (sessionId, status) => {
+    set((state) => ({
+      terminals: state.terminals.map((terminal) =>
+        terminal.id === sessionId
+          ? { ...terminal, status }
+          : terminal
+      )
+    }));
+  },
+
   reconnectTerminal: async (sessionId) => {
     const term = get().terminals.find(t => t.id === sessionId);
     if (!term) return;
 
-    // Clear history snapshot to prevent duplicate welcome/auth messages on fresh PTY boot
-    set((state) => ({
-      terminals: state.terminals.map(t =>
-        t.id === sessionId ? { ...t, history: "" } : t
-      )
-    }));
+    // We intentionally KEEP the history snapshot intact here.
+    // Standard shells (bash, python) will restore their old history and
+    // simply append the fresh PTY boot sequence (like a new prompt) to the bottom.
+    // Ink-based apps will also just boot a new UI at the bottom of the old history.
 
     try {
       await invoke("spawn_pty", {
@@ -710,10 +719,14 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       if (snapStr && snapStr !== "{}") {
         const snapshot = JSON.parse(snapStr) as WorkspaceSnapshot;
 
-        // Restore terminals (but mark them as disconnected initially since PTY processes are not running)
+        // Restore terminals and mark them as 'reconnecting' — NOT 'disconnected'.
+        // This is critical: if we set 'disconnected', TerminalPane will write the stale
+        // serialized history to the xterm buffer. Then reconnectTerminal spawns a new PTY
+        // which outputs fresh content on top of the old history, causing duplication.
+        // 'reconnecting' tells TerminalPane to skip history and wait for live PTY output.
         const restoredTerminals = (snapshot.terminals || []).map(t => ({
           ...t,
-          status: 'disconnected' as const
+          status: 'reconnecting' as const
         }));
         const restoredTerminalIds = new Set(restoredTerminals.map((terminal) => terminal.id));
         

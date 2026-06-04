@@ -124,7 +124,16 @@ fn spawn_pty(
 
     // Save PTY session
     let mut sessions = get_sessions().lock().unwrap();
-    sessions.insert(session_id, PtySession {
+    
+    // 🔥 THE FIX: Explicitly kill the old process before overwriting it.
+    // In Rust portable-pty, dropping the Child struct does not kill the OS process.
+    // Without this, the orphaned process and its reader thread continue running and
+    // emitting `terminal:stdout` events, causing duplicated terminal rendering in the frontend.
+    if let Some(mut old_session) = sessions.remove(&session_id) {
+        let _ = old_session.child.kill();
+    }
+    
+    sessions.insert(session_id.clone(), PtySession {
         writer,
         master,
         child,

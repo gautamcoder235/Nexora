@@ -19,13 +19,18 @@ import './TerminalPane.css';
 interface TerminalPaneProps {
   paneId: string;
   isFocused: boolean;
+  isAnimating: boolean;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused, isAnimating }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const serializeAddonRef = useRef<SerializeAddon | null>(null);
+  const isAnimatingRef = useRef<boolean>(isAnimating);
+
+  // Sync the ref synchronously during render to prevent layout reflow race conditions
+  isAnimatingRef.current = isAnimating;
 
   const terminals = useOrchestratorStore((s) => s.terminals);
   const updateTerminalHistory = useOrchestratorStore((s) => s.updateTerminalHistory);
@@ -108,8 +113,13 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
       console.warn('Initial terminal fit failed:', e);
     }
 
-    // Write session history if available
-    if (termSession?.history) {
+    // Restore serialized history for all sessions EXCEPT 'reconnecting'.
+    // If a session is 'reconnecting', a fresh PTY is booting and will output
+    // its own initial state. Writing history then would cause overlapping duplicates.
+    // For live ('connected') sessions, standard shells (bash, python) NEED this
+    // history restored to not appear blank on remount. Ink-based CLIs will have
+    // their viewport safely cleared during the initial resize to prevent duplication.
+    if (termSession?.history && termSession.status !== 'reconnecting') {
       term.write(termSession.history);
     }
 
@@ -129,6 +139,20 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
     // Handle resizing
     const onResizeDisposable = term.onResize(async ({ cols, rows }) => {
       try {
+        // Detect interactive CLIs built on Ink framework (Gemini, Claude)
+        // Fetch fresh state from the store to avoid a stale closure bug where
+        // we use the command/title from the very first render.
+        const freshSession = useOrchestratorStore.getState().terminals.find(t => t.id === paneId);
+        const cmd = (freshSession?.command || '').toLowerCase();
+        const title = (freshSession?.title || '').toLowerCase();
+        
+        // Strict prefix checks instead of `.includes` to prevent destructive clears
+        // on unrelated user sessions (e.g., bash scripts named "gemini-test").
+        if (cmd === 'gemini' || cmd === 'claude' || 
+            title.startsWith('gemini') || title.startsWith('claude')) {
+          term.write('\x1b[2J\x1b[H');
+        }
+        
         await invoke('resize_pty', { sessionId: paneId, rows, cols });
       } catch (err) {
         console.warn('PTY resize failed:', err);
@@ -150,10 +174,16 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
       }, 500);
     };
 
-    // Listen to backend PTY stdout events
+    // Listen to backend PTY stdout events.
+    // Use a `disposed` flag to handle the async registration race:
+    // if the component unmounts before `listen()` resolves, the cleanup
+    // function sets `disposed = true` so the resolved unlisten is called immediately.
+    let disposed = false;
     let unlistenOutput: (() => void) | null = null;
-    const registerListener = async () => {
-      unlistenOutput = await listen<{ sessionId: string; data: string }>(
+    let unlistenExit: (() => void) | null = null;
+
+    const registerListeners = async () => {
+      const unlisten1 = await listen<{ sessionId: string; data: string }>(
         'terminal:stdout',
         (event) => {
           if (event.payload.sessionId !== paneId) return;
@@ -161,12 +191,28 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
           saveHistorySnapshot();
         }
       );
+      if (disposed) { unlisten1(); return; }
+      unlistenOutput = unlisten1;
+
+      // Listen for PTY exit to update terminal status
+      const unlisten2 = await listen<{ sessionId: string }>(
+        'terminal:exit',
+        (event) => {
+          if (event.payload.sessionId !== paneId) return;
+          // Update store status to 'disconnected' so UI reflects dead PTY
+          useOrchestratorStore.getState().updateTerminalStatus(paneId, 'disconnected');
+        }
+      );
+      if (disposed) { unlisten2(); return; }
+      unlistenExit = unlisten2;
     };
-    registerListener();
+    registerListeners();
 
     // Resize observer (debounced to prevent layout corruption during CSS animation transitions)
     let resizeTimeout: any = null;
     const resizeObserver = new ResizeObserver(() => {
+      if (isAnimatingRef.current) return; // Skip resizes during focus zoom transitions
+
       if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
         if (containerRef.current) {
@@ -186,14 +232,22 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
     }
 
     return () => {
-      if (saveTimeout) clearTimeout(saveTimeout);
+      disposed = true;
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+        // Flush any pending history snapshot immediately before unmount to prevent data loss
+        if (termRef.current && serializeAddonRef.current) {
+          try {
+            useOrchestratorStore.getState().updateTerminalHistory(paneId, serializeAddonRef.current.serialize());
+          } catch (e) {}
+        }
+      }
       if (resizeTimeout) clearTimeout(resizeTimeout);
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
       resizeObserver.disconnect();
-      if (unlistenOutput) {
-        unlistenOutput();
-      }
+      if (unlistenOutput) unlistenOutput();
+      if (unlistenExit) unlistenExit();
       term.dispose();
     };
   }, [paneId]);
@@ -204,6 +258,22 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
       termRef.current.focus();
     }
   }, [isFocused]);
+
+  // Fit layout once transitions complete (debounced slightly to let layout fully settle)
+  useEffect(() => {
+    if (!isAnimating && fitAddonRef.current && containerRef.current) {
+      const timer = setTimeout(() => {
+        if (fitAddonRef.current && containerRef.current) {
+          try {
+            fitAddonRef.current.fit();
+          } catch (e) {
+            // ignore
+          }
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isAnimating]);
 
   return (
     <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#0a0a0f] p-2 font-mono overflow-hidden">
