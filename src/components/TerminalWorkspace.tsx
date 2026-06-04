@@ -89,52 +89,33 @@ export const TerminalWorkspace: React.FC = () => {
     );
   }
 
-  // Handle Focus Mode
-  if (focusSessionId) {
-    const focusSession = terminals.find(t => t.id === focusSessionId);
-    if (focusSession) {
-      return (
-        <div className="flex-grow flex flex-col h-full space-y-1.5">
-          <TerminalFrame 
-            session={focusSession} 
-            isFocused={true} 
-            onFocusToggle={() => setFocusSessionId(null)} 
-          />
-        </div>
-      );
-    } else {
-      setFocusSessionId(null);
-    }
-  }
-
   // Calculate layout classes
-  let containerClass = "grid gap-1.5 flex-1 min-h-0 ";
-  let customStyle: React.CSSProperties = {};
+  let containerClass = "flex gap-1.5 flex-1 min-h-0 ";
+  const is2Terminals = terminals.length === 2;
+  const isVertical = layout.type === 'grid' || layout.type === 'vertical';
 
   if (layout.type === 'grid') {
     if (terminals.length === 1) {
-      containerClass += "grid-cols-1 grid-rows-1";
-    } else if (terminals.length === 2) {
-      containerClass += "grid-rows-1";
-      customStyle = { gridTemplateColumns: "490px 1fr" };
+      containerClass += "flex-row";
+    } else if (is2Terminals) {
+      containerClass += "flex-row";
     } else {
-      containerClass += "grid-cols-2 lg:grid-cols-3 auto-rows-fr";
+      // Fallback to grid for 3+ terminals
+      containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 lg:grid-cols-3 auto-rows-fr";
     }
   } else if (layout.type === 'vertical') {
-    if (terminals.length === 2) {
-      containerClass += "grid-rows-1";
-      customStyle = { gridTemplateColumns: "490px 1fr" };
-    } else {
-      containerClass += "grid-flow-col auto-cols-fr grid-rows-1";
-    }
+    containerClass += "flex-row";
   } else {
-    containerClass += "grid-cols-1 auto-rows-fr";
+    containerClass += "flex-col";
   }
 
+  // Check if we are using the grid fallback
+  const isGridFallback = layout.type === 'grid' && terminals.length > 2;
+
   return (
-    <div className="flex-grow flex flex-col h-full space-y-1.5">
+    <div className="flex-grow flex flex-col h-full space-y-1.5 relative">
       {/* Terminal Workspace Controls */}
-      <div className="flex items-center justify-between px-1 select-none">
+      <div className="flex items-center justify-between px-1 select-none flex-shrink-0">
         <span className="text-[11px] font-bold text-zinc-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
           <TerminalIcon size={12} />
           Terminal Multiplexer Grid ({terminals.length} Session{terminals.length > 1 ? "s" : ""})
@@ -190,16 +171,45 @@ export const TerminalWorkspace: React.FC = () => {
         </div>
       </div>
 
-      {/* Render Grid/Spits of terminals */}
-      <div className={containerClass} style={customStyle}>
-        {terminals.map((session) => (
-          <TerminalFrame 
-            key={session.id} 
-            session={session} 
-            isFocused={false}
-            onFocusToggle={() => setFocusSessionId(session.id)}
-          />
-        ))}
+      {/* Render Grid/Splits of terminals with smooth expand animation */}
+      <div className={containerClass}>
+        {terminals.map((session) => {
+          const isFocused = focusSessionId === session.id;
+          const hasAnyFocus = focusSessionId !== null;
+          const isHiddenByFocus = hasAnyFocus && !isFocused;
+
+          // Compute wrapper styles for animation
+          const wrapperStyle: React.CSSProperties = isGridFallback
+            ? {
+                display: isHiddenByFocus ? "none" : "block",
+              }
+            : {
+                width: isVertical
+                  ? (isHiddenByFocus ? "0px" : isFocused ? "100%" : (is2Terminals && session.id === terminals[0].id ? "490px" : "auto"))
+                  : "100%",
+                height: !isVertical
+                  ? (isHiddenByFocus ? "0px" : isFocused ? "100%" : "auto")
+                  : "100%",
+                flexGrow: isHiddenByFocus ? 0 : isFocused ? 1 : (isVertical && is2Terminals && session.id === terminals[0].id ? 0 : 1),
+                flexShrink: isHiddenByFocus ? 0 : 1,
+                opacity: isHiddenByFocus ? 0 : 1,
+                pointerEvents: isHiddenByFocus ? "none" : "auto",
+              };
+
+          return (
+            <div
+              key={session.id}
+              className={isGridFallback ? "" : "transition-all duration-300 ease-in-out overflow-hidden flex flex-col h-full"}
+              style={wrapperStyle}
+            >
+              <TerminalFrame 
+                session={session} 
+                isFocused={isFocused}
+                onFocusToggle={() => setFocusSessionId(isFocused ? null : session.id)}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
