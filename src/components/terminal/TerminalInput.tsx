@@ -43,7 +43,7 @@ export const TerminalInput: React.FC<TerminalInputProps> = ({ onSubmit, cwd }) =
   };
 
   return (
-    <div className="terminal-input glass-panel">
+    <div className="terminal-input">
       <div className="terminal-input__prompt font-mono text-sm">
         <span className="terminal-input__folder text-accent">{getDisplayCwd()}</span>
         <span className="terminal-input__arrow text-muted">❯</span>
