@@ -21,7 +21,7 @@ export const Workroom: React.FC = () => {
       <TopBar />
       <div className="workroom__body">
         {sidebarVisible && (
-          <Sidebar style={{ width: sidebarWidth }} />
+          <Sidebar style={{ width: `${sidebarWidth}px` }} />
         )}
         <main className="workroom__main">
           <PaneManager />

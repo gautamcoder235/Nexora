@@ -5,6 +5,7 @@
 .sidebar {
   display: flex;
   flex-direction: row !important; /* Sidebar layout is row: icons + content */
+  flex-shrink: 0;
 }
 
 .sidebar__icons {
