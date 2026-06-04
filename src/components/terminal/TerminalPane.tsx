@@ -38,7 +38,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
     // Initialize interactive xterm.js instance
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: 'var(--font-mono, monospace)',
       fontSize: 12,
       theme: {
         background: '#0a0a0f',
