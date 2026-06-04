@@ -68,6 +68,7 @@ interface OrchestratorState {
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
   updateTerminalHistory: (sessionId: string, history: string) => void;
   reconnectTerminal: (sessionId: string) => Promise<void>;
+  launchExternalWezTerm: (sessionId: string) => Promise<void>;
   
   // Logger
   logActivity: (
@@ -619,6 +620,26 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         });
         return { terminals: updatedTerminals, agents: updatedAgents };
       });
+    }
+  },
+
+  launchExternalWezTerm: async (sessionId) => {
+    const term = get().terminals.find(t => t.id === sessionId);
+    if (!term) return;
+
+    try {
+      await invoke("open_external_wezterm", {
+        cwd: term.cwd,
+        command: term.command || null,
+        args: term.args || null
+      });
+      get().logActivity('terminal', 'info', `Launched external WezTerm terminal window for session: ${term.title}`, term.projectId, term.agentId);
+    } catch (e: any) {
+      console.error(e);
+      get().showAlertDialog(
+        "Launch External Terminal Failed",
+        e.toString() || "Could not launch WezTerm. Make sure it is installed and in your environment PATH variables."
+      );
     }
   },
 

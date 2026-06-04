@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2 } from "lucide-react";
+import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2, ExternalLink } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -15,6 +15,7 @@ interface TerminalFrameProps {
 
 const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
+  const launchExternalWezTerm = useOrchestratorStore(s => s.launchExternalWezTerm);
   
   return (
     <div 
@@ -33,6 +34,13 @@ const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFoc
         </div>
 
         <div className="flex items-center gap-2 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
+          <button 
+            onClick={(e) => { e.stopPropagation(); launchExternalWezTerm(session.id); }} 
+            title="Open in External WezTerm"
+            className="hover:text-purple-400 p-0.5 hover:bg-[#1a1a20] rounded"
+          >
+            <ExternalLink size={11} />
+          </button>
           <button 
             onClick={(e) => { e.stopPropagation(); onFocusToggle(); }} 
             title={isFocused ? "Exit Focus Mode" : "Focus Session"}

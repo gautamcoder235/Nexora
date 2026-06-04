@@ -186,6 +186,38 @@ fn kill_all_ptys() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_external_wezterm(
+    cwd: String,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+) -> Result<(), String> {
+    let wezterm_cmd = if cfg!(target_os = "windows") { "wezterm.exe" } else { "wezterm" };
+    let mut cmd = std::process::Command::new(wezterm_cmd);
+    cmd.arg("start");
+    cmd.arg("--cwd");
+    cmd.arg(&cwd);
+
+    if let Some(c) = command {
+        cmd.arg("--");
+        cmd.arg(c);
+        if let Some(a) = args {
+            cmd.args(a);
+        }
+    }
+
+    match cmd.spawn() {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Err("WezTerm executable was not found in your system's PATH. Please verify WezTerm is installed and in your environment variables.".to_string())
+            } else {
+                Err(format!("Failed to launch WezTerm: {}", e.to_string()))
+            }
+        }
+    }
+}
+
 // ==========================================
 // Workspace Config Storage RPCs
 // ==========================================
@@ -263,6 +295,7 @@ pub fn run() {
             resize_pty,
             kill_pty,
             kill_all_ptys,
+            open_external_wezterm,
             select_folder,
             save_config,
             load_config,
