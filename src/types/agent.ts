@@ -9,6 +9,7 @@ export type AgentType =
   | 'codex'
   | 'gemini-cli'
   | 'aider'
+  | 'opencode'
   | 'other';
 
 /** Agent role in a swarm — adapted from BridgeSwarm architecture */

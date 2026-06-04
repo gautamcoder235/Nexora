@@ -68,21 +68,31 @@ export const CommandBlock: React.FC<CommandBlockProps> = ({ sessionId, block }) 
     term.loadAddon(fitAddon);
     
     term.open(containerRef.current);
-    fitAddon.fit();
+    term.write(block.output);
+
+    // Helper to resize columns to container width while setting rows to output height
+    const fitColumns = () => {
+      try {
+        const dims = fitAddon.proposeDimensions();
+        const lineCount = Math.min(40, Math.max(3, block.output.split('\n').length));
+        if (dims) {
+          term.resize(dims.cols, lineCount);
+        } else {
+          term.resize(80, lineCount);
+        }
+      } catch (e) {
+        // ignore transient errors
+      }
+    };
+
+    fitColumns();
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Write current output
-    term.write(block.output);
-
     // Resize observer to ensure the block output fits when window resizing occurs
     const resizeObserver = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-      } catch (e) {
-        // ignore transient errors
-      }
+      fitColumns();
     });
     resizeObserver.observe(containerRef.current);
 
@@ -101,10 +111,16 @@ export const CommandBlock: React.FC<CommandBlockProps> = ({ sessionId, block }) 
       
       // Update row size dynamically to fit the new lines
       const lineCount = Math.min(50, Math.max(3, block.output.split('\n').length));
-      termRef.current.resize(termRef.current.cols, lineCount);
       try {
-        fitAddonRef.current?.fit();
-      } catch (e) {}
+        const dims = fitAddonRef.current?.proposeDimensions();
+        if (dims) {
+          termRef.current.resize(dims.cols, lineCount);
+        } else {
+          termRef.current.resize(termRef.current.cols, lineCount);
+        }
+      } catch (e) {
+        termRef.current.resize(termRef.current.cols, lineCount);
+      }
     }
   }, [block.output, block.isCollapsed]);
 

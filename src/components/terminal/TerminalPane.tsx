@@ -19,13 +19,12 @@ interface TerminalPaneProps {
   isFocused: boolean;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId: _paneId, isFocused }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused }) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentCwd, setCurrentCwd] = useState('E:\\Codes\\BridgeSpace');
   
   const sessions = useTerminalStore((s) => s.sessions);
   const createSessionStore = useTerminalStore((s) => s.createSession);
-  const removeSessionStore = useTerminalStore((s) => s.removeSession);
   const addBlock = useTerminalStore((s) => s.addBlock);
   const appendBlockOutput = useTerminalStore((s) => s.appendBlockOutput);
   const updateBlockStatus = useTerminalStore((s) => s.updateBlockStatus);
@@ -36,66 +35,58 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId: _paneId, isF
 
   // Initialize PTY Session on mount
   useEffect(() => {
-    let localSessionId: string | null = null;
     let unlistenOutput: (() => void) | null = null;
     const parser = new BlockParser();
 
     const init = async () => {
       try {
-        // Create backend shell session (PowerShell on Windows, Bash on Unix)
-        const sId = await invoke<string>('create_terminal_session', {
-          rows: 24,
-          cols: 80,
-          cwd: currentCwd,
-        });
-
-        localSessionId = sId;
+        // Connect to the orchestrator-spawned backend PTY session ID
+        const sId = paneId;
         setSessionId(sId);
         setActiveSession(sId);
 
-        // Register session in Zustand store
-        createSessionStore({
-          id: sId,
-          shell: 'powershell',
-          shellName: 'PowerShell',
-          blocks: [],
-          activeBlockId: null,
-          cwd: currentCwd,
-          isConnected: true,
-          createdAt: new Date(),
-        });
+        // Register session in Zustand store if it doesn't exist
+        if (!sessions.has(sId)) {
+          createSessionStore({
+            id: sId,
+            shell: 'powershell',
+            shellName: 'PowerShell',
+            blocks: [],
+            activeBlockId: null,
+            cwd: currentCwd,
+            isConnected: true,
+            createdAt: new Date(),
+          });
 
-        // Create initial startup block to capture shell banner/startup text
-        const startupBlockId = `startup-${Date.now()}`;
-        activeBlockIdRef.current = startupBlockId;
-        addBlock(sId, {
-          id: startupBlockId,
-          command: 'System Boot',
-          output: '',
-          status: 'running',
-          exitCode: null,
-          startTime: new Date(),
-          endTime: null,
-          pwd: currentCwd,
-          gitBranch: null,
-          isBookmarked: false,
-          isCollapsed: false,
-          agentId: null,
-          duration: null,
-        });
+          // Create initial startup block
+          const startupBlockId = `startup-${Date.now()}`;
+          activeBlockIdRef.current = startupBlockId;
+          addBlock(sId, {
+            id: startupBlockId,
+            command: 'System Boot',
+            output: '',
+            status: 'running',
+            exitCode: null,
+            startTime: new Date(),
+            endTime: null,
+            pwd: currentCwd,
+            gitBranch: null,
+            isBookmarked: false,
+            isCollapsed: false,
+            agentId: null,
+            duration: null,
+          });
+        }
 
         // Helper to check if text contains typical shell prompt endings
         const isPrompt = (text: string): boolean => {
           const trimmed = text.trim();
-          if (trimmed.endsWith('>') || trimmed.endsWith('$') || trimmed.endsWith('%') || trimmed.endsWith('#')) {
-            return true;
-          }
-          return false;
+          return trimmed.endsWith('>') || trimmed.endsWith('$') || trimmed.endsWith('%') || trimmed.endsWith('#');
         };
 
-        // Listen to output event from backend PTY session
+        // Listen to output event from backend PTY session (terminal:stdout)
         unlistenOutput = await listen<{ sessionId: string; data: string }>(
-          'terminal-output',
+          'terminal:stdout',
           (event) => {
             if (event.payload.sessionId !== sId) return;
 
@@ -137,15 +128,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId: _paneId, isF
 
     // Clean up session and listeners on unmount
     return () => {
-      if (localSessionId) {
-        invoke('destroy_terminal_session', { sessionId: localSessionId }).catch((e) => console.error(e));
-        removeSessionStore(localSessionId);
-      }
       if (unlistenOutput) {
         unlistenOutput();
       }
     };
-  }, []);
+  }, [paneId]);
 
   // Sync active session focus
   useEffect(() => {
@@ -200,7 +187,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId: _paneId, isF
 
     // Write command to backend PTY
     try {
-      await invoke('write_terminal', {
+      await invoke('write_pty', {
         sessionId,
         data: `${command}\r\n`,
       });
