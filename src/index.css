@@ -1,8 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-mono: Consolas, Menlo, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
 }
 
 @layer base {
