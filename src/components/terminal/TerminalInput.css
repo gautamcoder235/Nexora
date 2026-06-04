@@ -1,0 +1,77 @@
+/**
+ * Multi Vibe — TerminalInput Styles
+ */
+
+.terminal-input {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background-color: rgba(10, 10, 18, 0.7) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg);
+  margin-top: var(--space-3);
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.terminal-input:focus-within {
+  border-color: rgba(var(--accent-primary-rgb), 0.35) !important;
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.terminal-input__prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  user-select: none;
+  padding-bottom: 2px;
+}
+
+.terminal-input__folder {
+  font-weight: var(--font-weight-medium);
+}
+
+.terminal-input__arrow {
+  font-weight: var(--font-weight-bold);
+}
+
+.terminal-input__editor {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  outline: none;
+  resize: none;
+  padding: 0;
+  min-height: 20px;
+  max-height: 140px;
+  line-height: var(--line-height-normal);
+  overflow-y: auto;
+}
+
+.terminal-input__editor::placeholder {
+  color: var(--text-muted);
+}
+
+.terminal-input__right {
+  display: flex;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+.terminal-input__ai-btn {
+  padding: 4px 10px !important;
+  background: rgba(var(--accent-primary-rgb), 0.1) !important;
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.2) !important;
+  color: var(--accent-primary) !important;
+  border-radius: var(--radius-xs) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.terminal-input__ai-btn:hover {
+  background: rgba(var(--accent-primary-rgb), 0.2) !important;
+  border-color: rgba(var(--accent-primary-rgb), 0.35) !important;
+  box-shadow: var(--shadow-glow) !important;
+}

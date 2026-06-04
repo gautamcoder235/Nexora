@@ -1,0 +1,51 @@
+/**
+ * Multi Vibe — TerminalPane Styles
+ */
+
+.terminal-pane {
+  width: 100%;
+  height: 100%;
+  padding: var(--space-3);
+  background-color: rgba(10, 10, 15, 0.45);
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
+}
+
+.terminal-pane__container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Override xterm.js defaults to fit our glass theme */
+.terminal-pane .xterm {
+  padding: 0;
+}
+
+.terminal-pane .xterm-viewport {
+  background-color: transparent !important;
+  /* Thin custom scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-primary) rgba(0, 0, 0, 0.2);
+}
+
+.terminal-pane .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+.terminal-pane .xterm-viewport::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--border-glass-hover);
+  border-radius: var(--radius-full);
+}
+
+.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+.terminal-pane .xterm-rows {
+  font-family: var(--font-mono) !important;
+}

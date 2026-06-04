@@ -1,0 +1,46 @@
+/**
+ * Multi Vibe — BlockList Styles
+ */
+
+.block-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: var(--space-4) 0;
+  box-sizing: border-box;
+}
+
+.block-list--empty {
+  justify-content: center;
+  align-items: center;
+}
+
+.block-list__welcome {
+  max-width: 480px;
+  padding: var(--space-6) !important;
+  text-align: center;
+  background-color: rgba(14, 14, 24, 0.7) !important;
+}
+
+.block-list__welcome-title {
+  margin-bottom: var(--space-2);
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.block-list__welcome-desc {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  margin-bottom: var(--space-4);
+}
+
+.block-list__welcome-tips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+  border-top: 1px solid var(--border-glass);
+  padding-top: var(--space-4);
+}

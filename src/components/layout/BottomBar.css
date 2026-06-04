@@ -1,0 +1,73 @@
+/**
+ * Multi Vibe — BottomBar Styles
+ */
+
+.bottombar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+  transition: height var(--transition-smooth);
+}
+
+.bottombar--expanded {
+  height: 180px;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--space-3) var(--space-4);
+}
+
+.bottombar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--bottombar-height);
+  flex-shrink: 0;
+}
+
+.bottombar__expand-trigger {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-xs);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.bottombar__expand-trigger:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.bottombar__divider {
+  width: 1px;
+  height: 12px;
+  background-color: var(--border-glass);
+}
+
+.bottombar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--bottombar-height);
+  flex-shrink: 0;
+}
+
+.bottombar__log-pane {
+  flex: 1;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.bottombar__log-line {
+  line-height: var(--line-height-normal);
+}

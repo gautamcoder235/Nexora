@@ -1,0 +1,126 @@
+/**
+ * Multi Vibe — PaneManager Styles
+ */
+
+.pane-manager {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  background-color: var(--bg-primary);
+}
+
+.pane-node {
+  position: relative;
+  box-sizing: border-box;
+}
+
+.pane-node--leaf {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  border: 1px solid var(--border-glass);
+  background-color: rgba(10, 10, 15, 0.2);
+  transition: border-color var(--transition-fast);
+}
+
+.pane-node--focused {
+  border-color: rgba(var(--accent-primary-rgb), 0.4);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-primary-rgb), 0.2);
+}
+
+.pane-node__header {
+  height: 28px;
+  background-color: rgba(18, 18, 28, 0.85);
+  border-bottom: 1px solid var(--border-glass);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 var(--space-3);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.pane-node--focused .pane-node__header {
+  background-color: rgba(var(--accent-primary-rgb), 0.08);
+  border-bottom-color: rgba(var(--accent-primary-rgb), 0.2);
+}
+
+.pane-node__title {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.pane-node--focused .pane-node__title {
+  color: var(--text-primary);
+}
+
+.pane-node__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pane-node__action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-size-xs);
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.pane-node__action-btn:hover {
+  color: var(--text-primary);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.pane-node__action-btn--close:hover {
+  color: var(--accent-error);
+  background-color: rgba(var(--accent-error-rgb), 0.1);
+}
+
+.pane-node__content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.pane-node__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  background-color: rgba(10, 10, 15, 0.4);
+}
+
+/* Draggable dividers */
+.pane-divider {
+  background-color: var(--border-glass);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.pane-divider--vertical {
+  width: 3px;
+  cursor: col-resize;
+  height: 100%;
+}
+
+.pane-divider--horizontal {
+  height: 3px;
+  cursor: row-resize;
+  width: 100%;
+}

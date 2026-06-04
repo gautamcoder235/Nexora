@@ -1,0 +1,426 @@
+/* ============================================================
+ * Animations — Multi Vibe
+ * Keyframes, utility classes, and motion preferences
+ * ============================================================ */
+
+/* ── Fade Animations ─────────────────────────────────────── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ── Slide Animations ────────────────────────────────────── */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+
+/* ── Looping / State Animations ──────────────────────────── */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(var(--accent-primary-rgb), 0.15);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(var(--accent-primary-rgb), 0.35);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Block / Terminal Animations ─────────────────────────── */
+@keyframes blockAppear {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.005);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes statusPulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 4px rgba(var(--accent-primary-rgb), 0.3);
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 12px rgba(var(--accent-primary-rgb), 0.5);
+  }
+}
+
+@keyframes glowBorder {
+  0%, 100% {
+    border-color: rgba(var(--accent-primary-rgb), 0.2);
+    box-shadow: 0 0 8px rgba(var(--accent-primary-rgb), 0.1);
+  }
+  50% {
+    border-color: rgba(var(--accent-primary-rgb), 0.45);
+    box-shadow: 0 0 20px rgba(var(--accent-primary-rgb), 0.25);
+  }
+}
+
+/* ── Cursor / Typing ─────────────────────────────────────── */
+@keyframes cursorBlink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes typingDot {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ============================================================
+ * Utility Classes
+ * ============================================================ */
+
+/* ── Fade Utilities ──────────────────────────────────────── */
+.animate-fade-in {
+  animation: fadeIn var(--transition-smooth) var(--ease-out) both;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp var(--transition-smooth) var(--ease-out) both;
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown var(--transition-smooth) var(--ease-out) both;
+}
+
+.animate-fade-in-scale {
+  animation: fadeInScale var(--transition-smooth) var(--ease-out) both;
+}
+
+.animate-fade-out {
+  animation: fadeOut var(--transition-smooth) var(--ease-out) both;
+}
+
+/* ── Slide Utilities ─────────────────────────────────────── */
+.animate-slide-in-left {
+  animation: slideInLeft var(--transition-smooth) var(--ease-out) both;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight var(--transition-smooth) var(--ease-out) both;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp var(--transition-smooth) var(--ease-out) both;
+}
+
+/* ── Block Appear (for terminal output blocks) ───────────── */
+.animate-block-appear {
+  animation: blockAppear 400ms var(--ease-out) both;
+}
+
+/* Stagger delay support — use with JS or nth-child */
+.animate-block-appear.stagger-1 { animation-delay: 50ms; }
+.animate-block-appear.stagger-2 { animation-delay: 100ms; }
+.animate-block-appear.stagger-3 { animation-delay: 150ms; }
+.animate-block-appear.stagger-4 { animation-delay: 200ms; }
+.animate-block-appear.stagger-5 { animation-delay: 250ms; }
+.animate-block-appear.stagger-6 { animation-delay: 300ms; }
+.animate-block-appear.stagger-7 { animation-delay: 350ms; }
+.animate-block-appear.stagger-8 { animation-delay: 400ms; }
+
+/* CSS custom property based stagger (set --stagger-index via style attr) */
+.animate-block-appear[style*="--stagger-index"] {
+  animation-delay: calc(var(--stagger-index, 0) * 50ms);
+}
+
+/* ── Loop Utilities ──────────────────────────────────────── */
+.animate-pulse {
+  animation: pulse 2s var(--ease-in-out) infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s var(--ease-in-out) infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.animate-glow-border {
+  animation: glowBorder 2s var(--ease-in-out) infinite;
+}
+
+.animate-status-pulse {
+  animation: statusPulse 1.5s var(--ease-in-out) infinite;
+}
+
+.animate-cursor-blink {
+  animation: cursorBlink 1s step-end infinite;
+}
+
+/* ── Typing dots indicator ───────────────────────────────── */
+.animate-typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.animate-typing-dots > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: typingDot 1.4s ease-in-out infinite;
+}
+
+.animate-typing-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.animate-typing-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* ============================================================
+ * Hover Transition Utilities
+ * ============================================================ */
+.hover-lift {
+  transition: transform var(--transition-fast);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+.hover-scale {
+  transition: transform var(--transition-fast);
+}
+.hover-scale:hover {
+  transform: scale(1.03);
+}
+
+.hover-glow {
+  transition: box-shadow var(--transition-smooth);
+}
+.hover-glow:hover {
+  box-shadow: var(--shadow-glow);
+}
+
+.hover-brighten {
+  transition: filter var(--transition-fast);
+}
+.hover-brighten:hover {
+  filter: brightness(1.15);
+}
+
+.hover-bg {
+  transition: background var(--transition-fast);
+}
+.hover-bg:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Generic transition helper ───────────────────────────── */
+.transition-all {
+  transition: all var(--transition-fast);
+}
+
+.transition-colors {
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.transition-transform {
+  transition: transform var(--transition-fast);
+}
+
+.transition-opacity {
+  transition: opacity var(--transition-fast);
+}
+
+/* ============================================================
+ * Reduced Motion — Accessibility
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-fade-in,
+  .animate-fade-in-up,
+  .animate-fade-in-down,
+  .animate-fade-in-scale,
+  .animate-fade-out,
+  .animate-slide-in-left,
+  .animate-slide-in-right,
+  .animate-slide-in-up,
+  .animate-block-appear {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .animate-pulse,
+  .animate-pulse-glow,
+  .animate-shimmer,
+  .animate-spin,
+  .animate-glow-border,
+  .animate-status-pulse,
+  .animate-cursor-blink {
+    animation: none !important;
+  }
+
+  .hover-lift:hover,
+  .hover-scale:hover {
+    transform: none !important;
+  }
+}
