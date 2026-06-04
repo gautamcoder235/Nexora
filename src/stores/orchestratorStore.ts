@@ -584,6 +584,13 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     const term = get().terminals.find(t => t.id === sessionId);
     if (!term) return;
 
+    // Clear history snapshot to prevent duplicate welcome/auth messages on fresh PTY boot
+    set((state) => ({
+      terminals: state.terminals.map(t =>
+        t.id === sessionId ? { ...t, history: "" } : t
+      )
+    }));
+
     try {
       await invoke("spawn_pty", {
         sessionId,
