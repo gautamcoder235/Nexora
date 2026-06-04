@@ -112,13 +112,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
     // Write session history if available
     if (termSession?.history) {
       term.write(termSession.history);
-    } else {
-      // Print welcome info if clean boot
-      term.writeln('\x1b[90m┌──────────────────────────────────────────────┐\x1b[0m');
-      term.writeln('\x1b[90m│\x1b[0m \x1b[1;35mMulti Vibe Interactive Terminal Workspace\x1b[0m    \x1b[90m│\x1b[0m');
-      term.writeln('\x1b[90m│\x1b[0m Direct shell execution enabled. Type to begin. \x1b[90m│\x1b[0m');
-      term.writeln('\x1b[90m└──────────────────────────────────────────────┘\x1b[0m');
-      term.writeln('');
     }
 
     termRef.current = term;
