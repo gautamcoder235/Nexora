@@ -1,9 +1,5 @@
 @import "tailwindcss";
 
-:root {
-  --font-mono: Consolas, Menlo, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
-}
-
 @layer base {
   body {
     background-color: #0c0c0e;
