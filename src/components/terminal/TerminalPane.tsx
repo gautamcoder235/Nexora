@@ -10,6 +10,8 @@ import { listen } from '@tauri-apps/api/event';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { CanvasAddon } from '@xterm/addon-canvas';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import '@xterm/xterm/css/xterm.css';
 import './TerminalPane.css';
@@ -36,7 +38,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
     // Initialize interactive xterm.js instance
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: 'var(--font-mono, monospace)',
+      fontFamily: "'JetBrains Mono', 'Fira Code', var(--font-mono, monospace)",
       fontSize: 12,
       theme: {
         background: '#0a0a0f',
@@ -68,6 +70,30 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
     
     term.loadAddon(fitAddon);
     term.loadAddon(serializeAddon);
+    
+    // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+        // Fallback to Canvas renderer if WebGL context is lost
+        try {
+          const canvasAddon = new CanvasAddon();
+          term.loadAddon(canvasAddon);
+        } catch (e) {
+          console.warn('Canvas renderer fallback failed:', e);
+        }
+      });
+      term.loadAddon(webglAddon);
+    } catch (e) {
+      console.warn('WebGL renderer initialization failed, trying Canvas renderer:', e);
+      try {
+        const canvasAddon = new CanvasAddon();
+        term.loadAddon(canvasAddon);
+      } catch (err) {
+        console.warn('Canvas renderer initialization failed, falling back to standard DOM renderer:', err);
+      }
+    }
     
     term.open(containerRef.current);
     
