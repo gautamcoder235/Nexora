@@ -10,7 +10,6 @@ import './TopBar.css';
 
 export const TopBar: React.FC = () => {
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
-  const toggleCommandPalette = useLayoutStore((s) => s.toggleCommandPalette);
   const theme = useLayoutStore((s) => s.theme);
   const setTheme = useLayoutStore((s) => s.setTheme);
   const activeSessionId = useTerminalStore((s) => s.activeSessionId);
@@ -39,14 +38,11 @@ export const TopBar: React.FC = () => {
         )}
       </div>
 
-      <div className="topbar__center" onClick={toggleCommandPalette}>
-        <div className="topbar__search-trigger glass-input">
-          <svg className="topbar__search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <span className="text-muted">Search commands, agents, or files...</span>
-          <kbd className="topbar__kbd">Ctrl+Shift+P</kbd>
+      <div className="topbar__center">
+        <div className="topbar__breadcrumbs text-sm">
+          <span className="text-muted">workspace</span>
+          <span className="topbar__breadcrumb-separator text-muted">❯</span>
+          <span className="text-secondary font-medium">bridgespace</span>
         </div>
       </div>
 
