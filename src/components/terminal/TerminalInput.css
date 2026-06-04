@@ -13,7 +13,7 @@
   box-shadow: var(--shadow-lg);
   margin-top: var(--space-3);
   flex-shrink: 0;
-  width: 100%;
+  align-self: stretch;
 }
 
 .terminal-input:focus-within {
