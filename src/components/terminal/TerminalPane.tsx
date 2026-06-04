@@ -164,15 +164,19 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
     };
     registerListener();
 
-    // Resize observer
+    // Resize observer (debounced to prevent layout corruption during CSS animation transitions)
+    let resizeTimeout: any = null;
     const resizeObserver = new ResizeObserver(() => {
-      if (containerRef.current) {
-        try {
-          fitAddon.fit();
-        } catch (e) {
-          // ignore transient layout resize errors
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (containerRef.current) {
+          try {
+            fitAddon.fit();
+          } catch (e) {
+            // ignore transient layout resize errors
+          }
         }
-      }
+      }, 100);
     });
     resizeObserver.observe(containerRef.current);
 
@@ -183,6 +187,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused })
 
     return () => {
       if (saveTimeout) clearTimeout(saveTimeout);
+      if (resizeTimeout) clearTimeout(resizeTimeout);
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
       resizeObserver.disconnect();
