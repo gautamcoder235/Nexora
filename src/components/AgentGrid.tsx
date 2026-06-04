@@ -78,20 +78,20 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`bg-[#121214] border rounded-lg p-2.5 pb-3 flex flex-col justify-between shadow-md transition-colors ${
+      className={`bg-[#08080c]/80 border rounded-lg p-3 flex flex-col justify-between shadow-sm transition-all duration-250 ${
         isRunning
-          ? "border-purple-500/40 bg-purple-500/[0.02]"
-          : "border-[#232329] hover:border-zinc-700"
+          ? "border-purple-500/30 bg-purple-500/[0.01]"
+          : "border-[#1b1b22] hover:border-zinc-800"
       } ${
         isDropTarget
-          ? "border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.25)] bg-purple-500/[0.04]"
+          ? "border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.2)] bg-purple-500/[0.03]"
           : ""
-      } ${isDragging ? "shadow-2xl border-purple-400/60" : ""}`}
+      } ${isDragging ? "shadow-xl border-purple-500/40" : ""}`}
     >
       {/* 1. TOP HEADER ZONE */}
       <div className="flex items-start justify-between gap-2.5 flex-shrink-0">
         <div className="flex-1 min-w-0 flex items-start gap-1">
-          {/* ── Drag Handle ── attach attributes + listeners ONLY here */}
+          {/* ── Drag Handle ── */}
           <div
             {...attributes}
             {...listeners}
@@ -102,7 +102,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
           </div>
 
           <div className="flex-1 min-w-0">
-            <h4 className="text-xs font-semibold text-zinc-200 flex items-start gap-1.5 leading-snug">
+            <h4 className="text-[11.5px] font-bold text-zinc-200 flex items-start gap-1.5 leading-snug">
               <Cpu
                 size={12}
                 className={`flex-shrink-0 mt-[2px] ${
@@ -129,7 +129,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
             className={`text-[8px] uppercase tracking-wide font-bold px-1.5 py-0.5 rounded font-mono ${
               agent.status === "running"
                 ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                : "bg-zinc-800 text-zinc-400 border border-zinc-700"
+                : "bg-zinc-900 text-zinc-500 border border-[#1b1b22]"
             }`}
           >
             {agent.status}
@@ -140,8 +140,8 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
               onClick={() => !isInstalled && onShowInstallGuide(pluginId)}
               className={`text-[8px] font-bold px-1.5 py-0.5 rounded font-mono border transition-all ${
                 isInstalled
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20 cursor-pointer"
+                  ? "bg-emerald-500/10 text-emerald-450 border-emerald-500/25"
+                  : "bg-amber-500/10 text-amber-450 border-amber-500/25 hover:bg-amber-500/20 cursor-pointer"
               }`}
               title={
                 isInstalled ? "CLI tool available" : "Click to view install guide"
@@ -154,12 +154,12 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
       </div>
 
       {/* 2. BODY MIDDLE ZONE */}
-      <div className="flex-grow flex flex-col justify-center text-[9.5px] text-zinc-400 my-1.5">
+      <div className="flex-grow flex flex-col justify-center text-[9.5px] text-zinc-400 my-2">
         <p
           className="text-[9px] text-zinc-500 font-mono select-text truncate"
           title={`${agent.cliCommand} ${agent.arguments.join(" ")}`}
         >
-          <span className="text-zinc-600">CMD:</span> {agent.cliCommand}{" "}
+          <span className="text-zinc-650">CMD:</span> {agent.cliCommand}{" "}
           {agent.arguments.join(" ")}
         </p>
         <div className="flex flex-wrap gap-1 mt-1">
@@ -168,7 +168,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
             return (
               <span
                 key={cap}
-                className="text-[8px] bg-[#1e1e24] text-zinc-400 border border-zinc-800 px-1.5 py-0.5 rounded font-mono"
+                className="text-[8px] bg-[#101014] text-zinc-500 border border-[#1b1b22] px-1.5 py-0.5 rounded font-mono"
               >
                 {cap}
               </span>
@@ -178,11 +178,11 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
       </div>
 
       {/* 3. BOTTOM FOOTER ZONE */}
-      <div className="border-t border-[#232329]/60 pt-1.5 flex items-center justify-between text-[10px] text-zinc-500 select-none flex-shrink-0">
+      <div className="border-t border-[#1b1b22]/50 pt-2 flex items-center justify-between text-[10px] text-zinc-550 select-none flex-shrink-0">
         <div className="flex flex-col min-w-0">
           <span className="text-[9px] text-zinc-500 truncate max-w-[120px]">
             Project:{" "}
-            <span className="text-zinc-300 font-semibold">
+            <span className="text-zinc-350 font-semibold">
               {proj ? proj.name : "Unassigned"}
             </span>
           </span>
@@ -198,7 +198,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
             <button
               type="button"
               onClick={() => onStop(agent)}
-              className="flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded text-[9px] transition-colors cursor-pointer"
+              className="flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-450 border border-rose-500/20 px-2 py-0.5 rounded text-[9px] transition-colors cursor-pointer"
             >
               <Square size={9} className="fill-rose-400/20" />
               Kill
@@ -207,7 +207,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
             <button
               type="button"
               onClick={() => onStart(agent)}
-              className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white px-2 py-0.5 rounded text-[9px] transition-colors cursor-pointer"
+              className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white px-2.5 py-0.5 rounded text-[9px] transition-colors cursor-pointer font-semibold"
             >
               <Play size={9} className="fill-white" />
               Launch
@@ -218,7 +218,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
             type="button"
             onClick={() => onEdit(agent)}
             title="Edit Profile"
-            className="p-0.5 hover:bg-[#1a1a20] rounded border border-[#232329] text-zinc-500 hover:text-purple-400 transition-colors cursor-pointer"
+            className="p-1 hover:bg-[#121216] rounded border border-[#1b1b22] text-zinc-500 hover:text-purple-400 transition-colors cursor-pointer"
           >
             <Edit size={10} />
           </button>
@@ -227,7 +227,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
             type="button"
             onClick={() => onDelete(agent.id)}
             title="Delete Profile"
-            className="p-0.5 hover:bg-[#1a1a20] rounded border border-[#232329] text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
+            className="p-1 hover:bg-[#121216] rounded border border-[#1b1b22] text-zinc-550 hover:text-rose-455 transition-colors cursor-pointer"
           >
             <Trash2 size={10} />
           </button>

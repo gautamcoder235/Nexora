@@ -135,47 +135,47 @@ export const TaskCenter: React.FC = () => {
       )}
 
       {/* Kanban Board Columns Grid */}
-      <div className="flex-1 grid grid-cols-4 gap-1.5 overflow-hidden min-h-0">
+      <div className="flex-1 grid grid-cols-4 gap-2 overflow-hidden min-h-0">
         {columns.map(col => {
           const colTasks = projectTasks.filter(t => t.status === col.id);
           return (
             <div 
               key={col.id} 
-              className={`flex flex-col border border-[#232329] border-t-2 rounded overflow-hidden min-w-0 ${col.color}`}
+              className={`flex flex-col border border-[#1b1b22] border-t-2 rounded-md overflow-hidden min-w-0 ${col.color}`}
             >
               {/* Column Header */}
-              <div className="bg-[#0c0c0e] px-2.5 py-1.5 border-b border-[#232329] flex items-center justify-between select-none">
+              <div className="bg-[#08080a] px-3 py-2 border-b border-[#1b1b22] flex items-center justify-between select-none">
                 <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{col.title}</span>
-                <span className="bg-[#1a1a20] px-1 rounded text-zinc-500 text-[9px] font-bold border border-[#232329]">
+                <span className="bg-[#141419] px-2 py-0.5 rounded text-zinc-500 text-[9px] font-bold border border-[#1b1b22]">
                   {colTasks.length}
                 </span>
               </div>
 
               {/* Column Content Scrollable Area */}
-              <div className="flex-1 overflow-y-auto p-1 space-y-1.5 min-h-0">
+              <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0 scrollbar-thin">
                 {colTasks.map(task => {
                   return (
                     <div 
                       key={task.id} 
-                      className="bg-[#0c0c0e]/80 border border-[#232329] rounded p-1.5 space-y-1.5 hover:border-zinc-800 transition-all select-none relative group"
+                      className="bg-[#08080a]/90 border border-[#1b1b22] hover:border-purple-500/30 rounded-md p-2.5 space-y-2 hover:shadow-[0_4px_12px_rgba(0,0,0,0.5)] transition-all select-none relative group"
                     >
                       {/* Title & Description */}
-                      <div className="space-y-0.5 select-text">
-                        <h4 className="text-[11px] font-semibold text-zinc-200 break-words leading-tight">{task.title}</h4>
+                      <div className="space-y-1 select-text">
+                        <h4 className="text-[11px] font-bold text-zinc-200 break-words leading-tight">{task.title}</h4>
                         {task.description && (
-                          <p className="text-[9.5px] text-zinc-500 break-words leading-normal">{task.description}</p>
+                          <p className="text-[9.5px] text-zinc-500 break-words leading-relaxed">{task.description}</p>
                         )}
                       </div>
 
                       {/* Assignment & Action row */}
-                      <div className="flex items-center justify-between pt-1 text-[9px] gap-1">
+                      <div className="flex items-center justify-between pt-1 border-t border-[#1b1b22]/30 text-[9px] gap-1">
                         {/* Assign Agent Selector */}
                         <div className="flex items-center gap-1 max-w-[65%] truncate">
                           <UserPlus size={10} className="text-zinc-500 flex-shrink-0" />
                           <select
                             value={task.assignedAgentId || ""}
                             onChange={(e) => assignTask(task.id, e.target.value || null)}
-                            className="bg-transparent text-zinc-400 outline-none cursor-pointer max-w-full hover:text-zinc-200 transition-colors"
+                            className="bg-transparent text-zinc-400 outline-none cursor-pointer max-w-full hover:text-zinc-250 transition-colors font-mono font-semibold"
                           >
                             <option value="" className="bg-[#0c0c0e]">Unassigned</option>
                             {projectAgents.map(agent => (
@@ -186,14 +186,14 @@ export const TaskCenter: React.FC = () => {
                           </select>
                         </div>
 
-                        {/* Drag Status Navigation buttons */}
-                        <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                        {/* Actions list shown ONLY on hover for cleaner UI layout */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                           {col.id !== 'todo' && (
                             <button
                               type="button"
                               onClick={() => handleMove(task, 'left')}
-                              title="Move backward"
-                              className="text-zinc-500 hover:text-zinc-300 p-0.5 hover:bg-[#1a1a20] rounded border border-zinc-800"
+                              title="Move back"
+                              className="text-zinc-500 hover:text-purple-400 p-0.5 hover:bg-[#121216] rounded border border-[#1b1b22] cursor-pointer transition-colors"
                             >
                               <ArrowLeft size={9} />
                             </button>
@@ -203,7 +203,7 @@ export const TaskCenter: React.FC = () => {
                               type="button"
                               onClick={() => handleMove(task, 'right')}
                               title="Move forward"
-                              className="text-zinc-500 hover:text-zinc-300 p-0.5 hover:bg-[#1a1a20] rounded border border-zinc-800"
+                              className="text-zinc-500 hover:text-purple-400 p-0.5 hover:bg-[#121216] rounded border border-[#1b1b22] cursor-pointer transition-colors"
                             >
                               <ArrowRight size={9} />
                             </button>
@@ -212,7 +212,7 @@ export const TaskCenter: React.FC = () => {
                             type="button"
                             onClick={() => deleteTask(task.id)}
                             title="Delete Task"
-                            className="text-zinc-600 hover:text-rose-400 p-0.5 hover:bg-[#1a1a20] rounded border border-zinc-800"
+                            className="text-zinc-500 hover:text-rose-400 p-0.5 hover:bg-[#121216] rounded border border-[#1b1b22] cursor-pointer transition-colors"
                           >
                             <Trash size={9} />
                           </button>
@@ -222,8 +222,8 @@ export const TaskCenter: React.FC = () => {
                   );
                 })}
                 {colTasks.length === 0 && (
-                  <div className="text-[9px] text-zinc-700 text-center py-6 select-none font-mono">
-                    No tasks
+                  <div className="text-[9px] text-zinc-600 text-center py-6 select-none font-mono tracking-wide">
+                    -- Empty --
                   </div>
                 )}
               </div>
