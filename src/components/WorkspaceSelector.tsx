@@ -15,7 +15,8 @@ export const WorkspaceSelector: React.FC = () => {
     isSidebarVisible,
     isTaskCenterVisible,
     setSidebarVisible,
-    setTaskCenterVisible
+    setTaskCenterVisible,
+    showConfirmDialog
   } = useOrchestratorStore();
 
   const [wsName, setWsName] = useState("");
@@ -95,9 +96,13 @@ export const WorkspaceSelector: React.FC = () => {
               <button
                 onClick={() => {
                   const ws = workspaces.find(w => w.id === activeWorkspaceId);
-                  if (confirm(`Are you sure you want to delete workspace "${ws?.name}"? This will close all active terminal PTY sessions.`)) {
-                    deleteWorkspace(activeWorkspaceId);
-                  }
+                  showConfirmDialog(
+                    "Delete Current Workspace",
+                    `Are you sure you want to delete workspace "${ws?.name}"? This will close all active terminal PTY sessions.`,
+                    () => {
+                      deleteWorkspace(activeWorkspaceId);
+                    }
+                  );
                 }}
                 title="Delete Current Workspace"
                 className="p-1 hover:bg-rose-500/10 rounded border border-[#232329] hover:border-rose-500/35 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"

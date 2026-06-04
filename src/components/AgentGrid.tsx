@@ -78,7 +78,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`bg-[#08080c]/80 border rounded-lg p-3 flex flex-col justify-between shadow-sm transition-all duration-250 ${
+      className={`bg-[#08080c]/80 border rounded-lg p-3 flex flex-col justify-between shadow-sm transition-all duration-250 flex-shrink-0 ${
         isRunning
           ? "border-purple-500/30 bg-purple-500/[0.01]"
           : "border-[#1b1b22] hover:border-zinc-800"
@@ -254,6 +254,7 @@ export const AgentGrid: React.FC = () => {
   const checkAgentCli = useOrchestratorStore((s) => s.checkAgentCli);
   const spawnTeamTemplate = useOrchestratorStore((s) => s.spawnTeamTemplate);
   const updateAgent = useOrchestratorStore((s) => s.updateAgent);
+  const showAlertDialog = useOrchestratorStore((s) => s.showAlertDialog);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
@@ -373,7 +374,8 @@ export const AgentGrid: React.FC = () => {
     const projId =
       selectedTemplateProj || activeProjects[0]?.id;
     if (!projId) {
-      alert(
+      showAlertDialog(
+        "Project Required",
         "Please select or create a project first before spawning a team template."
       );
       return;
@@ -464,7 +466,10 @@ export const AgentGrid: React.FC = () => {
 
   const handleStartAgent = async (agent: AgentProfile) => {
     if (!agent.projectId) {
-      alert("Please assign a project to this agent first.");
+      showAlertDialog(
+        "Project Required",
+        "Please assign a project to this agent first before launching."
+      );
       return;
     }
     await spawnTerminal(agent.projectId, agent.id);
@@ -857,7 +862,10 @@ export const AgentGrid: React.FC = () => {
                             navigator.clipboard.writeText(
                               plugin.installHelp.command
                             );
-                            alert("Setup command copied!");
+                            showAlertDialog(
+                              "Clipboard Copy",
+                              "Setup command copied to clipboard!"
+                            );
                           }}
                           className="text-[9px] text-purple-400 hover:text-purple-300 transition-colors uppercase font-bold"
                         >

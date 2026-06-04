@@ -1,17 +1,17 @@
 /**
  * Multi Vibe — TerminalPane Component
  *
- * Renders a Warp-style block-based terminal view.
- * Handles PTY I/O, parses output into command blocks, and renders the command input editor.
+ * Renders a direct, interactive xterm.js terminal.
+ * Key input is forwarded directly to the backend PTY and output is rendered in real-time.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useTerminalStore } from '../../stores/terminalStore';
-import { BlockList } from './BlockList';
-import { TerminalInput } from './TerminalInput';
-import { BlockParser } from '../../lib/terminal/blockParser';
-import type { TerminalBlock } from '../../types/terminal';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { SerializeAddon } from '@xterm/addon-serialize';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import '@xterm/xterm/css/xterm.css';
 import './TerminalPane.css';
 
 interface TerminalPaneProps {
@@ -20,189 +20,171 @@ interface TerminalPaneProps {
 }
 
 export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused }) => {
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [currentCwd, setCurrentCwd] = useState('E:\\Codes\\BridgeSpace');
-  
-  const sessions = useTerminalStore((s) => s.sessions);
-  const createSessionStore = useTerminalStore((s) => s.createSession);
-  const addBlock = useTerminalStore((s) => s.addBlock);
-  const appendBlockOutput = useTerminalStore((s) => s.appendBlockOutput);
-  const updateBlockStatus = useTerminalStore((s) => s.updateBlockStatus);
-  const setActiveSession = useTerminalStore((s) => s.setActiveSession);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const serializeAddonRef = useRef<SerializeAddon | null>(null);
 
-  const activeBlockIdRef = useRef<string | null>(null);
-  const session = sessionId ? sessions.get(sessionId) : null;
+  const terminals = useOrchestratorStore((s) => s.terminals);
+  const updateTerminalHistory = useOrchestratorStore((s) => s.updateTerminalHistory);
 
-  // Initialize PTY Session on mount
+  const termSession = terminals.find((t) => t.id === paneId);
+
   useEffect(() => {
-    let unlistenOutput: (() => void) | null = null;
-    const parser = new BlockParser();
+    if (!containerRef.current) return;
 
-    const init = async () => {
+    // Initialize interactive xterm.js instance
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: 'var(--font-mono, monospace)',
+      fontSize: 12,
+      theme: {
+        background: '#0a0a0f',
+        foreground: '#e2e8f0',
+        cursor: '#8b5cf6',
+        black: '#0f0f15',
+        red: '#ef4444',
+        green: '#10b981',
+        yellow: '#f59e0b',
+        blue: '#3b82f6',
+        magenta: '#8b5cf6',
+        cyan: '#06b6d4',
+        white: '#cbd5e1',
+        brightBlack: '#475569',
+        brightRed: '#f87171',
+        brightGreen: '#34d399',
+        brightYellow: '#fbbf24',
+        brightBlue: '#60a5fa',
+        brightMagenta: '#a78bfa',
+        brightCyan: '#22d3ee',
+        brightWhite: '#f1f5f9',
+      },
+      allowProposedApi: true,
+      disableStdin: false, // Enable user keyboard input
+    });
+
+    const fitAddon = new FitAddon();
+    const serializeAddon = new SerializeAddon();
+    
+    term.loadAddon(fitAddon);
+    term.loadAddon(serializeAddon);
+    
+    term.open(containerRef.current);
+    
+    // Fit to parent container dimensions and initialize size in PTY
+    try {
+      fitAddon.fit();
+      invoke('resize_pty', {
+        sessionId: paneId,
+        rows: term.rows,
+        cols: term.cols,
+      }).catch(err => console.warn('Initial PTY resize failed:', err));
+    } catch (e) {
+      console.warn('Initial terminal fit failed:', e);
+    }
+
+    // Write session history if available
+    if (termSession?.history) {
+      term.write(termSession.history);
+    } else {
+      // Print welcome info if clean boot
+      term.writeln('\x1b[90m┌──────────────────────────────────────────────┐\x1b[0m');
+      term.writeln('\x1b[90m│\x1b[0m \x1b[1;35mMulti Vibe Interactive Terminal Workspace\x1b[0m    \x1b[90m│\x1b[0m');
+      term.writeln('\x1b[90m│\x1b[0m Direct shell execution enabled. Type to begin. \x1b[90m│\x1b[0m');
+      term.writeln('\x1b[90m└──────────────────────────────────────────────┘\x1b[0m');
+      term.writeln('');
+    }
+
+    termRef.current = term;
+    fitAddonRef.current = fitAddon;
+    serializeAddonRef.current = serializeAddon;
+
+    // Listen to user input and write directly to PTY
+    const onDataDisposable = term.onData(async (data) => {
       try {
-        // Connect to the orchestrator-spawned backend PTY session ID
-        const sId = paneId;
-        setSessionId(sId);
-        setActiveSession(sId);
-
-        // Register session in Zustand store if it doesn't exist
-        if (!sessions.has(sId)) {
-          createSessionStore({
-            id: sId,
-            shell: 'powershell',
-            shellName: 'PowerShell',
-            blocks: [],
-            activeBlockId: null,
-            cwd: currentCwd,
-            isConnected: true,
-            createdAt: new Date(),
-          });
-
-          // Create initial startup block
-          const startupBlockId = `startup-${Date.now()}`;
-          activeBlockIdRef.current = startupBlockId;
-          addBlock(sId, {
-            id: startupBlockId,
-            command: 'System Boot',
-            output: '',
-            status: 'running',
-            exitCode: null,
-            startTime: new Date(),
-            endTime: null,
-            pwd: currentCwd,
-            gitBranch: null,
-            isBookmarked: false,
-            isCollapsed: false,
-            agentId: null,
-            duration: null,
-          });
-        }
-
-        // Helper to check if text contains typical shell prompt endings
-        const isPrompt = (text: string): boolean => {
-          const trimmed = text.trim();
-          return trimmed.endsWith('>') || trimmed.endsWith('$') || trimmed.endsWith('%') || trimmed.endsWith('#');
-        };
-
-        // Listen to output event from backend PTY session (terminal:stdout)
-        unlistenOutput = await listen<{ sessionId: string; data: string }>(
-          'terminal:stdout',
-          (event) => {
-            if (event.payload.sessionId !== sId) return;
-
-            const rawChunk = event.payload.data;
-            
-            // Write to the current active block
-            const currentActiveBlockId = activeBlockIdRef.current;
-            if (currentActiveBlockId) {
-              appendBlockOutput(sId, currentActiveBlockId, rawChunk);
-              
-              // Fallback logic: if PTY outputs a prompt-like suffix, mark command as finished
-              if (isPrompt(rawChunk) && currentActiveBlockId !== `startup-${Date.now()}`) {
-                updateBlockStatus(sId, currentActiveBlockId, 'success', 0);
-              }
-            }
-
-            // Also check for OSC 133 markers using our stream parser
-            const events = parser.parse(rawChunk);
-            for (const ev of events) {
-              switch (ev.type) {
-                case 'command-done':
-                  if (activeBlockIdRef.current) {
-                    updateBlockStatus(sId, activeBlockIdRef.current, ev.exitCode === 0 ? 'success' : 'error', ev.exitCode);
-                    activeBlockIdRef.current = null;
-                  }
-                  break;
-                default:
-                  break;
-              }
-            }
-          }
-        );
+        await invoke('write_pty', { sessionId: paneId, data });
       } catch (err) {
-        console.error('Failed to initialize block PTY session:', err);
+        console.error('PTY write failed:', err);
       }
+    });
+
+    // Handle resizing
+    const onResizeDisposable = term.onResize(async ({ cols, rows }) => {
+      try {
+        await invoke('resize_pty', { sessionId: paneId, rows, cols });
+      } catch (err) {
+        console.warn('PTY resize failed:', err);
+      }
+    });
+
+    let saveTimeout: any = null;
+    const saveHistorySnapshot = () => {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        if (termRef.current && serializeAddonRef.current) {
+          try {
+            const snapshot = serializeAddonRef.current.serialize();
+            updateTerminalHistory(paneId, snapshot);
+          } catch (e) {
+            console.warn('Failed to serialize terminal history:', e);
+          }
+        }
+      }, 500);
     };
 
-    init();
+    // Listen to backend PTY stdout events
+    let unlistenOutput: (() => void) | null = null;
+    const registerListener = async () => {
+      unlistenOutput = await listen<{ sessionId: string; data: string }>(
+        'terminal:stdout',
+        (event) => {
+          if (event.payload.sessionId !== paneId) return;
+          term.write(event.payload.data);
+          saveHistorySnapshot();
+        }
+      );
+    };
+    registerListener();
 
-    // Clean up session and listeners on unmount
+    // Resize observer
+    const resizeObserver = new ResizeObserver(() => {
+      if (containerRef.current) {
+        try {
+          fitAddon.fit();
+        } catch (e) {
+          // ignore transient layout resize errors
+        }
+      }
+    });
+    resizeObserver.observe(containerRef.current);
+
+    // Focus terminal immediately on mount if it's focused
+    if (isFocused) {
+      term.focus();
+    }
+
     return () => {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      onDataDisposable.dispose();
+      onResizeDisposable.dispose();
+      resizeObserver.disconnect();
       if (unlistenOutput) {
         unlistenOutput();
       }
+      term.dispose();
     };
   }, [paneId]);
 
-  // Sync active session focus
+  // Focus terminal when isFocused prop changes
   useEffect(() => {
-    if (isFocused && sessionId) {
-      setActiveSession(sessionId);
+    if (isFocused && termRef.current) {
+      termRef.current.focus();
     }
-  }, [isFocused, sessionId]);
-
-  // Submit typed command to backend PTY
-  const handleCommandSubmit = async (command: string) => {
-    if (!sessionId) return;
-
-    // Detect CWD shifts (like cd codes) to update directory display
-    if (command.trim().startsWith('cd ')) {
-      const targetDir = command.trim().slice(3).replace(/["']/g, '');
-      // Try to evaluate new path (simple simulation of path traversal)
-      let nextDir = currentCwd;
-      if (targetDir === '..') {
-        const parts = currentCwd.split(/[\\/]/).filter(Boolean);
-        if (parts.length > 1) {
-          nextDir = parts.slice(0, -1).join('\\');
-        }
-      } else if (!targetDir.includes(':')) {
-        nextDir = `${currentCwd}\\${targetDir}`;
-      } else {
-        nextDir = targetDir;
-      }
-      setCurrentCwd(nextDir);
-    }
-
-    const blockId = `block-${Date.now()}`;
-    activeBlockIdRef.current = blockId;
-
-    // Create block for this command
-    const newBlock: TerminalBlock = {
-      id: blockId,
-      command,
-      output: '',
-      status: 'running',
-      exitCode: null,
-      startTime: new Date(),
-      endTime: null,
-      pwd: currentCwd,
-      gitBranch: null,
-      isBookmarked: false,
-      isCollapsed: false,
-      agentId: null,
-      duration: null,
-    };
-
-    addBlock(sessionId, newBlock);
-
-    // Write command to backend PTY
-    try {
-      await invoke('write_pty', {
-        sessionId,
-        data: `${command}\r\n`,
-      });
-    } catch (err) {
-      console.error('Failed to send command to PTY:', err);
-      appendBlockOutput(sessionId, blockId, `\r\n\x1b[31m[Error] Failed to execute command: ${err}\x1b[0m\r\n`);
-      updateBlockStatus(sessionId, blockId, 'error', 1);
-      activeBlockIdRef.current = null;
-    }
-  };
+  }, [isFocused]);
 
   return (
-    <div className="terminal-pane">
-      <BlockList sessionId={sessionId || ''} blocks={session?.blocks || []} />
-      <TerminalInput onSubmit={handleCommandSubmit} cwd={currentCwd} />
+    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#0a0a0f] p-2 font-mono overflow-hidden">
+      <div ref={containerRef} className="w-full h-full" style={{ minHeight: '100%' }} />
     </div>
   );
 };

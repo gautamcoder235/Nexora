@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Terminal as TerminalIcon, X, RefreshCw, Grid, AlignJustify, Maximize2, Minimize2 } from "lucide-react";
+import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -15,13 +15,7 @@ interface TerminalFrameProps {
 
 const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
-  const restartTerminal = useOrchestratorStore(s => s.restartTerminal);
   
-  const handleRestart = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    await restartTerminal(session.id);
-  };
-
   return (
     <div 
       className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all h-full min-h-0 ${
@@ -45,13 +39,6 @@ const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFoc
             className="hover:text-zinc-300 p-0.5 hover:bg-[#1a1a20] rounded"
           >
             {isFocused ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
-          </button>
-          <button 
-            onClick={handleRestart} 
-            title="Restart PTY shell"
-            className="hover:text-zinc-300 p-0.5 hover:bg-[#1a1a20] rounded"
-          >
-            <RefreshCw size={11} />
           </button>
           <button 
             onClick={(e) => { e.stopPropagation(); killTerminal(session.id); }} 

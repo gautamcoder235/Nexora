@@ -10,8 +10,10 @@ import { useOrchestratorStore } from "./stores/orchestratorStore";
 import { AnalyticsService } from "./services/analytics";
 import { invoke } from "@tauri-apps/api/core";
 import { ContextMenu } from "./components/ContextMenu";
+import { CustomDialog } from "./components/CustomDialog";
 function App() {
   const initStore = useOrchestratorStore(s => s.initStore);
+  const showConfirmDialog = useOrchestratorStore(s => s.showConfirmDialog);
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
   const workspaces = useOrchestratorStore(s => s.workspaces);
   const createWorkspace = useOrchestratorStore(s => s.createWorkspace);
@@ -167,9 +169,13 @@ function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (confirm(`Are you sure you want to delete workspace "${ws.name}"?`)) {
-                            useOrchestratorStore.getState().deleteWorkspace(ws.id);
-                          }
+                          showConfirmDialog(
+                            "Delete Workspace",
+                            `Are you sure you want to delete workspace "${ws.name}"?`,
+                            () => {
+                              useOrchestratorStore.getState().deleteWorkspace(ws.id);
+                            }
+                          );
                         }}
                         title="Delete Workspace Session"
                         className="p-2 hover:bg-rose-500/10 rounded border border-[#232329] hover:border-rose-500/30 text-zinc-500 hover:text-rose-400 transition-colors flex-shrink-0 cursor-pointer"
@@ -375,6 +381,7 @@ function App() {
         </div>
       </div>
       <ContextMenu />
+      <CustomDialog />
     </div>
   );
 }

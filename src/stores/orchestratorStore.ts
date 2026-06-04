@@ -16,6 +16,14 @@ import { EventBus } from "../core/events";
 import { agentTemplates } from "../agents/templates";
 import { PluginRegistry } from "../plugins";
 
+export interface DialogConfig {
+  type: 'alert' | 'confirm';
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel?: () => void;
+}
+
 interface OrchestratorState {
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
@@ -57,9 +65,9 @@ interface OrchestratorState {
   // Terminal actions
   spawnTerminal: (projectId: string, agentId?: string, customCommand?: string, customArgs?: string[]) => Promise<string>;
   killTerminal: (sessionId: string) => Promise<void>;
-  restartTerminal: (sessionId: string) => Promise<void>;
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
   updateTerminalHistory: (sessionId: string, history: string) => void;
+  reconnectTerminal: (sessionId: string) => Promise<void>;
   
   // Logger
   logActivity: (
@@ -80,6 +88,12 @@ interface OrchestratorState {
   checkAgentCli: (pluginId: string) => Promise<boolean>;
   spawnTeamTemplate: (projectId: string, templateId: string) => Promise<void>;
   updateAgent: (agentId: string, updates: Partial<AgentProfile>) => Promise<void>;
+  
+  // Dialog Actions
+  dialog: DialogConfig | null;
+  showAlertDialog: (title: string, message: string) => void;
+  showConfirmDialog: (title: string, message: string, onConfirm: () => void, onCancel?: () => void) => void;
+  closeDialog: () => void;
 }
 
 // Global agent runtime ticker timer
@@ -103,6 +117,40 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   isTaskCenterVisible: true,
   sidebarWidth: 480,
   topPanelHeight: 320,
+
+  dialog: null,
+  showAlertDialog: (title, message) => {
+    set({
+      dialog: {
+        type: 'alert',
+        title,
+        message,
+        onConfirm: () => {
+          get().closeDialog();
+        }
+      }
+    });
+  },
+  showConfirmDialog: (title, message, onConfirm, onCancel) => {
+    set({
+      dialog: {
+        type: 'confirm',
+        title,
+        message,
+        onConfirm: () => {
+          onConfirm();
+          get().closeDialog();
+        },
+        onCancel: () => {
+          if (onCancel) onCancel();
+          get().closeDialog();
+        }
+      }
+    });
+  },
+  closeDialog: () => {
+    set({ dialog: null });
+  },
 
   setSidebarVisible: (visible) => {
     set({ isSidebarVisible: visible });
@@ -512,98 +560,6 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     await get().saveSnapshot();
   },
 
-  restartTerminal: async (sessionId) => {
-    const term = get().terminals.find(t => t.id === sessionId);
-    if (!term) return;
-
-    const projectId = term.projectId;
-    const agentId = term.agentId;
-    const agent = agentId ? get().agents.find(a => a.id === agentId) : null;
-    const project = get().projects.find(p => p.id === projectId);
-    const fallbackPath = get().workspaces.find(w => w.id === get().activeWorkspaceId)?.rootPath || "";
-    const cwd = term.cwd || project?.path || fallbackPath;
-    const command = agent ? agent.cliCommand : term.command;
-    const args = agent ? agent.arguments : term.args;
-    const env = agent ? agent.env : (term.env || {});
-
-    set((state) => ({
-      terminals: state.terminals.map((terminal) =>
-        terminal.id === sessionId
-          ? { ...terminal, status: 'reconnecting' as const, command, args, cwd, env }
-          : terminal
-      )
-    }));
-
-    try {
-      await invoke("kill_pty", { sessionId });
-    } catch (e) {
-      console.warn("Failed to kill PTY process before restart:", e);
-    }
-
-    try {
-      await invoke("spawn_pty", {
-        sessionId,
-        command,
-        args,
-        cwd,
-        env
-      });
-
-      set((state) => {
-        const updatedAgents = state.agents.map((a) => {
-          if (agent && a.id === agent.id) {
-            return {
-              ...a,
-              status: 'running' as AgentStatus,
-              terminalSessionIds: a.terminalSessionIds.includes(sessionId)
-                ? a.terminalSessionIds
-                : [...a.terminalSessionIds, sessionId],
-              lastActive: new Date().toISOString()
-            };
-          }
-          return a;
-        });
-
-        return {
-          agents: updatedAgents,
-          terminals: state.terminals.map((terminal) =>
-            terminal.id === sessionId
-              ? { ...terminal, status: 'connected' as const }
-              : terminal
-          )
-        };
-      });
-
-      EventBus.publish("terminal:spawned", { sessionId, projectId });
-      get().logActivity('terminal', 'info', `Restarted terminal "${term.title}" in place`, projectId, agentId);
-
-      if (agent && agent.startupInstructions && agent.startupInstructions.length > 0) {
-        setTimeout(async () => {
-          for (const inst of agent.startupInstructions || []) {
-            try {
-              await invoke("write_pty", { sessionId, data: `${inst}\r` });
-              await new Promise(r => setTimeout(r, 700));
-            } catch (err) {
-              console.warn(`Startup instruction failed in terminal "${sessionId}":`, err);
-            }
-          }
-        }, 1200);
-      }
-    } catch (e) {
-      console.error("PTY restart failed:", e);
-      set((state) => ({
-        terminals: state.terminals.map((terminal) =>
-          terminal.id === sessionId
-            ? { ...terminal, status: 'disconnected' as const }
-            : terminal
-        )
-      }));
-      get().logActivity('terminal', 'error', `PTY restart failed: ${e}`, projectId, agentId);
-    }
-
-    await get().saveSnapshot();
-  },
-
   changeLayoutType: (layoutType) => {
     set((state) => ({
       layout: {
@@ -622,6 +578,48 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           : terminal
       )
     }));
+  },
+
+  reconnectTerminal: async (sessionId) => {
+    const term = get().terminals.find(t => t.id === sessionId);
+    if (!term) return;
+
+    try {
+      await invoke("spawn_pty", {
+        sessionId,
+        command: term.command || null,
+        args: term.args || null,
+        cwd: term.cwd || null,
+        env: term.env || null
+      });
+
+      set((state) => {
+        const updatedTerminals = state.terminals.map(t =>
+          t.id === sessionId ? { ...t, status: 'connected' as const } : t
+        );
+        const updatedAgents = state.agents.map(a => {
+          if (term.agentId && a.id === term.agentId) {
+            return { ...a, status: 'running' as const };
+          }
+          return a;
+        });
+        return { terminals: updatedTerminals, agents: updatedAgents };
+      });
+    } catch (e) {
+      console.error(`Failed to reconnect PTY session ${sessionId}:`, e);
+      set((state) => {
+        const updatedTerminals = state.terminals.map(t =>
+          t.id === sessionId ? { ...t, status: 'disconnected' as const } : t
+        );
+        const updatedAgents = state.agents.map(a => {
+          if (term.agentId && a.id === term.agentId) {
+            return { ...a, status: 'idle' as const };
+          }
+          return a;
+        });
+        return { terminals: updatedTerminals, agents: updatedAgents };
+      });
+    }
   },
 
   logActivity: (sourceType, severity, message, projectId, agentId, taskId) => {
@@ -705,17 +703,20 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       if (snapStr && snapStr !== "{}") {
         const snapshot = JSON.parse(snapStr) as WorkspaceSnapshot;
 
-        // Restore terminals (but mark them as disconnected since PTY processes are not running)
+        // Restore terminals (but mark them as disconnected initially since PTY processes are not running)
         const restoredTerminals = (snapshot.terminals || []).map(t => ({
           ...t,
           status: 'disconnected' as const
         }));
         const restoredTerminalIds = new Set(restoredTerminals.map((terminal) => terminal.id));
+        
+        // Clean up agent statuses if their terminal IDs are not in the restored terminals list
         const restoredAgents = (snapshot.agents || []).map((agent) => {
-          const hasRestoredTerminal = agent.terminalSessionIds.some((id) => restoredTerminalIds.has(id));
-          return hasRestoredTerminal
-            ? { ...agent, status: 'idle' as AgentStatus }
-            : agent;
+          const hasTerminal = agent.terminalSessionIds.some((id) => restoredTerminalIds.has(id));
+          if (!hasTerminal && agent.status === 'running') {
+            return { ...agent, status: 'idle' as const };
+          }
+          return agent;
         });
 
         set({
@@ -729,6 +730,11 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 480,
           topPanelHeight: snapshot.topPanelHeight !== undefined ? snapshot.topPanelHeight : 320
         });
+
+        // Trigger reconnect for each restored terminal session asynchronously
+        for (const term of restoredTerminals) {
+          get().reconnectTerminal(term.id);
+        }
       }
     } catch (e) {
       console.error(`Failed to load WorkspaceSnapshot for ID "${activeWorkspaceId}":`, e);
