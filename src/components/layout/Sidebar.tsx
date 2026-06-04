@@ -28,15 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ style }) => {
         </svg>
       ),
     },
-    {
-      id: 'files',
-      label: 'Workspace Files',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-      ),
-    },
+
     {
       id: 'memory',
       label: 'BridgeMemory',
@@ -88,27 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ style }) => {
             </div>
           </div>
         );
-      case 'files':
-        return (
-          <div className="sidebar__panel-content animate-fade-in">
-            <h3 className="sidebar__panel-title">File Explorer</h3>
-            <p className="sidebar__panel-desc">Explore files in the current BridgeSpace workspace.</p>
-            <div className="sidebar__file-tree font-mono text-sm">
-              <div className="sidebar__file-item sidebar__file-item--dir">
-                📁 src-tauri
-              </div>
-              <div className="sidebar__file-item sidebar__file-item--dir">
-                📁 src
-              </div>
-              <div className="sidebar__file-item sidebar__file-item--file">
-                📄 package.json
-              </div>
-              <div className="sidebar__file-item sidebar__file-item--file">
-                📄 tsconfig.json
-              </div>
-            </div>
-          </div>
-        );
+
       case 'memory':
         return (
           <div className="sidebar__panel-content animate-fade-in">
