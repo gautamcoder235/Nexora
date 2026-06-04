@@ -68,7 +68,6 @@ interface OrchestratorState {
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
   updateTerminalHistory: (sessionId: string, history: string) => void;
   reconnectTerminal: (sessionId: string) => Promise<void>;
-  launchExternalWezTerm: (sessionId: string) => Promise<void>;
   
   // Logger
   logActivity: (
@@ -116,7 +115,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   tasks: [],
   isSidebarVisible: true,
   isTaskCenterVisible: true,
-  sidebarWidth: 480,
+  sidebarWidth: 490,
   topPanelHeight: 320,
 
   dialog: null,
@@ -623,26 +622,6 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     }
   },
 
-  launchExternalWezTerm: async (sessionId) => {
-    const term = get().terminals.find(t => t.id === sessionId);
-    if (!term) return;
-
-    try {
-      await invoke("open_external_wezterm", {
-        cwd: term.cwd,
-        command: term.command || null,
-        args: term.args || null
-      });
-      get().logActivity('terminal', 'info', `Launched external WezTerm terminal window for session: ${term.title}`, term.projectId, term.agentId);
-    } catch (e: any) {
-      console.error(e);
-      get().showAlertDialog(
-        "Launch External Terminal Failed",
-        e.toString() || "Could not launch WezTerm. Make sure it is installed and in your environment PATH variables."
-      );
-    }
-  },
-
   logActivity: (sourceType, severity, message, projectId, agentId, taskId) => {
     const newLog: ActivityLog = {
       id: Math.random().toString(36).substring(7),
@@ -748,7 +727,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           layout: snapshot.layout || { type: 'grid', panels: [] },
           isSidebarVisible: snapshot.isSidebarVisible !== undefined ? snapshot.isSidebarVisible : true,
           isTaskCenterVisible: snapshot.isTaskCenterVisible !== undefined ? snapshot.isTaskCenterVisible : true,
-          sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 480,
+          sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 490,
           topPanelHeight: snapshot.topPanelHeight !== undefined ? snapshot.topPanelHeight : 320
         });
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2, ExternalLink } from "lucide-react";
+import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -15,7 +15,6 @@ interface TerminalFrameProps {
 
 const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
-  const launchExternalWezTerm = useOrchestratorStore(s => s.launchExternalWezTerm);
   
   return (
     <div 
@@ -34,13 +33,6 @@ const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, onFoc
         </div>
 
         <div className="flex items-center gap-2 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
-          <button 
-            onClick={(e) => { e.stopPropagation(); launchExternalWezTerm(session.id); }} 
-            title="Open in External WezTerm"
-            className="hover:text-purple-400 p-0.5 hover:bg-[#1a1a20] rounded"
-          >
-            <ExternalLink size={11} />
-          </button>
           <button 
             onClick={(e) => { e.stopPropagation(); onFocusToggle(); }} 
             title={isFocused ? "Exit Focus Mode" : "Focus Session"}
@@ -117,16 +109,24 @@ export const TerminalWorkspace: React.FC = () => {
 
   // Calculate layout classes
   let containerClass = "grid gap-1.5 flex-1 min-h-0 ";
+  let customStyle: React.CSSProperties = {};
+
   if (layout.type === 'grid') {
     if (terminals.length === 1) {
       containerClass += "grid-cols-1 grid-rows-1";
     } else if (terminals.length === 2) {
-      containerClass += "grid-cols-2 grid-rows-1";
+      containerClass += "grid-rows-1";
+      customStyle = { gridTemplateColumns: "490px 1fr" };
     } else {
       containerClass += "grid-cols-2 lg:grid-cols-3 auto-rows-fr";
     }
   } else if (layout.type === 'vertical') {
-    containerClass += "grid-flow-col auto-cols-fr grid-rows-1";
+    if (terminals.length === 2) {
+      containerClass += "grid-rows-1";
+      customStyle = { gridTemplateColumns: "490px 1fr" };
+    } else {
+      containerClass += "grid-flow-col auto-cols-fr grid-rows-1";
+    }
   } else {
     containerClass += "grid-cols-1 auto-rows-fr";
   }
@@ -191,7 +191,7 @@ export const TerminalWorkspace: React.FC = () => {
       </div>
 
       {/* Render Grid/Spits of terminals */}
-      <div className={containerClass}>
+      <div className={containerClass} style={customStyle}>
         {terminals.map((session) => (
           <TerminalFrame 
             key={session.id} 
