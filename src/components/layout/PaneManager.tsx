@@ -49,26 +49,21 @@ const PaneNodeRenderer: React.FC<PaneNodeRendererProps> = ({ node }) => {
           width: '100%', 
           height: '100%',
           flex: node.ratio,
+          gap: '12px',
         }}
       >
-        {node.children.map((child, idx) => (
-          <React.Fragment key={child.id}>
-            {idx > 0 && (
-              <div 
-                className={`pane-divider pane-divider--${node.splitDirection}`} 
-              />
-            )}
-            <div 
-              style={{ 
-                flex: child.ratio, 
-                display: 'flex',
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              <PaneNodeRenderer node={child} />
-            </div>
-          </React.Fragment>
+        {node.children.map((child) => (
+          <div 
+            key={child.id}
+            style={{ 
+              flex: child.ratio, 
+              display: 'flex',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <PaneNodeRenderer node={child} />
+          </div>
         ))}
       </div>
     );

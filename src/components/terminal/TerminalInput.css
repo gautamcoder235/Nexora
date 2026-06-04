@@ -7,11 +7,14 @@
   align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  background-color: rgba(10, 10, 18, 0.7) !important;
-  border: 1px solid var(--border-glass) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-lg);
-  margin-top: var(--space-3);
+  background-color: rgba(10, 10, 15, 0.2) !important;
+  border-top: 1px solid var(--border-glass) !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin-top: 0;
   flex-shrink: 0;
   align-self: stretch;
 }

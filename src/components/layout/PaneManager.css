@@ -9,6 +9,8 @@
   overflow: hidden;
   position: relative;
   background-color: var(--bg-primary);
+  padding: 12px;
+  gap: 12px;
 }
 
 .pane-node {
@@ -22,18 +24,23 @@
   height: 100%;
   width: 100%;
   border: 1px solid var(--border-glass);
-  background-color: rgba(10, 10, 15, 0.2);
-  transition: border-color var(--transition-fast);
+  background-color: rgba(14, 14, 22, 0.55);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-smooth);
 }
 
 .pane-node--focused {
-  border-color: rgba(var(--accent-primary-rgb), 0.4);
-  box-shadow: inset 0 0 0 1px rgba(var(--accent-primary-rgb), 0.2);
+  border-color: rgba(245, 158, 11, 0.65);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.15), inset 0 0 0 1px rgba(245, 158, 11, 0.2);
 }
 
 .pane-node__header {
-  height: 28px;
-  background-color: rgba(18, 18, 28, 0.85);
+  height: 32px;
+  background-color: rgba(10, 10, 15, 0.4);
   border-bottom: 1px solid var(--border-glass);
   display: flex;
   justify-content: space-between;
@@ -44,8 +51,8 @@
 }
 
 .pane-node--focused .pane-node__header {
-  background-color: rgba(var(--accent-primary-rgb), 0.08);
-  border-bottom-color: rgba(var(--accent-primary-rgb), 0.2);
+  background-color: rgba(245, 158, 11, 0.08);
+  border-bottom-color: rgba(245, 158, 11, 0.2);
 }
 
 .pane-node__title {
