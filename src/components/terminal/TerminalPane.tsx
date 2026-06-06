@@ -9,10 +9,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { SerializeAddon } from '@xterm/addon-serialize';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { TerminalBufferManager } from '../../services/TerminalBufferManager';
 import '@xterm/xterm/css/xterm.css';
 import './TerminalPane.css';
 
@@ -22,19 +22,16 @@ interface TerminalPaneProps {
   isAnimating: boolean;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused, isAnimating }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const serializeAddonRef = useRef<SerializeAddon | null>(null);
   const isAnimatingRef = useRef<boolean>(isAnimating);
 
   // Sync the ref synchronously during render to prevent layout reflow race conditions
   isAnimatingRef.current = isAnimating;
 
   const terminals = useOrchestratorStore((s) => s.terminals);
-  const updateTerminalHistory = useOrchestratorStore((s) => s.updateTerminalHistory);
-
   const termSession = terminals.find((t) => t.id === paneId);
 
   useEffect(() => {
@@ -70,32 +67,54 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused, i
     });
 
     const fitAddon = new FitAddon();
-    const serializeAddon = new SerializeAddon();
-    
     term.loadAddon(fitAddon);
-    term.loadAddon(serializeAddon);
-    
+
+    // Helper to safely check if WebGL2 is supported by the environment
+    const isWebGL2Supported = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        return !!(window.WebGL2RenderingContext && canvas.getContext('webgl2'));
+      } catch (e) {
+        return false;
+      }
+    };
+
     // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-        // Fallback to Canvas renderer if WebGL context is lost
+    if (isWebGL2Supported()) {
+      try {
+        const webglAddon = new WebglAddon();
+        
+        // Safely handle WebGL context loss
+        webglAddon.onContextLoss(() => {
+          console.warn('WebGL context lost. Disposing and falling back to Canvas renderer.');
+          webglAddon.dispose();
+          
+          try {
+            const canvasAddon = new CanvasAddon();
+            term.loadAddon(canvasAddon);
+          } catch (e) {
+            console.warn('Canvas fallback failed. Using standard DOM renderer.', e);
+          }
+        });
+
+        term.loadAddon(webglAddon);
+      } catch (e) {
+        console.warn('WebGL renderer initialization failed:', e);
         try {
           const canvasAddon = new CanvasAddon();
           term.loadAddon(canvasAddon);
-        } catch (e) {
-          console.warn('Canvas renderer fallback failed:', e);
+        } catch (err) {
+          console.warn('Canvas initialization failed, falling back to standard DOM renderer:', err);
         }
-      });
-      term.loadAddon(webglAddon);
-    } catch (e) {
-      console.warn('WebGL renderer initialization failed, trying Canvas renderer:', e);
+      }
+    } else {
+      // If WebGL2 is not supported, fallback cleanly without attempting initialization
+      console.warn('WebGL2 not supported. Falling back to Canvas renderer.');
       try {
         const canvasAddon = new CanvasAddon();
         term.loadAddon(canvasAddon);
       } catch (err) {
-        console.warn('Canvas renderer initialization failed, falling back to standard DOM renderer:', err);
+        console.warn('Canvas initialization failed, falling back to standard DOM renderer:', err);
       }
     }
     
@@ -113,19 +132,36 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused, i
       console.warn('Initial terminal fit failed:', e);
     }
 
-    // Restore serialized history for all sessions EXCEPT 'reconnecting'.
-    // If a session is 'reconnecting', a fresh PTY is booting and will output
-    // its own initial state. Writing history then would cause overlapping duplicates.
-    // For live ('connected') sessions, standard shells (bash, python) NEED this
-    // history restored to not appear blank on remount. Ink-based CLIs will have
-    // their viewport safely cleared during the initial resize to prevent duplication.
-    if (termSession?.history && termSession.status !== 'reconnecting') {
-      term.write(termSession.history);
+    // Restore history safely from standalone Buffer Manager
+    const bufferManager = TerminalBufferManager.getInstance();
+    const historyPayload = bufferManager.getSnapshot(paneId);
+    if (historyPayload && termSession?.status !== 'reconnecting') {
+      term.write(historyPayload);
     }
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
-    serializeAddonRef.current = serializeAddon;
+
+    // Custom Key Event Handler for Clipboard (Copy/Paste)
+    term.attachCustomKeyEventHandler((arg) => {
+      // Handle Copy: Ctrl+C or Cmd+C (only if text is selected, otherwise send SIGINT)
+      // Also allow Ctrl+Shift+C explicitly for copying
+      if ((arg.ctrlKey || arg.metaKey) && arg.code === 'KeyC' && arg.type === 'keydown') {
+        const selection = term.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection);
+          return false; // Prevent xterm from sending ^C to the process
+        }
+      }
+      
+      // Handle Paste: Ctrl+V or Cmd+V
+      // xterm usually handles native paste events, but this is a fallback intercept
+      if ((arg.ctrlKey || arg.metaKey) && arg.code === 'KeyV' && arg.type === 'keydown') {
+        return true; // Let browser handle paste
+      }
+      
+      return true;
+    });
 
     // Listen to user input and write directly to PTY
     const onDataDisposable = term.onData(async (data) => {
@@ -159,47 +195,42 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused, i
       }
     });
 
-    let saveTimeout: any = null;
-    const saveHistorySnapshot = () => {
-      if (saveTimeout) clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => {
-        if (termRef.current && serializeAddonRef.current) {
-          try {
-            const snapshot = serializeAddonRef.current.serialize();
-            updateTerminalHistory(paneId, snapshot);
-          } catch (e) {
-            console.warn('Failed to serialize terminal history:', e);
+    // --- Terminal Buffer Manager Subscription & Dirty-Write Coalescing ---
+    let writeQueue = '';
+    let coalesceFrameId: number | null = null;
+    
+    bufferManager.subscribe(paneId, (chunk) => {
+      writeQueue += chunk.data;
+      
+      // Coalesce multiple chunks arriving within the same frame
+      if (coalesceFrameId === null) {
+        coalesceFrameId = requestAnimationFrame(() => {
+          if (writeQueue.length > 0) {
+            const startWrite = performance.now();
+            term.write(writeQueue);
+            const endWrite = performance.now();
+            
+            // Frame-Time metrics
+            const writeDuration = endWrite - startWrite;
+            if (writeDuration > 10) {
+              console.warn(`[TerminalPane ${paneId}] Slow xterm.write: ${writeDuration.toFixed(2)}ms for ${new Blob([writeQueue]).size} bytes`);
+            }
+            writeQueue = '';
           }
-        }
-      }, 500);
-    };
+          coalesceFrameId = null;
+        });
+      }
+    });
 
-    // Listen to backend PTY stdout events.
-    // Use a `disposed` flag to handle the async registration race:
-    // if the component unmounts before `listen()` resolves, the cleanup
-    // function sets `disposed = true` so the resolved unlisten is called immediately.
     let disposed = false;
-    let unlistenOutput: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
 
     const registerListeners = async () => {
-      const unlisten1 = await listen<{ sessionId: string; data: string }>(
-        'terminal:stdout',
-        (event) => {
-          if (event.payload.sessionId !== paneId) return;
-          term.write(event.payload.data);
-          saveHistorySnapshot();
-        }
-      );
-      if (disposed) { unlisten1(); return; }
-      unlistenOutput = unlisten1;
-
       // Listen for PTY exit to update terminal status
       const unlisten2 = await listen<{ sessionId: string }>(
         'terminal:exit',
         (event) => {
           if (event.payload.sessionId !== paneId) return;
-          // Update store status to 'disconnected' so UI reflects dead PTY
           useOrchestratorStore.getState().updateTerminalStatus(paneId, 'disconnected');
         }
       );
@@ -233,20 +264,13 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused, i
 
     return () => {
       disposed = true;
-      if (saveTimeout) {
-        clearTimeout(saveTimeout);
-        // Flush any pending history snapshot immediately before unmount to prevent data loss
-        if (termRef.current && serializeAddonRef.current) {
-          try {
-            useOrchestratorStore.getState().updateTerminalHistory(paneId, serializeAddonRef.current.serialize());
-          } catch (e) {}
-        }
-      }
+      bufferManager.unsubscribe(paneId);
+      if (coalesceFrameId !== null) cancelAnimationFrame(coalesceFrameId);
+      
       if (resizeTimeout) clearTimeout(resizeTimeout);
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
       resizeObserver.disconnect();
-      if (unlistenOutput) unlistenOutput();
       if (unlistenExit) unlistenExit();
       term.dispose();
     };
@@ -276,8 +300,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ paneId, isFocused, i
   }, [isAnimating]);
 
   return (
-    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#0a0a0f] p-2 font-mono overflow-hidden">
+    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#0a0a0f] font-mono overflow-hidden">
       <div ref={containerRef} className="w-full h-full" style={{ minHeight: '100%' }} />
     </div>
   );
-};
+});

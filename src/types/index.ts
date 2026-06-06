@@ -65,7 +65,7 @@ export interface TerminalSession {
   status: TerminalStatus;
   cols: number;
   rows: number;
-  history?: string; // Serialized xterm terminal history snapshot
+  history?: string; // Only used for disk serialization, NOT kept in React state
   command?: string;
   args?: string[];
   cwd?: string;

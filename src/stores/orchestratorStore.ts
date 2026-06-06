@@ -15,6 +15,7 @@ import {
 import { EventBus } from "../core/events";
 import { agentTemplates } from "../agents/templates";
 import { PluginRegistry } from "../plugins";
+import { TerminalBufferManager } from "../services/TerminalBufferManager";
 
 export interface DialogConfig {
   type: 'alert' | 'confirm';
@@ -66,7 +67,6 @@ interface OrchestratorState {
   spawnTerminal: (projectId: string, agentId?: string, customCommand?: string, customArgs?: string[]) => Promise<string>;
   killTerminal: (sessionId: string) => Promise<void>;
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
-  updateTerminalHistory: (sessionId: string, history: string) => void;
   updateTerminalStatus: (sessionId: string, status: import('../types').TerminalStatus) => void;
   reconnectTerminal: (sessionId: string) => Promise<void>;
   
@@ -571,16 +571,6 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     get().saveSnapshot();
   },
 
-  updateTerminalHistory: (sessionId, history) => {
-    set((state) => ({
-      terminals: state.terminals.map((terminal) =>
-        terminal.id === sessionId
-          ? { ...terminal, history }
-          : terminal
-      )
-    }));
-  },
-
   updateTerminalStatus: (sessionId, status) => {
     set((state) => ({
       terminals: state.terminals.map((terminal) =>
@@ -683,10 +673,16 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
       // 2. If a workspace is active, save its active layout session snapshot
       if (state.activeWorkspaceId) {
+        // Inject history payloads dynamically into the snapshot to avoid storing them in React
+        const terminalsWithHistory = state.terminals.map(t => ({
+          ...t,
+          history: TerminalBufferManager.getInstance().getSnapshot(t.id)
+        }));
+
         const snapPayload: WorkspaceSnapshot = {
           workspaceId: state.activeWorkspaceId,
           sessionId: state.activeSessionId || Math.random().toString(36).substring(7),
-          terminals: state.terminals,
+          terminals: terminalsWithHistory,
           agents: state.agents,
           tasks: state.tasks,
           layout: state.layout,
@@ -724,10 +720,19 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         // serialized history to the xterm buffer. Then reconnectTerminal spawns a new PTY
         // which outputs fresh content on top of the old history, causing duplication.
         // 'reconnecting' tells TerminalPane to skip history and wait for live PTY output.
-        const restoredTerminals = (snapshot.terminals || []).map(t => ({
-          ...t,
-          status: 'reconnecting' as const
-        }));
+        const restoredTerminals = (snapshot.terminals || []).map(t => {
+          // Restore the history payload to the standalone TerminalBufferManager
+          if (t.history) {
+            TerminalBufferManager.getInstance().append(t.id, t.history);
+          }
+          // Strip history from Zustand state to prevent React from owning large string buffers
+          const { history, ...termWithoutHistory } = t;
+          
+          return {
+            ...termWithoutHistory,
+            status: 'reconnecting' as const
+          };
+        });
         const restoredTerminalIds = new Set(restoredTerminals.map((terminal) => terminal.id));
         
         // Clean up agent statuses if their terminal IDs are not in the restored terminals list

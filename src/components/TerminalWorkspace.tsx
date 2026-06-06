@@ -14,7 +14,7 @@ interface TerminalFrameProps {
   onFocusToggle: (element: HTMLElement | null) => void;
 }
 
-const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, isAnimating, onFocusToggle }) => {
+const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
   const frameRef = useRef<HTMLDivElement>(null);
   
@@ -59,7 +59,7 @@ const TerminalFrame: React.FC<TerminalFrameProps> = ({ session, isFocused, isAni
       </div>
     </div>
   );
-};
+});
 
 
 // ==========================================

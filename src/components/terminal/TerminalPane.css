@@ -19,33 +19,28 @@
   height: 100%;
 }
 
-/* Override xterm.js defaults to fit our glass theme */
 .terminal-pane .xterm {
   padding: 0;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex;
+  justify-content: center; /* Centers the xterm canvas to split the fractional gap evenly */
 }
 
 .terminal-pane .xterm-viewport {
   background-color: transparent !important;
-  /* Thin custom scrollbar */
-  scrollbar-width: thin;
-  scrollbar-color: var(--accent-primary) rgba(0, 0, 0, 0.2);
+  width: 100% !important;
+  /* Hide scrollbar entirely for a cleaner, premium look */
+  scrollbar-width: none;
 }
 
+.terminal-pane .xterm-screen {
+  /* Do not force width to 100% to avoid blurry canvas rendering */
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
 .terminal-pane .xterm-viewport::-webkit-scrollbar {
-  width: 6px;
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--border-glass-hover);
-  border-radius: var(--radius-full);
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-primary);
+  display: none;
 }
 
 .terminal-pane .xterm-rows {

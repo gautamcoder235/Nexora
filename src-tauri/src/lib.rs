@@ -20,6 +20,13 @@ fn get_sessions() -> &'static Mutex<HashMap<String, PtySession>> {
     PTY_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+// Global thread-safe terminal visibility registry
+static SESSION_VISIBILITIES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn get_visibilities() -> &'static Mutex<HashMap<String, String>> {
+    SESSION_VISIBILITIES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 #[derive(serde::Serialize, Clone)]
 struct PtyOutput {
     #[serde(rename = "sessionId")]
@@ -101,25 +108,98 @@ fn spawn_pty(
     let session_id_clone = session_id.clone();
     let app_clone = app.clone();
 
+    // 1. Create a bounded channel with capacity 1024 to create backpressure
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+
+    // 2. PTY Reader Thread (Blocking)
+    let thread_session_id = session_id_clone.clone();
     std::thread::spawn(move || {
         let mut buffer = [0u8; 8192];
+        let mut backpressure_events = 0;
+        
         loop {
             match reader.read(&mut buffer) {
-                Ok(0) => break, // Process EOF
+                Ok(0) => break, // EOF, PTY closed
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buffer[..n]).to_string();
-                    let _ = app_clone.emit("terminal:stdout", PtyOutput {
-                        session_id: session_id_clone.clone(),
-                        data,
-                    });
+                    // Try to send immediately. If full, backpressure activated!
+                    let data = buffer[..n].to_vec();
+                    if let Err(tokio::sync::mpsc::error::TrySendError::Full(returned_data)) = tx.try_send(data.clone()) {
+                        backpressure_events += 1;
+                        if backpressure_events % 100 == 1 {
+                            println!("[Telemetry] Session {} hit backpressure {} times.", thread_session_id, backpressure_events);
+                        }
+                        // Fallback to blocking send to ensure zero data loss
+                        if tx.blocking_send(returned_data).is_err() {
+                            break;
+                        }
+                    } else if tx.is_closed() {
+                        break;
+                    }
                 }
                 Err(_) => break, // Reader broken
             }
         }
-        // Emit terminal exit notification
-        let _ = app_clone.emit("terminal:exit", PtyExit {
-            session_id: session_id_clone,
-        });
+        if backpressure_events > 0 {
+            println!("[Telemetry] Session {} finished. Experienced backpressure {} times.", thread_session_id, backpressure_events);
+        }
+    });
+
+    // 3. Batching / Emitter Task (Async)
+    tauri::async_runtime::spawn(async move {
+        // Setup 60Hz interval (~16.6ms) for Visible, hidden will hoard more
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(16));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        
+        let mut buffer: Vec<u8> = Vec::new();
+        
+        // Ensure visibility is registered by default
+        get_visibilities().lock().unwrap().insert(session_id_clone.clone(), "Visible".to_string());
+
+        loop {
+            tokio::select! {
+                // Wait for interval tick
+                _ = interval.tick() => {
+                    if !buffer.is_empty() {
+                        let vis = get_visibilities().lock().unwrap().get(&session_id_clone).cloned().unwrap_or_else(|| "Visible".to_string());
+                        
+                        let should_emit = match vis.as_str() {
+                            "Visible" => true, // Emit 60Hz
+                            "Hidden" | "Background" => buffer.len() > 1024 * 512, // Hoard up to 512KB to save CPU
+                            _ => true,
+                        };
+
+                        if should_emit {
+                            emit_buffer(&app_clone, &session_id_clone, &mut buffer);
+                        }
+                    }
+                }
+                
+                // Wait for new data from PTY
+                msg = rx.recv() => {
+                    match msg {
+                        Some(data) => {
+                            buffer.extend(data);
+                            // Safety max threshold: Even if hidden, if buffer hits 5MB, force emit to not OOM
+                            if buffer.len() > 1024 * 1024 * 5 { 
+                                emit_buffer(&app_clone, &session_id_clone, &mut buffer);
+                            }
+                        }
+                        None => {
+                            // Channel closed (Reader thread exited). Flush remaining & exit.
+                            if !buffer.is_empty() {
+                                emit_buffer(&app_clone, &session_id_clone, &mut buffer);
+                            }
+
+                            // Emit terminal exit notification
+                            let _ = app_clone.emit("terminal:exit", PtyExit {
+                                session_id: session_id_clone,
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     });
 
     // Save PTY session
@@ -140,6 +220,36 @@ fn spawn_pty(
     });
 
     Ok(())
+}
+
+// Helper to emit and clear buffer with UTF-8 Splice Safety
+fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) {
+    // Safety against slicing a multi-byte unicode character
+    match std::str::from_utf8(buffer) {
+        Ok(valid_str) => {
+            let _ = app.emit("terminal:stdout", PtyOutput {
+                session_id: session_id.to_string(),
+                data: valid_str.to_string(),
+            });
+            buffer.clear();
+        }
+        Err(e) => {
+            let valid_len = e.valid_up_to();
+            if valid_len > 0 {
+                let valid_str = unsafe { std::str::from_utf8_unchecked(&buffer[..valid_len]) };
+                let _ = app.emit("terminal:stdout", PtyOutput {
+                    session_id: session_id.to_string(),
+                    data: valid_str.to_string(),
+                });
+                buffer.drain(..valid_len); // Leave incomplete bytes for next tick
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn set_terminal_visibility(session_id: String, visibility: String) {
+    get_visibilities().lock().unwrap().insert(session_id, visibility);
 }
 
 #[tauri::command]
@@ -277,7 +387,8 @@ pub fn run() {
             load_config,
             check_cli_tool,
             read_project_file,
-            write_project_file
+            write_project_file,
+            set_terminal_visibility,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
