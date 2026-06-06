@@ -32,6 +32,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   isAnimatingRef.current = isAnimating;
 
   const terminals = useOrchestratorStore((s) => s.terminals);
+  const settings = useOrchestratorStore((s) => s.settings);
   const termSession = terminals.find((t) => t.id === paneId);
 
   useEffect(() => {
@@ -39,8 +40,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
     // Initialize interactive xterm.js instance
     const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 12,
+      cursorBlink: settings.cursorBlink,
+      cursorStyle: settings.cursorStyle as any,
+      fontSize: settings.fontSize,
+      fontFamily: settings.fontFamily,
       theme: {
         background: '#0a0a0f',
         foreground: '#e2e8f0',
@@ -80,7 +83,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     };
 
     // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
-    if (isWebGL2Supported()) {
+    if (settings.hardwareAcceleration && isWebGL2Supported()) {
       try {
         const webglAddon = new WebglAddon();
         
@@ -163,6 +166,15 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       return true;
     });
 
+    if (settings.copyOnSelect) {
+      term.onSelectionChange(() => {
+        const selection = term.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection).catch(() => {});
+        }
+      });
+    }
+
     // Listen to user input and write directly to PTY
     const onDataDisposable = term.onData(async (data) => {
       try {
@@ -173,26 +185,30 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     });
 
     // Handle resizing
+    let ptyResizeTimeout: any = null;
     const onResizeDisposable = term.onResize(async ({ cols, rows }) => {
-      try {
-        // Detect interactive CLIs built on Ink framework (Gemini, Claude)
-        // Fetch fresh state from the store to avoid a stale closure bug where
-        // we use the command/title from the very first render.
-        const freshSession = useOrchestratorStore.getState().terminals.find(t => t.id === paneId);
-        const cmd = (freshSession?.command || '').toLowerCase();
-        const title = (freshSession?.title || '').toLowerCase();
-        
-        // Strict prefix checks instead of `.includes` to prevent destructive clears
-        // on unrelated user sessions (e.g., bash scripts named "gemini-test").
-        if (cmd === 'gemini' || cmd === 'claude' || 
-            title.startsWith('gemini') || title.startsWith('claude')) {
-          term.write('\x1b[2J\x1b[H');
+      if (ptyResizeTimeout) clearTimeout(ptyResizeTimeout);
+      ptyResizeTimeout = setTimeout(async () => {
+        try {
+          // Detect interactive CLIs built on Ink framework (Gemini, Claude)
+          // Fetch fresh state from the store to avoid a stale closure bug where
+          // we use the command/title from the very first render.
+          const freshSession = useOrchestratorStore.getState().terminals.find(t => t.id === paneId);
+          const cmd = (freshSession?.command || '').toLowerCase();
+          const title = (freshSession?.title || '').toLowerCase();
+          
+          // Strict prefix checks instead of `.includes` to prevent destructive clears
+          // on unrelated user sessions (e.g., bash scripts named "gemini-test").
+          if (cmd === 'gemini' || cmd === 'claude' || 
+              title.startsWith('gemini') || title.startsWith('claude')) {
+            term.write('\x1b[2J\x1b[H');
+          }
+          
+          await invoke('resize_pty', { sessionId: paneId, rows, cols });
+        } catch (err) {
+          console.warn('PTY resize failed:', err);
         }
-        
-        await invoke('resize_pty', { sessionId: paneId, rows, cols });
-      } catch (err) {
-        console.warn('PTY resize failed:', err);
-      }
+      }, 150); // Debounce PTY resize to prevent backend spam
     });
 
     // --- Terminal Buffer Manager Subscription & Dirty-Write Coalescing ---
@@ -239,13 +255,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     };
     registerListeners();
 
-    // Resize observer (debounced to prevent layout corruption during CSS animation transitions)
-    let resizeTimeout: any = null;
+    // Resize observer (runs smoothly during animations at 60fps)
+    let resizeFrame: number | null = null;
     const resizeObserver = new ResizeObserver(() => {
-      if (isAnimatingRef.current) return; // Skip resizes during focus zoom transitions
-
-      if (resizeTimeout) clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => {
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
         if (containerRef.current) {
           try {
             fitAddon.fit();
@@ -253,7 +267,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
             // ignore transient layout resize errors
           }
         }
-      }, 100);
+      });
     });
     resizeObserver.observe(containerRef.current);
 
@@ -266,9 +280,9 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       disposed = true;
       bufferManager.unsubscribe(paneId);
       if (coalesceFrameId !== null) cancelAnimationFrame(coalesceFrameId);
-      
-      if (resizeTimeout) clearTimeout(resizeTimeout);
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
       onDataDisposable.dispose();
+      if (ptyResizeTimeout) clearTimeout(ptyResizeTimeout);
       onResizeDisposable.dispose();
       resizeObserver.disconnect();
       if (unlistenExit) unlistenExit();
@@ -282,6 +296,17 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       termRef.current.focus();
     }
   }, [isFocused]);
+
+  // Apply runtime settings dynamically
+  useEffect(() => {
+    if (termRef.current) {
+      const term = termRef.current;
+      if (term.options.fontSize !== settings.fontSize) term.options.fontSize = settings.fontSize;
+      if (term.options.fontFamily !== settings.fontFamily) term.options.fontFamily = settings.fontFamily;
+      if (term.options.cursorBlink !== settings.cursorBlink) term.options.cursorBlink = settings.cursorBlink;
+      if (term.options.cursorStyle !== settings.cursorStyle) term.options.cursorStyle = settings.cursorStyle as any;
+    }
+  }, [settings.fontSize, settings.fontFamily, settings.cursorBlink, settings.cursorStyle]);
 
   // Fit layout once transitions complete (debounced slightly to let layout fully settle)
   useEffect(() => {

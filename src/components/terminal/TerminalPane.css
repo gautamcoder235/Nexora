@@ -23,8 +23,6 @@
   padding: 0;
   width: 100% !important;
   height: 100% !important;
-  display: flex;
-  justify-content: center; /* Centers the xterm canvas to split the fractional gap evenly */
 }
 
 .terminal-pane .xterm-viewport {
@@ -35,7 +33,7 @@
 }
 
 .terminal-pane .xterm-screen {
-  /* Do not force width to 100% to avoid blurry canvas rendering */
+  margin: 0 auto !important; /* Safely centers the canvas without breaking FitAddon geometry */
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */

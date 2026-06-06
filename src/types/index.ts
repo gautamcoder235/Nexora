@@ -107,6 +107,49 @@ export interface WorkspaceSnapshot {
   topPanelHeight?: number;
 }
 
+export interface CustomCLI {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+}
+
+export interface AppSettings {
+  fontSize: number;
+  fontFamily: string;
+  cursorStyle: 'block' | 'bar' | 'underline';
+  cursorBlink: boolean;
+  copyOnSelect: boolean;
+  hardwareAcceleration: boolean;
+  terminalScrollbackLimit: number;
+
+  defaultShell: string;
+  shellArgs: string[];
+
+  customCLIs: CustomCLI[];
+
+  restoreTabsOnStartup: boolean;
+  confirmBeforeClosing: boolean;
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  fontSize: 12,
+  fontFamily: 'courier-new, courier, monospace',
+  cursorStyle: 'block',
+  cursorBlink: true,
+  copyOnSelect: true,
+  hardwareAcceleration: true,
+  terminalScrollbackLimit: 50000,
+  
+  defaultShell: 'auto', // 'auto' means backend resolves default (e.g. bash on unix, cmd on win)
+  shellArgs: [],
+
+  customCLIs: [],
+  
+  restoreTabsOnStartup: true,
+  confirmBeforeClosing: true,
+};
+
 export type ActivityLogSource = 'agent' | 'terminal' | 'workspace' | 'system';
 export type ActivityLogSeverity = 'info' | 'warning' | 'error';
 

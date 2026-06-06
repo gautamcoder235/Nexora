@@ -1,4 +1,5 @@
 import { listen } from '@tauri-apps/api/event';
+import { useOrchestratorStore } from '../stores/orchestratorStore';
 
 export interface Chunk {
   sequenceId: number;
@@ -52,6 +53,21 @@ export class TerminalBufferManager {
         this.append(sessionId, data);
       }
     );
+
+    // Initialize limit from store
+    this.maxBufferBytes = useOrchestratorStore.getState().settings.terminalScrollbackLimit * 150;
+
+    // Listen to settings changes dynamically
+    useOrchestratorStore.subscribe((state) => {
+      const newLimitBytes = state.settings.terminalScrollbackLimit * 150; // Approx 150 bytes per line with ANSI
+      if (this.maxBufferBytes !== newLimitBytes) {
+        this.maxBufferBytes = newLimitBytes;
+        // Trim existing buffers to new limit immediately
+        for (const buffer of this.buffers.values()) {
+          this.trimBuffer(buffer);
+        }
+      }
+    });
   }
 
   public append(sessionId: string, data: string): Chunk {

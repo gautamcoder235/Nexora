@@ -10,7 +10,9 @@ import {
   ActivityLog, 
   WorkspaceSnapshot,
   AgentStatus,
-  Task
+  Task,
+  AppSettings,
+  DEFAULT_APP_SETTINGS
 } from "../types";
 import { EventBus } from "../core/events";
 import { agentTemplates } from "../agents/templates";
@@ -41,7 +43,15 @@ interface OrchestratorState {
   sidebarWidth: number;
   topPanelHeight: number;
   
+  // Settings
+  settings: AppSettings;
+  isSettingsModalOpen: boolean;
+  
   // Actions
+  setSettingsModalOpen: (isOpen: boolean) => void;
+  updateSettings: (updates: Partial<AppSettings>) => void;
+  resetSettings: () => void;
+  
   setSidebarVisible: (visible: boolean) => void;
   setTaskCenterVisible: (visible: boolean) => void;
   setSidebarWidth: (width: number) => void;
@@ -119,6 +129,24 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   sidebarWidth: 490,
   topPanelHeight: 320,
 
+  settings: DEFAULT_APP_SETTINGS,
+  isSettingsModalOpen: false,
+
+  setSettingsModalOpen: (isOpen) => set({ isSettingsModalOpen: isOpen }),
+  updateSettings: (updates) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        ...updates
+      }
+    }));
+    get().saveSnapshot(); // Persist settings immediately upon update
+  },
+  resetSettings: () => {
+    set({ settings: DEFAULT_APP_SETTINGS });
+    get().saveSnapshot();
+  },
+
   dialog: null,
   showAlertDialog: (title, message) => {
     set({
@@ -177,15 +205,28 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       if (configStr && configStr !== "{}") {
         const data = JSON.parse(configStr);
         
-        // Restore workspaces, projects, agents database lists
-        set({
-          workspaces: data.workspaces || [],
-          projects: data.projects || [],
-          agents: data.agents || [],
-          tasks: data.tasks || [],
-          activityFeed: data.activityFeed || [],
-          activeWorkspaceId: data.activeWorkspaceId || null
-        });
+          let mergedSettings = { ...DEFAULT_APP_SETTINGS, ...(data.settings || {}) };
+          
+          // Migration: forcefully revert to original xterm defaults
+          // if they contain my previous overrides
+          if (
+            mergedSettings.fontFamily.includes('var(--font-mono)') || 
+            mergedSettings.fontFamily.includes('ui-monospace') ||
+            (data.settings && data.settings.fontSize === 14 && !mergedSettings.fontFamily.includes('courier'))
+          ) {
+            mergedSettings.fontFamily = DEFAULT_APP_SETTINGS.fontFamily;
+            mergedSettings.fontSize = DEFAULT_APP_SETTINGS.fontSize;
+          }
+
+          set({
+            workspaces: data.workspaces || [],
+            projects: data.projects || [],
+            agents: data.agents || [],
+            tasks: data.tasks || [],
+            activityFeed: data.activityFeed || [],
+            activeWorkspaceId: data.activeWorkspaceId || null,
+            settings: mergedSettings
+          });
 
         // 2. If an active workspace was set, load its terminal layouts snapshot
         if (data.activeWorkspaceId) {
@@ -415,8 +456,15 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       command = agent.cliCommand;
       args = agent.arguments;
       title = `${agent.name} CLI`;
-    } else if (navigator.userAgent.includes("Windows")) {
-      title = "Powershell";
+    } else {
+      const { defaultShell, shellArgs } = get().settings;
+      if (defaultShell !== 'auto') {
+        command = defaultShell;
+        args = shellArgs;
+        title = defaultShell.split("/").pop()?.split("\\").pop() || "Shell";
+      } else if (navigator.userAgent.includes("Windows")) {
+        title = "Powershell";
+      }
     }
 
     const newTerminal: TerminalSession = {
@@ -662,7 +710,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       agents: state.agents,
       tasks: state.tasks,
       activityFeed: state.activityFeed,
-      activeWorkspaceId: state.activeWorkspaceId
+      activeWorkspaceId: state.activeWorkspaceId,
+      settings: state.settings
     };
 
     try {

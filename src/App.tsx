@@ -11,6 +11,7 @@ import { AnalyticsService } from "./services/analytics";
 import { invoke } from "@tauri-apps/api/core";
 import { ContextMenu } from "./components/ContextMenu";
 import { CustomDialog } from "./components/CustomDialog";
+import { SettingsModal } from "./components/SettingsModal";
 function App() {
   const initStore = useOrchestratorStore(s => s.initStore);
   const showConfirmDialog = useOrchestratorStore(s => s.showConfirmDialog);
@@ -382,6 +383,7 @@ function App() {
       </div>
       <ContextMenu />
       <CustomDialog />
+      <SettingsModal />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { FolderPlus, FolderOpen, Plus, Layout, Layers, Trash2 } from "lucide-react";
+import { FolderPlus, FolderOpen, Plus, Layout, Layers, Trash2, Settings } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -16,6 +16,7 @@ export const WorkspaceSelector: React.FC = () => {
     isTaskCenterVisible,
     setSidebarVisible,
     setTaskCenterVisible,
+    setSettingsModalOpen,
     showConfirmDialog
   } = useOrchestratorStore();
 
@@ -156,6 +157,15 @@ export const WorkspaceSelector: React.FC = () => {
           >
             <Layers size={13} />
             Toggle Task Board
+          </button>
+
+          <button
+            onClick={() => setSettingsModalOpen(true)}
+            className="flex items-center gap-1.5 text-xs py-1 px-3 rounded border transition-all bg-zinc-800/50 hover:bg-zinc-700/80 text-zinc-300 border-zinc-700 hover:text-white"
+            title="Open App Settings"
+          >
+            <Settings size={13} />
+            Settings
           </button>
         </div>
       )}
