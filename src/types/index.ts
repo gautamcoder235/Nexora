@@ -24,6 +24,7 @@ export interface AgentCapabilities {
   planning: boolean;
 }
 
+import { AgentPlugin } from '../plugins/types';
 export interface Task {
   id: string;
   projectId: string;
@@ -112,6 +113,13 @@ export interface CustomCLI {
   name: string;
   command: string;
   args: string[];
+  rolePreset?: string;
+  group?: string;
+  projectId?: string;
+  capabilities?: AgentCapabilities;
+  startupInstructions?: string[];
+  installCommand?: string;
+  checkCmd?: string;
 }
 
 export interface AppSettings {
@@ -127,6 +135,7 @@ export interface AppSettings {
   shellArgs: string[];
 
   customCLIs: CustomCLI[];
+  cliOverrides: Record<string, Partial<AgentPlugin>>;
 
   restoreTabsOnStartup: boolean;
   confirmBeforeClosing: boolean;
@@ -145,6 +154,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   shellArgs: [],
 
   customCLIs: [],
+  cliOverrides: {},
   
   restoreTabsOnStartup: true,
   confirmBeforeClosing: true,

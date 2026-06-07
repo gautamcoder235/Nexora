@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { AgentPlugin } from "./types";
 import { claudePlugin } from "./claude";
 import { aiderPlugin } from "./aider";
-import { geminiPlugin } from "./gemini";
 import { codexPlugin } from "./codex";
 import { opencodePlugin } from "./opencode";
 import { genericPlugin } from "./generic";
@@ -11,7 +10,6 @@ export class PluginRegistry {
   private static plugins: Map<string, AgentPlugin> = new Map([
     ["claude", claudePlugin],
     ["aider", aiderPlugin],
-    ["gemini", geminiPlugin],
     ["codex", codexPlugin],
     ["opencode", opencodePlugin],
     ["generic", genericPlugin]
@@ -19,16 +17,28 @@ export class PluginRegistry {
 
   /**
    * Fetch plugin by ID (e.g. "claude"). Falls back to generic shell driver.
+   * Dynamically merges any user overrides from the global orchestrator settings.
    */
   static get(id: string): AgentPlugin {
-    return this.plugins.get(id) || genericPlugin;
+    const base = this.plugins.get(id) || genericPlugin;
+    
+    // Safely fetch overrides without creating a hard top-level circular dependency
+    let overrides = {};
+    try {
+      const { useOrchestratorStore } = require('../stores/orchestratorStore');
+      overrides = useOrchestratorStore.getState().settings.cliOverrides?.[id] || {};
+    } catch (e) {
+      // Store might not be initialized yet
+    }
+
+    return { ...base, ...overrides };
   }
 
   /**
-   * Return all registered driver plugins
+   * Return all registered driver plugins, fully merged with their user overrides.
    */
   static getAll(): AgentPlugin[] {
-    return Array.from(this.plugins.values());
+    return Array.from(this.plugins.keys()).map(id => this.get(id));
   }
 
   /**

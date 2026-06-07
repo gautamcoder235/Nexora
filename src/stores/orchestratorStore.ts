@@ -74,7 +74,7 @@ interface OrchestratorState {
   initializeProjectMemory: (projectId: string) => Promise<void>;
 
   // Terminal actions
-  spawnTerminal: (projectId: string, agentId?: string, customCommand?: string, customArgs?: string[]) => Promise<string>;
+  spawnTerminal: (projectId: string, agentId?: string, customCommand?: string, customArgs?: string[], startupInstruction?: string) => Promise<string>;
   killTerminal: (sessionId: string) => Promise<void>;
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
   updateTerminalStatus: (sessionId: string, status: import('../types').TerminalStatus) => void;
@@ -399,7 +399,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       });
 
       return {
-        agents: [...state.agents, newAgent],
+        agents: [newAgent, ...state.agents],
         projects: updatedProjects
       };
     });
@@ -436,7 +436,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     await get().saveSnapshot();
   },
 
-  spawnTerminal: async (projectId, agentId, customCommand, customArgs) => {
+  spawnTerminal: async (projectId, agentId, customCommand, customArgs, startupInstruction) => {
     const project = get().projects.find(p => p.id === projectId);
     const agent = agentId ? get().agents.find(a => a.id === agentId) : null;
     const sessionPath = project ? project.path : (get().workspaces.find(w => w.id === get().activeWorkspaceId)?.rootPath || "");
@@ -549,6 +549,16 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
             } catch (err) {
               console.warn(`Startup instruction failed in terminal "${sessionId}":`, err);
             }
+          }
+        }, 1200);
+      }
+
+      if (startupInstruction) {
+        setTimeout(async () => {
+          try {
+            await invoke("write_pty", { sessionId, data: `${startupInstruction}\r` });
+          } catch (err) {
+            console.warn(`One-off startup instruction failed:`, err);
           }
         }, 1200);
       }

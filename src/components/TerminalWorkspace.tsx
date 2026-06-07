@@ -3,6 +3,7 @@ import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2 }
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
 import { TerminalPane } from "./terminal/TerminalPane";
+import { EventBus } from "../core/events";
 
 // ==========================================
 // Single Terminal Panel Component
@@ -11,18 +12,21 @@ interface TerminalFrameProps {
   session: TerminalSession;
   isFocused: boolean;
   isAnimating: boolean;
+  isHighlighted?: boolean;
   onFocusToggle: (element: HTMLElement | null) => void;
 }
 
-const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, onFocusToggle }) => {
+const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
   const frameRef = useRef<HTMLDivElement>(null);
   
   return (
     <div 
       ref={frameRef}
-      className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all h-full min-h-0 ${
-        isFocused 
+      className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
+        isHighlighted
+          ? "border-yellow-500 shadow-[0_0_12px_rgba(234,179,8,0.4)]"
+          : isFocused 
           ? "border-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.15)]" 
           : "border-[#232329] hover:border-zinc-800"
       }`}
@@ -77,6 +81,21 @@ export const TerminalWorkspace: React.FC = () => {
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
   const [animatingSessionId, setAnimatingSessionId] = useState<string | null>(null);
   const [isExpanding, setIsExpanding] = useState(false);
+  const [highlightedAgentId, setHighlightedAgentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    const unsub = EventBus.subscribe("terminal:highlight", (payload: any) => {
+      setHighlightedAgentId(payload.agentId);
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => setHighlightedAgentId(null), 2000);
+    });
+    return () => {
+      unsub();
+      if (timeout) clearTimeout(timeout);
+    };
+  }, []);
+  
   
   // Fallback timeout ref to prevent stuck animations
   const animationFallbackTimeoutRef = useRef<any>(null);
@@ -156,6 +175,8 @@ export const TerminalWorkspace: React.FC = () => {
       containerClass += "flex-row";
     } else if (is2Terminals) {
       containerClass += "flex-row";
+    } else if (terminals.length === 4) {
+      containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 auto-rows-fr";
     } else {
       // Fallback to grid for 3+ terminals
       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 lg:grid-cols-3 auto-rows-fr";
@@ -169,21 +190,15 @@ export const TerminalWorkspace: React.FC = () => {
   // Check if we are using the grid fallback
   const isGridFallback = layout.type === 'grid' && terminals.length > 2;
 
-  const getNormalGridStyle = (sessId: string): React.CSSProperties => {
+  const getNormalGridStyle = (_sessId: string): React.CSSProperties => {
     if (isGridFallback) return {};
     
-    const isFirstTerminal = sessId === terminals[0].id;
-    const lockLeftTerminal = terminals.length > 1 && isFirstTerminal;
-    
     return {
-      width: isVertical
-        ? (lockLeftTerminal ? "490px" : "auto")
-        : "100%",
-      height: !isVertical
-        ? "auto"
-        : "100%",
-      flexGrow: (isVertical && lockLeftTerminal ? 0 : 1),
+      width: isVertical ? "auto" : "100%",
+      height: !isVertical ? "auto" : "100%",
+      flexGrow: 1,
       flexShrink: 1,
+      flexBasis: 0,
     };
   };
 
@@ -367,9 +382,12 @@ export const TerminalWorkspace: React.FC = () => {
                 pointerEvents: 'none',
               };
             } else {
-              // Hide them completely once maximized
+              // Hide them completely once maximized without breaking xterm layout
               wrapperStyle = {
-                display: 'none',
+                ...getNormalGridStyle(session.id),
+                opacity: 0,
+                pointerEvents: 'none',
+                visibility: 'hidden', // Ensures they don't block anything or get focus
               };
             }
           } else {
@@ -411,6 +429,7 @@ export const TerminalWorkspace: React.FC = () => {
                   session={session} 
                   isFocused={isFocused}
                   isAnimating={animatingSessionId !== null}
+                  isHighlighted={session.agentId === highlightedAgentId}
                   onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
                 />
               </div>

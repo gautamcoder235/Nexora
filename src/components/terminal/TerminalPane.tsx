@@ -158,9 +158,20 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       }
       
       // Handle Paste: Ctrl+V or Cmd+V
-      // xterm usually handles native paste events, but this is a fallback intercept
+      // In Tauri, native shortcuts might be blocked without a menu, so we manually intercept and write to PTY
       if ((arg.ctrlKey || arg.metaKey) && arg.code === 'KeyV' && arg.type === 'keydown') {
-        return true; // Let browser handle paste
+        navigator.clipboard.readText().then(text => {
+          if (text) {
+            // Replace newlines with carriage returns. Many simple CLIs and Windows ConPTY 
+            // drop inputs or misbehave with raw \n, and term.paste's bracketed paste 
+            // can break CLIs that don't support it.
+            const cleanText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+            invoke('write_pty', { sessionId: paneId, data: cleanText }).catch(err => console.error('PTY write failed during paste:', err));
+          }
+        }).catch(err => {
+          console.warn('Failed to read clipboard for paste:', err);
+        });
+        return false; // We handled the paste manually
       }
       
       return true;

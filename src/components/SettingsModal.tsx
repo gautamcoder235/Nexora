@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
-import { X, Save, RotateCcw, Monitor, Terminal, Zap, FileCode2, Package, Plus, Trash2 } from 'lucide-react';
+import { X, Save, RotateCcw, Monitor, Terminal, Zap, FileCode2, Package, Plus } from 'lucide-react';
 import { AppSettings, DEFAULT_APP_SETTINGS, CustomCLI } from '../types';
+import { PluginRegistry } from '../plugins';
+import { AgentPlugin } from '../plugins/types';
+import { CliEditorCard } from './CliEditorCard';
 
 export const SettingsModal: React.FC = () => {
   const { isSettingsModalOpen, setSettingsModalOpen, settings, updateSettings, resetSettings } = useOrchestratorStore();
@@ -9,6 +12,8 @@ export const SettingsModal: React.FC = () => {
   // Local state for the form so we don't spam the store on every keystroke
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [activeTab, setActiveTab] = useState<'Appearance' | 'Terminal' | 'Shell' | 'CLIs' | 'Performance'>('Appearance');
+  const [installedStatuses, setInstalledStatuses] = useState<Record<string, boolean>>({});
+  const [isChecking, setIsChecking] = useState<Record<string, boolean>>({});
 
   if (!isSettingsModalOpen) return null;
 
@@ -31,9 +36,14 @@ export const SettingsModal: React.FC = () => {
   const handleAddCLI = () => {
     const newCLI: CustomCLI = {
       id: crypto.randomUUID(),
-      name: 'New CLI',
+      name: 'New Custom CLI',
       command: '',
-      args: []
+      args: [],
+      rolePreset: 'custom',
+      group: '',
+      projectId: '',
+      capabilities: { coding: true, testing: false, review: false, planning: false },
+      startupInstructions: []
     };
     updateLocal('customCLIs', [...(localSettings.customCLIs || []), newCLI]);
   };
@@ -47,6 +57,52 @@ export const SettingsModal: React.FC = () => {
 
   const handleDeleteCLI = (id: string) => {
     updateLocal('customCLIs', (localSettings.customCLIs || []).filter(cli => cli.id !== id));
+  };
+
+  const handleOverridePredefined = (id: string, field: keyof AgentPlugin, value: any) => {
+    const currentOverrides = localSettings.cliOverrides || {};
+    const pluginOverrides = currentOverrides[id] || {};
+    updateLocal('cliOverrides', {
+      ...currentOverrides,
+      [id]: { ...pluginOverrides, [field]: value }
+    });
+  };
+
+  const checkCLI = async (id: string) => {
+    setIsChecking(prev => ({ ...prev, [id]: true }));
+    // Force a fresh check, bypass cache if any
+    const isInstalled = await PluginRegistry.checkInstalled(id);
+    setInstalledStatuses(prev => ({ ...prev, [id]: isInstalled }));
+    setIsChecking(prev => ({ ...prev, [id]: false }));
+  };
+
+  const checkCustomCLI = async (cli: CustomCLI) => {
+    const cmdToCheck = cli.checkCmd || cli.command;
+    if (!cmdToCheck) return;
+    setIsChecking(prev => ({ ...prev, [cli.id]: true }));
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const isInstalled = await invoke<boolean>("check_command_exists", { cmd: cmdToCheck });
+      setInstalledStatuses(prev => ({ ...prev, [cli.id]: isInstalled }));
+    } catch (e) {
+      setInstalledStatuses(prev => ({ ...prev, [cli.id]: false }));
+    }
+    setIsChecking(prev => ({ ...prev, [cli.id]: false }));
+  };
+
+  const handleInstall = (id: string) => {
+    const plugin = PluginRegistry.get(id);
+    if (!plugin.installHelp?.command) return;
+    
+    // Spawn terminal using default shell and execute install command as a startup instruction
+    useOrchestratorStore.getState().spawnTerminal("", undefined, undefined, undefined, plugin.installHelp.command);
+    setSettingsModalOpen(false);
+  };
+
+  const handleInstallCustom = (cli: CustomCLI) => {
+    if (!cli.installCommand) return;
+    useOrchestratorStore.getState().spawnTerminal("", undefined, undefined, undefined, cli.installCommand);
+    setSettingsModalOpen(false);
   };
 
   const tabs = [
@@ -210,73 +266,93 @@ export const SettingsModal: React.FC = () => {
 
             {/* Custom CLIs Settings */}
             {activeTab === 'CLIs' && (
-              <div className="space-y-6 max-w-2xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm text-zinc-300 font-medium">Registered CLIs</h4>
-                    <p className="text-xs text-zinc-500">Define custom command line tools you want to spawn easily.</p>
-                  </div>
-                  <button 
-                    onClick={handleAddCLI}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 rounded transition-colors"
-                  >
-                    <Plus size={14} /> Add CLI
-                  </button>
-                </div>
-                
+              <div className="space-y-8 max-w-2xl">
                 <div className="space-y-4">
-                  {!(localSettings.customCLIs?.length) ? (
-                    <div className="text-center py-8 bg-[#16161a] border border-[#2d2d35] border-dashed rounded text-sm text-zinc-500">
-                      No custom CLIs registered yet.
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm text-zinc-300 font-medium">Custom CLIs</h4>
+                      <p className="text-xs text-zinc-500">Define custom command line tools you want to spawn easily.</p>
                     </div>
-                  ) : (
-                    localSettings.customCLIs.map(cli => (
-                      <div key={cli.id} className="p-4 bg-[#16161a] border border-[#2d2d35] rounded space-y-3 relative group">
-                        <button 
-                          onClick={() => handleDeleteCLI(cli.id)}
-                          className="absolute top-3 right-3 text-zinc-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        <div className="grid grid-cols-2 gap-4 pr-6">
-                          <div className="space-y-1">
-                            <label className="text-xs text-zinc-400">Display Name</label>
-                            <input 
-                              type="text" 
-                              value={cli.name}
-                              onChange={(e) => handleUpdateCLI(cli.id, 'name', e.target.value)}
-                              className="w-full bg-[#0a0a0c] border border-[#2d2d35] rounded px-2 py-1.5 text-sm text-zinc-200 focus:border-sky-500 outline-none"
-                              placeholder="e.g. My Linter"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs text-zinc-400">Command / Binary</label>
-                            <input 
-                              type="text" 
-                              value={cli.command}
-                              onChange={(e) => handleUpdateCLI(cli.id, 'command', e.target.value)}
-                              className="w-full bg-[#0a0a0c] border border-[#2d2d35] rounded px-2 py-1.5 text-sm text-zinc-200 focus:border-sky-500 outline-none"
-                              placeholder="e.g. npx"
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs text-zinc-400">Default Arguments (space separated)</label>
-                          <input 
-                            type="text" 
-                            value={cli.args.join(' ')}
-                            onChange={(e) => handleUpdateCLI(cli.id, 'args', e.target.value.split(' ').filter(Boolean))}
-                            className="w-full bg-[#0a0a0c] border border-[#2d2d35] rounded px-2 py-1.5 text-sm text-zinc-200 focus:border-sky-500 outline-none font-mono"
-                            placeholder="e.g. eslint --fix ."
-                          />
-                        </div>
+                    <button 
+                      onClick={handleAddCLI}
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 rounded transition-colors"
+                    >
+                      <Plus size={14} /> Add CLI
+                    </button>
+                  </div>
+                
+                  <div className="space-y-4">
+                    {!(localSettings.customCLIs?.length) ? (
+                      <div className="text-center py-8 bg-[#16161a] border border-[#2d2d35] border-dashed rounded text-sm text-zinc-500">
+                        No custom CLIs registered yet.
                       </div>
-                    ))
-                  )}
+                    ) : (
+                      localSettings.customCLIs.map(cli => {
+                        const normalized = {
+                          ...cli,
+                          cliCommand: cli.command,
+                          defaultArgs: cli.args
+                        };
+                        return (
+                          <CliEditorCard
+                            key={cli.id}
+                            cli={normalized}
+                            isCustom={true}
+                            isInstalled={installedStatuses[cli.id]}
+                            checking={isChecking[cli.id]}
+                            installHelp={!!cli.installCommand}
+                            onUpdate={(field, value) => {
+                               let targetField = field;
+                               if (field === 'cliCommand') targetField = 'command';
+                               if (field === 'defaultArgs') targetField = 'args';
+                               handleUpdateCLI(cli.id, targetField as any, value);
+                            }}
+                            onDelete={() => handleDeleteCLI(cli.id)}
+                            onCheck={() => checkCustomCLI(cli)}
+                            onInstall={cli.installCommand ? () => handleInstallCustom(cli) : undefined}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
 
+                {/* Predefined CLIs */}
+                <div className="pt-4 border-t border-[#232329] space-y-4">
+                  <div>
+                    <h4 className="text-sm text-zinc-300 font-medium">Predefined Agents</h4>
+                    <p className="text-xs text-zinc-500">Built-in CLI agents. You can override their default properties here.</p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {PluginRegistry.getAll().filter(p => p.id !== 'generic').map(plugin => {
+                      const overrides = localSettings.cliOverrides?.[plugin.id] || {};
+                      
+                      const effectivePlugin = {
+                        ...plugin,
+                        ...overrides,
+                        cliCommand: overrides.cliCommand !== undefined ? overrides.cliCommand : plugin.cliCommand,
+                        defaultArgs: overrides.defaultArgs !== undefined ? overrides.defaultArgs : plugin.defaultArgs,
+                      };
+
+                      return (
+                        <CliEditorCard
+                           key={plugin.id}
+                           cli={effectivePlugin}
+                           isCustom={false}
+                           isInstalled={installedStatuses[plugin.id]}
+                           checking={isChecking[plugin.id]}
+                           installHelp={!!plugin.installHelp}
+                           onUpdate={(field, value) => handleOverridePredefined(plugin.id, field as any, value)}
+                           onCheck={() => checkCLI(plugin.id)}
+                           onInstall={() => handleInstall(plugin.id)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+            </div>
+            )}
             {/* Performance Settings */}
             {activeTab === 'Performance' && (
               <div className="space-y-6 max-w-lg">

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "Multi Vibe",
   "version": "0.1.0",
-  "identifier": "com.sharm.tauri-app",
+  "identifier": "com.sharm.multivibe",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

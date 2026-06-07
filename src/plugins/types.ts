@@ -13,4 +13,8 @@ export interface AgentPlugin {
     instructions: string;
   };
   parseOutput(cleanText: string): string[]; // Parse logs for telemetry
+  group?: string;
+  projectId?: string;
+  startupInstructions?: string[];
+  rolePreset?: string;
 }

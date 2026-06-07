@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Cpu, Play, Square, Trash2, Plus, Edit, AlertCircle, GripVertical } from "lucide-react";
+import { Cpu, Play, Square, Trash2, AlertCircle, GripVertical } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -18,9 +18,10 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
-import { AgentProfile, AgentCapabilities, Project } from "../types";
-import { agentTemplates } from "../agents/templates";
+import { AgentProfile, Project } from "../types";
 import { PluginRegistry } from "../plugins";
+import { CliSpawnerPanel } from "./CliSpawnerPanel";
+import { EventBus } from "../core/events";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sortable Card Component
@@ -28,28 +29,31 @@ import { PluginRegistry } from "../plugins";
 interface SortableAgentCardProps {
   agent: AgentProfile;
   proj: Project | undefined;
+  activeProjects: Project[];
   isRunning: boolean;
   pluginId: string;
   isInstalled: boolean;
   dragOverId: string | null;
   onStart: (agent: AgentProfile) => void;
   onStop: (agent: AgentProfile) => void;
-  onEdit: (agent: AgentProfile) => void;
+  onProjectChange: (agentId: string, projectId: string) => void;
+
   onDelete: (agentId: string) => void;
   onShowInstallGuide: (pluginId: string) => void;
   formatRuntime: (seconds: number) => string;
 }
 
-const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
+export const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
   agent,
-  proj,
+  activeProjects,
   isRunning,
   pluginId,
   isInstalled,
   dragOverId,
   onStart,
   onStop,
-  onEdit,
+  onProjectChange,
+
   onDelete,
   onShowInstallGuide,
   formatRuntime,
@@ -63,27 +67,30 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
     isDragging,
   } = useSortable({ id: agent.id });
 
-  const style: React.CSSProperties = {
+  const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 50 : "auto",
-    opacity: isDragging ? 0.5 : 1,
-    position: "relative",
-    minHeight: "136px",
   };
 
-  const isDropTarget = dragOverId === agent.id && !isDragging;
+  const isHighlighted = dragOverId === agent.id && !isDragging;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
+      onClick={() => {
+        if (isRunning) {
+          EventBus.publish("terminal:highlight", { agentId: agent.id });
+        }
+      }}
       className={`bg-[#08080c]/80 border rounded-lg p-3 flex flex-col justify-between shadow-sm transition-all duration-250 flex-shrink-0 ${
+        isRunning ? "cursor-pointer hover:border-purple-500/50" : ""
+      } ${
         isRunning
           ? "border-purple-500/30 bg-purple-500/[0.01]"
           : "border-[#1b1b22] hover:border-zinc-800"
       } ${
-        isDropTarget
+        isHighlighted
           ? "border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.2)] bg-purple-500/[0.03]"
           : ""
       } ${isDragging ? "shadow-xl border-purple-500/40" : ""}`}
@@ -125,29 +132,30 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
 
         {/* Status badges */}
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <span
-            className={`text-[8px] uppercase tracking-wide font-bold px-1.5 py-0.5 rounded font-mono ${
-              agent.status === "running"
-                ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                : "bg-zinc-900 text-zinc-500 border border-[#1b1b22]"
-            }`}
-          >
-            {agent.status}
-          </span>
-          {pluginId !== "generic" && (
+          <div className="flex items-center gap-1.5">
+            {agent.status === "running" && (
+              <span className="text-[9px] text-zinc-500 font-mono border border-[#232329] px-1.5 py-0.5 rounded bg-[#16161a]">
+                Run: {formatRuntime(agent.runtimeSeconds)}
+              </span>
+            )}
+            <span
+              className={`text-[8px] uppercase tracking-wide font-bold px-1.5 py-0.5 rounded font-mono ${
+                agent.status === "running"
+                  ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                  : "bg-zinc-900 text-zinc-500 border border-[#1b1b22]"
+              }`}
+            >
+              {agent.status}
+            </span>
+          </div>
+          {pluginId !== "generic" && !isInstalled && (
             <button
               type="button"
-              onClick={() => !isInstalled && onShowInstallGuide(pluginId)}
-              className={`text-[8px] font-bold px-1.5 py-0.5 rounded font-mono border transition-all ${
-                isInstalled
-                  ? "bg-emerald-500/10 text-emerald-450 border-emerald-500/25"
-                  : "bg-amber-500/10 text-amber-450 border-amber-500/25 hover:bg-amber-500/20 cursor-pointer"
-              }`}
-              title={
-                isInstalled ? "CLI tool available" : "Click to view install guide"
-              }
+              onClick={() => onShowInstallGuide(pluginId)}
+              className="text-[8px] font-bold px-1.5 py-0.5 rounded font-mono border transition-all bg-amber-500/10 text-amber-450 border-amber-500/25 hover:bg-amber-500/20 cursor-pointer"
+              title="Click to view install guide"
             >
-              {isInstalled ? "CLI OK" : "Install CLI"}
+              Install CLI
             </button>
           )}
         </div>
@@ -155,13 +163,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
 
       {/* 2. BODY MIDDLE ZONE */}
       <div className="flex-grow flex flex-col justify-center text-[9.5px] text-zinc-400 my-2">
-        <p
-          className="text-[9px] text-zinc-500 font-mono select-text truncate"
-          title={`${agent.cliCommand} ${agent.arguments.join(" ")}`}
-        >
-          <span className="text-zinc-650">CMD:</span> {agent.cliCommand}{" "}
-          {agent.arguments.join(" ")}
-        </p>
+
         <div className="flex flex-wrap gap-1 mt-1">
           {Object.entries(agent.capabilities).map(([cap, val]) => {
             if (!val) return null;
@@ -179,20 +181,21 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
 
       {/* 3. BOTTOM FOOTER ZONE */}
       <div className="border-t border-[#1b1b22]/50 pt-2 flex items-center justify-between text-[10px] text-zinc-550 select-none flex-shrink-0">
-        <div className="flex flex-col min-w-0">
-          <span className="text-[9px] text-zinc-500 truncate max-w-[120px]">
-            Project:{" "}
-            <span className="text-zinc-350 font-semibold">
-              {proj ? proj.name : "Unassigned"}
-            </span>
-          </span>
-          {isRunning && (
-            <span className="text-[9px] text-zinc-400 font-mono mt-0.5 block leading-tight">
-              Run: {formatRuntime(agent.runtimeSeconds)}
-            </span>
-          )}
-        </div>
-
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] text-zinc-500">Project:</span>
+            <select
+              value={agent.projectId || ""}
+              onChange={(e) => onProjectChange(agent.id, e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#121216] border border-[#232329] text-[9px] text-zinc-300 font-semibold rounded px-1 py-0.5 outline-none cursor-pointer hover:border-purple-500/50 focus:border-purple-500 transition-colors max-w-[120px] truncate"
+            >
+              <option value="">Unassigned</option>
+              {activeProjects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        
         <div className="flex gap-1.5">
           {isRunning ? (
             <button
@@ -216,15 +219,6 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
 
           <button
             type="button"
-            onClick={() => onEdit(agent)}
-            title="Edit Profile"
-            className="p-1 hover:bg-[#121216] rounded border border-[#1b1b22] text-zinc-500 hover:text-purple-400 transition-colors cursor-pointer"
-          >
-            <Edit size={10} />
-          </button>
-
-          <button
-            type="button"
             onClick={() => onDelete(agent.id)}
             title="Delete Profile"
             className="p-1 hover:bg-[#121216] rounded border border-[#1b1b22] text-zinc-550 hover:text-rose-455 transition-colors cursor-pointer"
@@ -243,8 +237,8 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
 export const AgentGrid: React.FC = () => {
   const projects = useOrchestratorStore((s) => s.projects);
   const agents = useOrchestratorStore((s) => s.agents);
-  const createAgent = useOrchestratorStore((s) => s.createAgent);
   const deleteAgent = useOrchestratorStore((s) => s.deleteAgent);
+  const updateAgent = useOrchestratorStore((s) => s.updateAgent);
   const spawnTerminal = useOrchestratorStore((s) => s.spawnTerminal);
   const killTerminal = useOrchestratorStore((s) => s.killTerminal);
   const activeWorkspaceId = useOrchestratorStore((s) => s.activeWorkspaceId);
@@ -252,31 +246,10 @@ export const AgentGrid: React.FC = () => {
     (s) => s.cliInstalledStatuses
   );
   const checkAgentCli = useOrchestratorStore((s) => s.checkAgentCli);
-  const spawnTeamTemplate = useOrchestratorStore((s) => s.spawnTeamTemplate);
-  const updateAgent = useOrchestratorStore((s) => s.updateAgent);
   const showAlertDialog = useOrchestratorStore((s) => s.showAlertDialog);
 
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [command, setCommand] = useState("");
-  const [argsStr, setArgsStr] = useState("");
-  const [group, setGroup] = useState("");
-  const [targetProj, setTargetProj] = useState("");
-  const [selectedTemplateProj, setSelectedTemplateProj] = useState("");
-
-  // Capabilities
-  const [coding, setCoding] = useState(true);
-  const [review, setReview] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [planning, setPlanning] = useState(false);
-
-  // Preset Role State
-  const [role, setRole] = useState("custom");
-  const [startupInstructionsStr, setStartupInstructionsStr] = useState("");
-  const [selectedInstallGuide, setSelectedInstallGuide] = useState<
-    string | null
-  >(null);
+  const [selectedProjectFilter, setSelectedProjectFilter] = useState("");
+  const [selectedInstallGuide, setSelectedInstallGuide] = useState<string | null>(null);
 
   // dnd-kit drag-over tracking for highlight effect
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -325,144 +298,7 @@ export const AgentGrid: React.FC = () => {
     useOrchestratorStore.getState().saveSnapshot();
   };
 
-  const handleRoleChange = (selectedRole: string) => {
-    setRole(selectedRole);
-    if (selectedRole === "frontend") {
-      setName("Frontend Engineer");
-      setGroup("Frontend Team");
-      setCommand("npx");
-      setArgsStr("@claudecode/cli --dangerously-skip-permissions");
-      setCoding(true);
-      setReview(false);
-      setTesting(false);
-      setPlanning(true);
-      setStartupInstructionsStr("npm run lint");
-    } else if (selectedRole === "backend") {
-      setName("Backend Engineer");
-      setGroup("Backend Team");
-      setCommand("aider");
-      setArgsStr("");
-      setCoding(true);
-      setReview(true);
-      setTesting(false);
-      setPlanning(false);
-      setStartupInstructionsStr("cargo check");
-    } else if (selectedRole === "qa") {
-      setName("QA Engineer");
-      setGroup("QA Team");
-      setCommand("npx");
-      setArgsStr("playwright test");
-      setCoding(false);
-      setReview(false);
-      setTesting(true);
-      setPlanning(false);
-      setStartupInstructionsStr("npm run test");
-    } else if (selectedRole === "architect") {
-      setName("Architect");
-      setGroup("Planning Team");
-      setCommand("gemini");
-      setArgsStr("");
-      setCoding(false);
-      setReview(true);
-      setTesting(false);
-      setPlanning(true);
-      setStartupInstructionsStr("git status");
-    }
-  };
 
-  const handleSpawnTemplate = async (templateId: string) => {
-    const projId =
-      selectedTemplateProj || activeProjects[0]?.id;
-    if (!projId) {
-      showAlertDialog(
-        "Project Required",
-        "Please select or create a project first before spawning a team template."
-      );
-      return;
-    }
-    await spawnTeamTemplate(projId, templateId);
-  };
-
-  const handleEditClick = (agent: AgentProfile) => {
-    setEditingAgentId(agent.id);
-    setName(agent.name);
-    setCommand(agent.cliCommand);
-    setArgsStr(agent.arguments.join(" "));
-    setGroup(agent.groupId || "");
-    setTargetProj(agent.projectId || "");
-    setCoding(agent.capabilities.coding);
-    setTesting(agent.capabilities.testing);
-    setReview(agent.capabilities.review);
-    setPlanning(agent.capabilities.planning);
-    setRole(agent.role || "custom");
-    setStartupInstructionsStr(
-      (agent.startupInstructions || []).join("\n")
-    );
-    setShowAddForm(true);
-  };
-
-  const resetForm = () => {
-    setName("");
-    setCommand("");
-    setArgsStr("");
-    setGroup("");
-    setTargetProj("");
-    setCoding(true);
-    setReview(false);
-    setTesting(false);
-    setPlanning(false);
-    setRole("custom");
-    setStartupInstructionsStr("");
-    setShowAddForm(false);
-    setEditingAgentId(null);
-  };
-
-  const handleSubmitForm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !command.trim()) return;
-
-    const parsedArgs = argsStr.trim() ? argsStr.split(/\s+/) : [];
-    const capabilities: AgentCapabilities = {
-      coding,
-      review,
-      testing,
-      planning,
-    };
-    const parsedStartup = startupInstructionsStr.trim()
-      ? startupInstructionsStr
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean)
-      : [];
-
-    if (editingAgentId) {
-      await updateAgent(editingAgentId, {
-        name,
-        groupId: group.trim() || undefined,
-        cliCommand: command,
-        arguments: parsedArgs,
-        projectId: targetProj || null,
-        capabilities,
-        role,
-        startupInstructions: parsedStartup,
-      });
-    } else {
-      await createAgent({
-        name,
-        groupId: group.trim() || undefined,
-        cliCommand: command,
-        arguments: parsedArgs,
-        env: {},
-        projectId: targetProj || null,
-        taskId: null,
-        capabilities,
-        role,
-        startupInstructions: parsedStartup,
-      });
-    }
-
-    resetForm();
-  };
 
   const handleStartAgent = async (agent: AgentProfile) => {
     if (!agent.projectId) {
@@ -520,6 +356,9 @@ export const AgentGrid: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full space-y-2 overflow-hidden">
+      {/* CLI Spawner Panel at the top of the left panel */}
+      <CliSpawnerPanel />
+
       {/* Header bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -528,250 +367,22 @@ export const AgentGrid: React.FC = () => {
             Active Swarm Profiles
           </h2>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 text-xs py-1 px-3.5 rounded transition-all"
-        >
-          <Plus size={13} />
-          Register Agent
-        </button>
-      </div>
-
-      {/* Add/Edit Agent Dialog */}
-      {showAddForm && (
-        <form
-          onSubmit={handleSubmitForm}
-          className="bg-[#121214] border border-purple-500/20 p-5 rounded-lg space-y-4 shadow-xl"
-        >
-          <div className="border-b border-zinc-800 pb-2">
-            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-purple-400">
-              {editingAgentId
-                ? "Edit Swarm Profile"
-                : "Register New Swarm Agent"}
-            </h3>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-mono text-zinc-500 uppercase">
-              Agent Role Preset
-            </label>
-            <select
-              value={role}
-              onChange={(e) => handleRoleChange(e.target.value)}
-              className="w-full bg-[#0c0c0e] text-xs text-zinc-300 border border-[#232329] px-2 py-1.5 rounded outline-none cursor-pointer focus:border-purple-500/30"
-            >
-              <option value="custom">Custom Agent Setup</option>
-              <option value="frontend">
-                Frontend Engineer (Claude Code CLI)
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-400 font-mono">
+            Target Project:
+          </span>
+          <select
+            value={selectedProjectFilter}
+            onChange={(e) => setSelectedProjectFilter(e.target.value)}
+            className="bg-[#0c0c0e] text-xs text-zinc-300 border border-[#232329] px-2 py-1 rounded outline-none cursor-pointer focus:border-purple-500/30"
+          >
+            <option value="">All Projects</option>
+            {activeProjects.map((p: Project) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
               </option>
-              <option value="backend">Backend Engineer (Aider CLI)</option>
-              <option value="qa">QA Engineer (Playwright/Jest CLI)</option>
-              <option value="architect">Architect (Gemini CLI)</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase">
-                Agent Profile Name
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Claude Coding Agent"
-                className="w-full bg-[#0c0c0e] text-xs text-zinc-200 border border-[#232329] px-3 py-1.5 rounded outline-none focus:border-purple-500/30"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase">
-                Agent Group (Team)
-              </label>
-              <input
-                type="text"
-                value={group}
-                onChange={(e) => setGroup(e.target.value)}
-                placeholder="e.g. Backend Dev"
-                className="w-full bg-[#0c0c0e] text-xs text-zinc-200 border border-[#232329] px-3 py-1.5 rounded outline-none focus:border-purple-500/30"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase">
-                CLI Command / Executable
-              </label>
-              <input
-                type="text"
-                required
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="e.g. npx, aider, python"
-                className="w-full bg-[#0c0c0e] text-xs text-zinc-200 border border-[#232329] px-3 py-1.5 rounded outline-none focus:border-purple-500/30"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase">
-                Arguments (space separated)
-              </label>
-              <input
-                type="text"
-                value={argsStr}
-                onChange={(e) => setArgsStr(e.target.value)}
-                placeholder="e.g. @claudecode/cli --dangerously-skip-permissions"
-                className="w-full bg-[#0c0c0e] text-xs text-zinc-200 border border-[#232329] px-3 py-1.5 rounded outline-none focus:border-purple-500/30"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase">
-                Assigned Project
-              </label>
-              <select
-                value={targetProj}
-                onChange={(e) => setTargetProj(e.target.value)}
-                className="w-full bg-[#0c0c0e] text-xs text-zinc-300 border border-[#232329] px-2 py-2 rounded outline-none cursor-pointer focus:border-purple-500/30"
-              >
-                <option value="">-- Unassigned --</option>
-                {activeProjects.map((p: Project) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Capabilities Checkboxes */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase block mb-1">
-                Capabilities Routing
-              </label>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                <label className="flex items-center gap-1.5 text-zinc-400 cursor-pointer hover:text-zinc-200">
-                  <input
-                    type="checkbox"
-                    checked={coding}
-                    onChange={(e) => setCoding(e.target.checked)}
-                    className="rounded border-zinc-700 bg-transparent text-purple-500 focus:ring-0 focus:ring-offset-0"
-                  />
-                  Coding
-                </label>
-                <label className="flex items-center gap-1.5 text-zinc-400 cursor-pointer hover:text-zinc-200">
-                  <input
-                    type="checkbox"
-                    checked={testing}
-                    onChange={(e) => setTesting(e.target.checked)}
-                    className="rounded border-zinc-700 bg-transparent text-purple-500 focus:ring-0 focus:ring-offset-0"
-                  />
-                  Testing
-                </label>
-                <label className="flex items-center gap-1.5 text-zinc-400 cursor-pointer hover:text-zinc-200">
-                  <input
-                    type="checkbox"
-                    checked={review}
-                    onChange={(e) => setReview(e.target.checked)}
-                    className="rounded border-zinc-700 bg-transparent text-purple-500 focus:ring-0 focus:ring-offset-0"
-                  />
-                  Review
-                </label>
-                <label className="flex items-center gap-1.5 text-zinc-400 cursor-pointer hover:text-zinc-200">
-                  <input
-                    type="checkbox"
-                    checked={planning}
-                    onChange={(e) => setPlanning(e.target.checked)}
-                    className="rounded border-zinc-700 bg-transparent text-purple-500 focus:ring-0 focus:ring-offset-0"
-                  />
-                  Planning
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-mono text-zinc-500 uppercase">
-              Startup Instructions (commands executed sequentially on shell PTY
-              boot, one per line)
-            </label>
-            <textarea
-              value={startupInstructionsStr}
-              onChange={(e) => setStartupInstructionsStr(e.target.value)}
-              placeholder={`e.g.\nnpm install\nnpm run lint`}
-              rows={3}
-              className="w-full bg-[#0c0c0e] text-xs text-zinc-200 border border-[#232329] px-3 py-1.5 rounded outline-none focus:border-purple-500/30 font-mono"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="bg-transparent hover:bg-[#1a1a20] text-zinc-400 text-xs py-1.5 px-4 rounded transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-1.5 px-4 rounded transition-colors"
-            >
-              {editingAgentId ? "Update Swarm Profile" : "Register Executable"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Team Presets Selection Bar */}
-      <div className="bg-[#121214] border border-[#232329] p-2.5 rounded-lg space-y-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-300">
-              Agent Team Presets
-            </h3>
-            <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
-              Spawn standard multi-agent setups in one click.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-zinc-400 font-mono">
-              Target Project:
-            </span>
-            <select
-              value={selectedTemplateProj || activeProjects[0]?.id || ""}
-              onChange={(e) => setSelectedTemplateProj(e.target.value)}
-              className="bg-[#0c0c0e] text-xs text-zinc-300 border border-[#232329] px-2 py-1 rounded outline-none cursor-pointer focus:border-purple-500/30"
-            >
-              {activeProjects.map((p: Project) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-              {activeProjects.length === 0 && (
-                <option value="">No projects available</option>
-              )}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          {agentTemplates.map((tpl) => (
-            <button
-              key={tpl.id}
-              onClick={() => handleSpawnTemplate(tpl.id)}
-              disabled={activeProjects.length === 0}
-              className="flex flex-col justify-between items-start text-left bg-[#0c0c0e] hover:bg-[#16161a] disabled:opacity-50 disabled:hover:bg-[#0c0c0e] border border-[#232329] hover:border-purple-500/30 p-2.5 rounded transition-all group w-full min-h-[72px] cursor-pointer"
-            >
-              <span className="text-[11px] font-bold text-zinc-300 group-hover:text-purple-400 transition-colors font-mono leading-snug">
-                {tpl.name}
-              </span>
-              <span className="text-[9.5px] text-zinc-500 font-mono mt-1.5 leading-snug">
-                {tpl.description}
-              </span>
-            </button>
-          ))}
+            ))}
+          </select>
         </div>
       </div>
 
@@ -808,13 +419,15 @@ export const AgentGrid: React.FC = () => {
                     key={agent.id}
                     agent={agent}
                     proj={proj}
+                    activeProjects={activeProjects}
                     isRunning={isRunning}
                     pluginId={pluginId}
                     isInstalled={isInstalled}
                     dragOverId={dragOverId}
                     onStart={handleStartAgent}
                     onStop={handleStopAgent}
-                    onEdit={handleEditClick}
+                    onProjectChange={(agentId, projectId) => updateAgent(agentId, { projectId: projectId || null })}
+
                     onDelete={deleteAgent}
                     onShowInstallGuide={setSelectedInstallGuide}
                     formatRuntime={formatRuntime}
