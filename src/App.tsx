@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2 } from "lucide-react";
-import { WorkspaceSelector } from "./components/WorkspaceSelector";
+import { ActivityBar } from "./components/ActivityBar";
 import { AgentGrid } from "./components/AgentGrid";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import { ActivityFeed } from "./components/ActivityFeed";
@@ -39,23 +39,31 @@ function App() {
   const [activeRightTab, setActiveRightTab] = useState<"tasks" | "memory">("tasks");
 
   // Performance Meter State
-  const [mockCpu, setMockCpu] = useState(2);
-  const [mockRam, setMockRam] = useState(1.15);
+  const [cpuLoad, setCpuLoad] = useState(0);
+  const [ramLoad, setRamLoad] = useState(0);
 
   useEffect(() => {
-    const activePTYsCount = terminals.filter(t => t.status === 'connected').length;
-    const interval = setInterval(() => {
-      const baseCpu = 1 + activePTYsCount * 4;
-      const fluctuatingCpu = Math.max(1, baseCpu + Math.floor(Math.random() * 5) - 2);
-      
-      const baseRam = 1.1 + activePTYsCount * 0.22;
-      const fluctuatingRam = Number((baseRam + Math.random() * 0.05 - 0.02).toFixed(2));
-      
-      setMockCpu(fluctuatingCpu);
-      setMockRam(fluctuatingRam);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [terminals]);
+    let isMounted = true;
+    
+    const fetchMetrics = async () => {
+      try {
+        const metrics: { cpu: number; ram_gb: number } = await invoke("get_system_metrics");
+        if (isMounted) {
+          setCpuLoad(Number(metrics.cpu.toFixed(1)));
+          setRamLoad(Number(metrics.ram_gb.toFixed(2)));
+        }
+      } catch (e) {
+        console.error("Failed to fetch system metrics", e);
+      }
+    };
+
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 2000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const startSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -223,11 +231,13 @@ function App() {
   const activeWs = workspaces.find(w => w.id === activeWorkspaceId);
 
   return (
-    <div className="h-screen w-screen bg-[#070709] text-zinc-200 overflow-hidden flex flex-col font-sans relative">
-      <WorkspaceSelector />
+    <div className="h-screen w-screen bg-[#070709] text-zinc-200 overflow-hidden flex flex-row font-sans relative">
+      <ActivityBar />
 
-      {/* 2. Main Dashboard Layout splits */}
-      <div className="flex-1 flex overflow-hidden p-1 gap-0">
+      {/* Main content column */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* 2. Main Dashboard Layout splits */}
+        <div className="flex-1 flex overflow-hidden p-1 gap-0">
         {/* Left Side Dock columns (resizable) - Agents & Telemetry Feed */}
         {isSidebarVisible && (
           <>
@@ -366,13 +376,13 @@ function App() {
             Session Snapshot Saved
           </span>
           <div className="flex items-center gap-3.5">
-            <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="Simulated CPU Load">
+            <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="Global CPU Load">
               <Cpu size={10} className="text-purple-400" />
-              CPU: <span className="text-zinc-300 font-semibold">{mockCpu}%</span>
+              CPU: <span className="text-zinc-300 font-semibold">{cpuLoad}%</span>
             </span>
-            <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="Simulated Memory footprints">
+            <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="Global Memory Used">
               <HardDrive size={10} className="text-purple-400" />
-              RAM: <span className="text-zinc-300 font-semibold">{mockRam} GB</span>
+              RAM: <span className="text-zinc-300 font-semibold">{ramLoad} GB</span>
             </span>
             <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="OS PTY processes count">
               <Layers size={10} className="text-purple-400" />
@@ -380,6 +390,7 @@ function App() {
             </span>
           </div>
         </div>
+      </div>
       </div>
       <ContextMenu />
       <CustomDialog />

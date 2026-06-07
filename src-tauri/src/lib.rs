@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
 use portable_pty::{PtySystem, NativePtySystem, PtySize, CommandBuilder, Child, MasterPty};
+use sysinfo::System;
 
 // Struct mapping to an active PTY session on the OS
 struct PtySession {
@@ -25,6 +26,18 @@ static SESSION_VISIBILITIES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock
 
 fn get_visibilities() -> &'static Mutex<HashMap<String, String>> {
     SESSION_VISIBILITIES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// Global thread-safe system info
+static SYSTEM_INFO: OnceLock<Mutex<System>> = OnceLock::new();
+
+fn get_system_info() -> &'static Mutex<System> {
+    SYSTEM_INFO.get_or_init(|| {
+        let mut sys = System::new();
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+        Mutex::new(sys)
+    })
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -372,6 +385,27 @@ fn write_project_file(path: String, content: String) -> Result<(), String> {
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+struct SystemMetrics {
+    cpu: f32,
+    ram_gb: f32,
+}
+
+#[tauri::command]
+fn get_system_metrics() -> SystemMetrics {
+    let mut sys = get_system_info().lock().unwrap();
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+    
+    let cpu = sys.global_cpu_usage();
+    let ram_gb = sys.used_memory() as f32 / 1024.0 / 1024.0 / 1024.0;
+    
+    SystemMetrics {
+        cpu,
+        ram_gb,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -389,6 +423,7 @@ pub fn run() {
             read_project_file,
             write_project_file,
             set_terminal_visibility,
+            get_system_metrics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -201,19 +201,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       if (ptyResizeTimeout) clearTimeout(ptyResizeTimeout);
       ptyResizeTimeout = setTimeout(async () => {
         try {
-          // Detect interactive CLIs built on Ink framework (Gemini, Claude)
-          // Fetch fresh state from the store to avoid a stale closure bug where
-          // we use the command/title from the very first render.
-          const freshSession = useOrchestratorStore.getState().terminals.find(t => t.id === paneId);
-          const cmd = (freshSession?.command || '').toLowerCase();
-          const title = (freshSession?.title || '').toLowerCase();
-          
-          // Strict prefix checks instead of `.includes` to prevent destructive clears
-          // on unrelated user sessions (e.g., bash scripts named "gemini-test").
-          if (cmd === 'gemini' || cmd === 'claude' || 
-              title.startsWith('gemini') || title.startsWith('claude')) {
-            term.write('\x1b[2J\x1b[H');
-          }
+          // We no longer manually clear the screen here on resize.
+          // Native PTY resize is enough, and interactive CLIs will redraw themselves.
           
           await invoke('resize_pty', { sessionId: paneId, rows, cols });
         } catch (err) {

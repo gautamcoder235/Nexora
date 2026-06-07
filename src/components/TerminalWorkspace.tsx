@@ -77,6 +77,7 @@ export const TerminalWorkspace: React.FC = () => {
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
   const isTaskCenterVisible = useOrchestratorStore(s => s.isTaskCenterVisible);
   const setTaskCenterVisible = useOrchestratorStore(s => s.setTaskCenterVisible);
+  const isSidebarVisible = useOrchestratorStore(s => s.isSidebarVisible);
   
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
   const [animatingSessionId, setAnimatingSessionId] = useState<string | null>(null);
@@ -177,6 +178,9 @@ export const TerminalWorkspace: React.FC = () => {
       containerClass += "flex-row";
     } else if (terminals.length === 4) {
       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 auto-rows-fr";
+    } else if (!isSidebarVisible && [8, 10, 11, 12, 16].includes(terminals.length)) {
+      // Use 4-column layout when space is fully available to optimize vertical space
+      containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-4 auto-rows-fr";
     } else {
       // Fallback to grid for 3+ terminals
       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 lg:grid-cols-3 auto-rows-fr";
