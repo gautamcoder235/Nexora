@@ -191,11 +191,9 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   },
   setSidebarWidth: (width) => {
     set({ sidebarWidth: width });
-    get().saveSnapshot();
   },
   setTopPanelHeight: (height) => {
     set({ topPanelHeight: height });
-    get().saveSnapshot();
   },
 
   initStore: async () => {
@@ -711,6 +709,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   },
 
   saveSnapshot: async () => {
+    const start = performance.now();
     const state = get();
     
     // 1. Save global database mappings in session.json
@@ -725,9 +724,11 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     };
 
     try {
+      const dbJson = JSON.stringify(dbPayload);
+      console.log(`Snapshot DB Payload Size: ${(dbJson.length / 1024 / 1024).toFixed(3)} MB`);
       await invoke("save_config", {
         filename: "session.json",
-        content: JSON.stringify(dbPayload)
+        content: dbJson
       });
 
       // 2. If a workspace is active, save its active layout session snapshot
@@ -752,11 +753,14 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           topPanelHeight: state.topPanelHeight
         };
 
+        const snapJson = JSON.stringify(snapPayload);
+        console.log(`Snapshot Workspace Payload Size: ${(snapJson.length / 1024 / 1024).toFixed(3)} MB`);
         await invoke("save_config", {
           filename: `${state.activeWorkspaceId}_snapshot.json`,
-          content: JSON.stringify(snapPayload)
+          content: snapJson
         });
       }
+      console.log(`saveSnapshot duration: ${(performance.now() - start).toFixed(2)} ms`);
     } catch (e) {
       console.error("Auto-save WorkspaceSnapshot failed:", e);
     }
@@ -809,7 +813,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           agents: restoredAgents,
           tasks: snapshot.tasks || [],
           layout: snapshot.layout || { type: 'grid', panels: [] },
-          isSidebarVisible: snapshot.isSidebarVisible !== undefined ? snapshot.isSidebarVisible : true,
+          isSidebarVisible: restoredTerminals.length === 0 ? true : (snapshot.isSidebarVisible !== undefined ? snapshot.isSidebarVisible : true),
           isTaskCenterVisible: snapshot.isTaskCenterVisible !== undefined ? snapshot.isTaskCenterVisible : true,
           sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 490,
           topPanelHeight: snapshot.topPanelHeight !== undefined ? snapshot.topPanelHeight : 320

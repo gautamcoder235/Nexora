@@ -11,8 +11,8 @@ export const CustomDialog: React.FC = () => {
   const isConfirm = dialog.type === "confirm";
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center font-mono animate-in fade-in duration-200">
-      <div className="bg-[#0e0e12]/95 border border-[#232329] w-96 rounded-xl p-5 shadow-2xl space-y-4 relative flex flex-col justify-between animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[99999] flex items-center justify-center font-mono animate-in fade-in duration-200">
+      <div className="glass-modal glass-noise-base w-96 p-5 space-y-4 relative flex flex-col justify-between animate-in zoom-in-95 duration-200">
         
         {/* Close Button */}
         <button
@@ -23,11 +23,11 @@ export const CustomDialog: React.FC = () => {
         </button>
 
         {/* Heading */}
-        <div className="flex items-center gap-2.5 pb-2 border-b border-[#232329]/50 select-none">
+        <div className="flex items-center gap-2.5 pb-2 border-b border-border-glass select-none">
           {isConfirm ? (
-            <HelpCircle size={16} className="text-purple-400 flex-shrink-0" />
+            <HelpCircle size={16} className="text-accent-primary flex-shrink-0" />
           ) : (
-            <AlertTriangle size={16} className="text-amber-400 flex-shrink-0" />
+            <AlertTriangle size={16} className="text-accent-primary flex-shrink-0" />
           )}
           <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-200">
             {dialog.title}
@@ -40,7 +40,7 @@ export const CustomDialog: React.FC = () => {
         </div>
 
         {/* Footer Actions */}
-        <div className="flex gap-2 justify-end pt-3 border-t border-[#232329]/50 select-none">
+        <div className="flex gap-2 justify-end pt-3 border-t border-border-glass select-none">
           {isConfirm && (
             <button
               onClick={() => {
@@ -50,14 +50,14 @@ export const CustomDialog: React.FC = () => {
                   closeDialog();
                 }
               }}
-              className="bg-transparent hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 border border-[#232329] hover:border-zinc-700 font-bold text-[10px] uppercase py-1.5 px-4 rounded transition-all cursor-pointer"
+              className="bg-transparent hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 border border-border-glass hover:border-border-glass-hover font-bold text-[10px] uppercase py-1.5 px-4 rounded transition-all cursor-pointer"
             >
               Cancel
             </button>
           )}
           <button
             onClick={dialog.onConfirm}
-            className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow-md transition-all cursor-pointer"
+            className="bg-accent-primary hover:bg-accent-secondary text-black font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow transition-all cursor-pointer"
           >
             {isConfirm ? "Confirm" : "OK"}
           </button>

@@ -45,15 +45,15 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       fontSize: settings.fontSize,
       fontFamily: settings.fontFamily,
       theme: {
-        background: '#0a0a0f',
+        background: 'rgba(5, 5, 7, 0.95)',
         foreground: '#e2e8f0',
-        cursor: '#8b5cf6',
+        cursor: '#f59e0b',
         black: '#0f0f15',
         red: '#ef4444',
         green: '#10b981',
         yellow: '#f59e0b',
         blue: '#3b82f6',
-        magenta: '#8b5cf6',
+        magenta: '#f59e0b',
         cyan: '#06b6d4',
         white: '#cbd5e1',
         brightBlack: '#475569',
@@ -61,7 +61,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         brightGreen: '#34d399',
         brightYellow: '#fbbf24',
         brightBlue: '#60a5fa',
-        brightMagenta: '#a78bfa',
+        brightMagenta: '#fbbf24',
         brightCyan: '#22d3ee',
         brightWhite: '#f1f5f9',
       },
@@ -255,19 +255,28 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     };
     registerListeners();
 
-    // Resize observer (runs smoothly during animations at 60fps)
+    // Resize observer
     let resizeFrame: number | null = null;
+    let resizeTimeout: any = null;
     const resizeObserver = new ResizeObserver(() => {
-      if (resizeFrame) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        if (containerRef.current) {
-          try {
-            fitAddon.fit();
-          } catch (e) {
-            // ignore transient layout resize errors
+      // 1. Skip constant resizing during heavy CSS layout transitions!
+      // This prevents the WebGL context from tearing and dropping frames (black screen).
+      if (isAnimatingRef.current) return;
+      
+      // 2. Debounce normal resize events slightly
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (resizeFrame) cancelAnimationFrame(resizeFrame);
+        resizeFrame = requestAnimationFrame(() => {
+          if (containerRef.current) {
+            try {
+              fitAddon.fit();
+            } catch (e) {
+              // ignore transient layout resize errors
+            }
           }
-        }
-      });
+        });
+      }, 30); // 30ms debounce keeps it feeling responsive but drops excess webgl teardown frames
     });
     resizeObserver.observe(containerRef.current);
 
@@ -325,7 +334,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   }, [isAnimating]);
 
   return (
-    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#0a0a0f] font-mono overflow-hidden">
+    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#050507] font-mono overflow-hidden">
       <div ref={containerRef} className="w-full h-full" style={{ minHeight: '100%' }} />
     </div>
   );

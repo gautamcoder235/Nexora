@@ -1,9 +1,22 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash, ArrowLeft, ArrowRight, UserPlus, FileText } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ArrowRight, UserPlus, FileText, Zap, ClipboardList, Eye, CheckCircle2 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
+import { useSwarmStore } from "../stores/swarmStore";
 import { Task } from "../types";
 
-export const TaskCenter: React.FC = () => {
+interface TaskCenterProps {
+  selectedProjectId: string;
+  setSelectedProjectId: (id: string) => void;
+  showAddForm: boolean;
+  setShowAddForm: (show: boolean) => void;
+}
+
+export const TaskCenter: React.FC<TaskCenterProps> = ({
+  selectedProjectId,
+  setSelectedProjectId,
+  showAddForm,
+  setShowAddForm
+}) => {
   const {
     projects,
     agents,
@@ -16,22 +29,10 @@ export const TaskCenter: React.FC = () => {
   } = useOrchestratorStore();
 
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-
-  // Default to first project when workspace changes
-  useEffect(() => {
-    if (activeProjects.length > 0) {
-      setSelectedProjectId(activeProjects[0].id);
-    } else {
-      setSelectedProjectId("");
-    }
-  }, [activeWorkspaceId, projects]);
-
   const projectTasks = tasks.filter(t => t.projectId === selectedProjectId);
   const projectAgents = agents.filter(a => a.projectId === selectedProjectId);
 
   // Quick inputs
-  const [showAddForm, setShowAddForm] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDesc, setNewTaskDesc] = useState("");
 
@@ -45,10 +46,10 @@ export const TaskCenter: React.FC = () => {
   };
 
   const columns: { id: Task['status']; title: string; color: string }[] = [
-    { id: 'todo', title: 'Todo', color: 'border-t-zinc-600 bg-zinc-950/30' },
-    { id: 'doing', title: 'Doing', color: 'border-t-purple-500 bg-purple-500/[0.01]' },
-    { id: 'review', title: 'Review', color: 'border-t-sky-500 bg-sky-500/[0.01]' },
-    { id: 'done', title: 'Done', color: 'border-t-emerald-500 bg-emerald-500/[0.01]' }
+    { id: 'todo', title: 'Todo', color: 'border-t-zinc-500 bg-bg-secondary/20 shadow-sm' },
+    { id: 'doing', title: 'Doing', color: 'border-t-amber-500 bg-bg-secondary/20 shadow-[0_0_12px_rgba(245,158,11,0.06)]' },
+    { id: 'review', title: 'Review', color: 'border-t-indigo-500 bg-bg-secondary/20 shadow-sm' },
+    { id: 'done', title: 'Done', color: 'border-t-emerald-500 bg-bg-secondary/20 shadow-sm' }
   ];
 
   const handleMove = async (task: Task, direction: 'left' | 'right') => {
@@ -61,44 +62,29 @@ export const TaskCenter: React.FC = () => {
     }
   };
 
+  const renderEmptyIcon = (status: Task['status']) => {
+    switch (status) {
+      case 'todo':
+        return <ClipboardList size={14} className="text-zinc-500 opacity-30" />;
+      case 'doing':
+        return <Zap size={14} className="text-amber-500 opacity-30 animate-pulse" />;
+      case 'review':
+        return <Eye size={14} className="text-indigo-400 opacity-30" />;
+      case 'done':
+        return <CheckCircle2 size={14} className="text-emerald-400 opacity-30" />;
+      default:
+        return <ClipboardList size={14} className="text-zinc-500 opacity-30" />;
+    }
+  };
+
   if (!activeWorkspaceId) return null;
 
   return (
-    <div className="flex flex-col h-full space-y-2 font-mono">
-      {/* Top selector and controls */}
-      <div className="flex items-center justify-between flex-shrink-0 select-none pb-1 border-b border-[#232329]/40">
-        <div className="flex items-center gap-3">
-          <FileText size={13} className="text-purple-400" />
-          <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Project Task Board</span>
-          
-          <select
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="bg-[#121214] text-[10px] text-zinc-300 border border-[#232329] px-2 py-0.5 rounded outline-none cursor-pointer focus:border-purple-500/30 font-semibold"
-          >
-            {activeProjects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-            {activeProjects.length === 0 && (
-              <option value="">No Active Projects</option>
-            )}
-          </select>
-        </div>
-
-        {selectedProjectId && (
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="flex items-center gap-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 text-[9px] font-bold py-0.5 px-2 rounded transition-all uppercase"
-          >
-            <Plus size={11} />
-            Create Task
-          </button>
-        )}
-      </div>
+    <div className="flex flex-col h-full space-y-2 font-mono pb-1 overflow-hidden">
 
       {/* Task Creation Form */}
       {showAddForm && (
-        <form onSubmit={handleCreateTask} className="bg-[#121214] border border-purple-500/20 p-2 rounded space-y-1.5 flex-shrink-0">
+        <form onSubmit={handleCreateTask} className="glass-panel bg-bg-secondary/40 border border-border-glass p-3.5 rounded-lg space-y-3 flex-shrink-0 shadow-lg animate-in fade-in duration-200">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <input
               type="text"
@@ -106,27 +92,27 @@ export const TaskCenter: React.FC = () => {
               placeholder="Task Title (e.g. Implement Login API)"
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
-              className="bg-[#0c0c0e] text-[11px] text-zinc-200 border border-[#232329] px-2.5 py-1 rounded outline-none focus:border-purple-500/30"
+              className="glass-input text-[11px]"
             />
             <input
               type="text"
               placeholder="Task Description / Details"
               value={newTaskDesc}
               onChange={(e) => setNewTaskDesc(e.target.value)}
-              className="bg-[#0c0c0e] text-[11px] text-zinc-200 border border-[#232329] px-2.5 py-1 rounded outline-none focus:border-purple-500/30"
+              className="glass-input text-[11px]"
             />
           </div>
           <div className="flex justify-end gap-1.5">
             <button
               type="button"
               onClick={() => setShowAddForm(false)}
-              className="text-[10px] text-zinc-500 hover:text-zinc-300 px-2 py-0.5"
+              className="glass-button glass-button--ghost text-[10px] px-3 py-1 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] px-3 py-0.5 rounded"
+              className="glass-button glass-button--accent text-[10px] font-bold px-4 py-1 cursor-pointer shadow-glow"
             >
               Save Task
             </button>
@@ -141,89 +127,104 @@ export const TaskCenter: React.FC = () => {
           return (
             <div 
               key={col.id} 
-              className={`flex flex-col border border-[#1b1b22] border-t-2 rounded-md overflow-hidden min-w-0 ${col.color}`}
+              className={`flex flex-col border border-border-glass border-t-2 rounded-md overflow-hidden min-w-0 transition-all ${col.color}`}
             >
               {/* Column Header */}
-              <div className="bg-[#08080a] px-3 py-2 border-b border-[#1b1b22] flex items-center justify-between select-none">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{col.title}</span>
-                <span className="bg-[#141419] px-2 py-0.5 rounded text-zinc-500 text-[9px] font-bold border border-[#1b1b22]">
+              <div className="bg-bg-secondary/35 px-2.5 py-1 border-b border-border-glass flex items-center justify-between select-none">
+                <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">{col.title}</span>
+                <span className="bg-white/5 h-[16px] min-w-[16px] px-1 rounded text-zinc-400 text-[8.5px] font-bold border border-border-glass/30 flex items-center justify-center">
                   {colTasks.length}
                 </span>
               </div>
 
               {/* Column Content Scrollable Area */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0 scrollbar-thin">
-                {colTasks.map(task => {
-                  return (
-                    <div 
-                      key={task.id} 
-                      className="bg-[#08080a]/90 border border-[#1b1b22] hover:border-purple-500/30 rounded-md p-2.5 space-y-2 hover:shadow-[0_4px_12px_rgba(0,0,0,0.5)] transition-all select-none relative group"
-                    >
-                      {/* Title & Description */}
-                      <div className="space-y-1 select-text">
-                        <h4 className="text-[11px] font-bold text-zinc-200 break-words leading-tight">{task.title}</h4>
-                        {task.description && (
-                          <p className="text-[9.5px] text-zinc-500 break-words leading-relaxed">{task.description}</p>
-                        )}
-                      </div>
+              <div className="flex-1 flex flex-col p-2 min-h-0 overflow-hidden">
+                {colTasks.length > 0 ? (
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 scrollbar-thin">
+                    {colTasks.map(task => {
+                      return (
+                        <div 
+                          key={task.id} 
+                          className="bg-bg-secondary/40 border border-border-glass hover:border-zinc-700/60 rounded-md p-2.5 space-y-2.5 hover:shadow-md hover:scale-[1.01] transition-all select-none relative group"
+                        >
+                          {/* Title & Description */}
+                          <div className="space-y-1 select-text">
+                            <h4 className="text-[10.5px] font-bold text-zinc-200 break-words leading-tight">{task.title}</h4>
+                            {task.description && (
+                              <p className="text-[9.5px] text-zinc-500 break-words leading-relaxed font-sans">{task.description}</p>
+                            )}
+                          </div>
 
-                      {/* Assignment & Action row */}
-                      <div className="flex items-center justify-between pt-1 border-t border-[#1b1b22]/30 text-[9px] gap-1">
-                        {/* Assign Agent Selector */}
-                        <div className="flex items-center gap-1 max-w-[65%] truncate">
-                          <UserPlus size={10} className="text-zinc-500 flex-shrink-0" />
-                          <select
-                            value={task.assignedAgentId || ""}
-                            onChange={(e) => assignTask(task.id, e.target.value || null)}
-                            className="bg-transparent text-zinc-400 outline-none cursor-pointer max-w-full hover:text-zinc-250 transition-colors font-mono font-semibold"
-                          >
-                            <option value="" className="bg-[#0c0c0e]">Unassigned</option>
-                            {projectAgents.map(agent => (
-                              <option key={agent.id} value={agent.id} className="bg-[#0c0c0e]">
-                                {agent.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                          {/* Assignment & Action row */}
+                          <div className="flex items-center justify-between pt-1 border-t border-border-glass/20 text-[9px] gap-1">
+                            {/* Assign Agent Selector */}
+                            <div className="flex items-center gap-1.5 max-w-[65%] truncate bg-white/5 border border-border-glass/40 px-1.5 py-0.5 rounded">
+                              <UserPlus size={10} className="text-zinc-500 flex-shrink-0" />
+                              <select
+                                value={task.assignedAgentId || ""}
+                                onChange={(e) => assignTask(task.id, e.target.value || null)}
+                                className="bg-transparent text-zinc-400 outline-none cursor-pointer max-w-full hover:text-zinc-200 transition-colors font-mono font-semibold"
+                              >
+                                <option value="" className="bg-[#0f0f15]">Unassigned</option>
+                                {projectAgents.map(agent => (
+                                  <option key={agent.id} value={agent.id} className="bg-[#0f0f15]">
+                                    {agent.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
 
-                        {/* Actions list shown ONLY on hover for cleaner UI layout */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                          {col.id !== 'todo' && (
-                            <button
-                              type="button"
-                              onClick={() => handleMove(task, 'left')}
-                              title="Move back"
-                              className="text-zinc-500 hover:text-purple-400 p-0.5 hover:bg-[#121216] rounded border border-[#1b1b22] cursor-pointer transition-colors"
-                            >
-                              <ArrowLeft size={9} />
-                            </button>
-                          )}
-                          {col.id !== 'done' && (
-                            <button
-                              type="button"
-                              onClick={() => handleMove(task, 'right')}
-                              title="Move forward"
-                              className="text-zinc-500 hover:text-purple-400 p-0.5 hover:bg-[#121216] rounded border border-[#1b1b22] cursor-pointer transition-colors"
-                            >
-                              <ArrowRight size={9} />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => deleteTask(task.id)}
-                            title="Delete Task"
-                            className="text-zinc-500 hover:text-rose-400 p-0.5 hover:bg-[#121216] rounded border border-[#1b1b22] cursor-pointer transition-colors"
-                          >
-                            <Trash size={9} />
-                          </button>
+                            {/* Actions list shown ONLY on hover for cleaner UI layout */}
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                              {col.id !== 'todo' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMove(task, 'left')}
+                                  title="Move back"
+                                  className="text-zinc-400 hover:text-accent-primary p-1 hover:bg-white/5 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
+                                >
+                                  <ArrowLeft size={9} />
+                                </button>
+                              )}
+                              {col.id !== 'done' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMove(task, 'right')}
+                                  title="Move forward"
+                                  className="text-zinc-400 hover:text-accent-primary p-1 hover:bg-white/5 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
+                                >
+                                  <ArrowRight size={9} />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  useSwarmStore.getState().setSwarmPanelVisible(true);
+                                  useSwarmStore.getState().setFilter('all');
+                                }}
+                                title="View Swarm Executions"
+                                className="text-zinc-400 hover:text-accent-primary p-1 hover:bg-white/5 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
+                              >
+                                <Zap size={9} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteTask(task.id)}
+                                title="Delete Task"
+                                className="text-zinc-400 hover:text-rose-400 p-1 hover:bg-rose-500/10 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
+                              >
+                                <Trash2 size={9} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {colTasks.length === 0 && (
-                  <div className="text-[9px] text-zinc-600 text-center py-6 select-none font-mono tracking-wide">
-                    -- Empty --
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex-grow flex-1 flex flex-col items-center justify-center border border-dashed border-border-glass/30 rounded-md bg-white/[0.01] select-none text-center p-4">
+                    {renderEmptyIcon(col.id)}
+                    <span className="text-[9px] text-zinc-550 mt-1 font-mono tracking-wide uppercase">Empty</span>
                   </div>
                 )}
               </div>

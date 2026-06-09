@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
 import { PluginRegistry } from '../plugins';
-import { Plus, ChevronDown, ChevronUp, Terminal } from 'lucide-react';
+import { Plus, Terminal } from 'lucide-react';
 import { AgentCapabilities } from '../types';
 
 export const CliSpawnerPanel: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedCliId, setSelectedCliId] = useState<string>('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  
+  useEffect(() => {
+    const handleToggle = () => setIsExpanded(prev => !prev);
+    window.addEventListener('toggle-add-agent', handleToggle);
+    return () => window.removeEventListener('toggle-add-agent', handleToggle);
+  }, []);
   
   const projects = useOrchestratorStore(s => s.projects);
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
@@ -66,62 +72,71 @@ export const CliSpawnerPanel: React.FC = () => {
   };
 
   return (
-    <div className="bg-[#0c0c0e] border border-[#232329] rounded-lg overflow-hidden flex-shrink-0">
-      <button 
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between p-2.5 bg-[#121216] hover:bg-[#16161a] transition-colors border-b border-[#232329]"
-      >
-        <div className="flex items-center gap-2">
-          <Terminal size={14} className="text-sky-400" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-300">
-            Spawn CLI Agent
-          </span>
-        </div>
-        {isExpanded ? <ChevronUp size={14} className="text-zinc-500" /> : <ChevronDown size={14} className="text-zinc-500" />}
-      </button>
+    <div className="relative z-30 flex-shrink-0 flex flex-col">
+      {/* Header Row */}
+      <div className="w-full flex items-center justify-between py-1.5 px-2.5 glass-panel bg-bg-secondary/20 border-b border-border-glass gap-3 h-[34px] relative z-20">
+        <h2 className="text-[10px] font-bold uppercase tracking-wider text-zinc-200 font-mono flex items-center gap-1.5 select-none shrink-0">
+          <Terminal size={10} className="text-accent-primary animate-pulse" />
+          CLI Agent Swarm
+        </h2>
+        
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={`flex items-center gap-1 py-1 px-2 text-[9px] font-bold tracking-wider rounded transition-all cursor-pointer h-[22px] whitespace-nowrap shrink-0 ${
+            isExpanded 
+              ? 'text-zinc-400 bg-bg-tertiary hover:bg-zinc-800 border border-border-glass' 
+              : 'text-black bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+          }`}
+        >
+          {isExpanded ? 'Cancel' : <><Plus size={10} /> New Agent</>}
+        </button>
+      </div>
 
-      {isExpanded && (
-        <div className="p-3 bg-[#0a0a0c] space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase">Select CLI Template</label>
-              <select
-                value={selectedCliId}
-                onChange={(e) => setSelectedCliId(e.target.value)}
-                className="w-full bg-[#16161a] text-xs text-zinc-300 border border-[#2d2d35] px-2 py-1.5 rounded outline-none cursor-pointer focus:border-sky-500/50"
-              >
-                <option value="">-- Choose CLI --</option>
-                {allCLIs.map(cli => (
-                  <option key={cli.id} value={cli.id}>{cli.name} ({cli.cliCommand})</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase">Assign Project</label>
-              <select
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
-                className="w-full bg-[#16161a] text-xs text-zinc-300 border border-[#2d2d35] px-2 py-1.5 rounded outline-none cursor-pointer focus:border-sky-500/50"
-              >
-                <option value="">-- Target Project --</option>
-                {activeProjects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          <button
-            onClick={handleSpawn}
-            disabled={!selectedCliId || !selectedProjectId}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-sky-500/10 hover:bg-sky-500/20 disabled:bg-[#16161a] disabled:text-zinc-600 text-sky-400 border border-sky-500/20 disabled:border-[#2d2d35] rounded font-bold uppercase text-[10px] tracking-wider transition-all cursor-pointer"
+      {/* Expanded Spawn Form (Floating Menu) */}
+      <div 
+        className={`!absolute top-[34px] left-0 right-0 z-10 w-full flex flex-col gap-2.5 p-2.5 glass-panel-elevated bg-[#0a0a0f]/60 backdrop-blur-2xl shadow-2xl border-b border-border-glass transition-all duration-300 ease-in-out origin-top ${
+          isExpanded ? 'opacity-100 translate-y-0 visible' : 'opacity-0 -translate-y-2 invisible pointer-events-none'
+        }`}
+      >
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[9px] uppercase tracking-wide text-zinc-500 font-mono ml-1">Agent Type</label>
+          <select
+            value={selectedCliId}
+            onChange={(e) => setSelectedCliId(e.target.value)}
+            className="glass-input w-full text-[10px] text-zinc-300 font-semibold rounded px-2 py-1.5 outline-none cursor-pointer"
           >
-            <Plus size={12} />
-            Add to Grid
-          </button>
+            <option value="" className="bg-[#0c0c0e]">-- Choose CLI --</option>
+            {allCLIs.map(cli => (
+              <option key={cli.id} value={cli.id} className="bg-[#0c0c0e]">{cli.name}</option>
+            ))}
+          </select>
         </div>
-      )}
+        
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[9px] uppercase tracking-wide text-zinc-500 font-mono ml-1">Target Project</label>
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="glass-input w-full text-[10px] text-zinc-300 font-semibold rounded px-2 py-1.5 outline-none cursor-pointer"
+          >
+            <option value="" className="bg-[#0c0c0e]">-- Target Project --</option>
+            {activeProjects.map(p => (
+              <option key={p.id} value={p.id} className="bg-[#0c0c0e]">{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={() => {
+            handleSpawn();
+            setIsExpanded(false);
+          }}
+          disabled={!selectedCliId || !selectedProjectId}
+          className="mt-1 w-full flex items-center justify-center gap-1.5 py-1.5 px-2 text-[10px] font-bold tracking-wider text-black bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 rounded transition-all shadow-[0_0_8px_rgba(16,185,129,0.2)] disabled:opacity-40 disabled:shadow-none cursor-pointer"
+        >
+          Add Agent
+        </button>
+      </div>
     </div>
   );
 };

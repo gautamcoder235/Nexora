@@ -137,6 +137,8 @@ export interface AppSettings {
   customCLIs: CustomCLI[];
   cliOverrides: Record<string, Partial<AgentPlugin>>;
 
+  shortcuts: Record<string, string>;
+
   restoreTabsOnStartup: boolean;
   confirmBeforeClosing: boolean;
 }
@@ -155,6 +157,13 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 
   customCLIs: [],
   cliOverrides: {},
+
+  shortcuts: {
+    toggleSidebar: 'Ctrl+B',
+    toggleTaskCenter: 'Ctrl+J',
+    toggleAddAgent: 'Ctrl+N',
+    openSettings: 'Ctrl+,',
+  },
   
   restoreTabsOnStartup: true,
   confirmBeforeClosing: true,

@@ -14,7 +14,8 @@
       {
         "title": "Multiple Vibe - AI Workspace",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "maximized": true
       }
     ],
     "security": {

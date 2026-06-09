@@ -3,10 +3,29 @@ import { BookOpen, Save, FileEdit, Eye } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { invoke } from "@tauri-apps/api/core";
 
-export const ProjectMemory: React.FC = () => {
+import { EventBus } from "../core/events";
+
+interface ProjectMemoryProps {
+  selectedProjectId: string;
+  setSelectedProjectId: (id: string) => void;
+  isMemorySaving: boolean;
+  setIsMemorySaving: (saving: boolean) => void;
+  memorySaveStatus: "idle" | "success" | "error";
+  setMemorySaveStatus: (status: "idle" | "success" | "error") => void;
+  setMemorySaveError: (error: string) => void;
+}
+
+export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
+  selectedProjectId,
+  setSelectedProjectId,
+  isMemorySaving,
+  setIsMemorySaving,
+  memorySaveStatus,
+  setMemorySaveStatus,
+  setMemorySaveError
+}) => {
   const { projects, activeWorkspaceId, initializeProjectMemory } = useOrchestratorStore();
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   
   const files = [
     { id: "architecture.md", label: "architecture.md", desc: "System topology & stack" },
@@ -18,18 +37,6 @@ export const ProjectMemory: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<string>("architecture.md");
   const [fileContent, setFileContent] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
-  const [errorMessage, setErrorMessage] = useState("");
-
-  // Default to first project when workspace changes
-  useEffect(() => {
-    if (activeProjects.length > 0) {
-      setSelectedProjectId(activeProjects[0].id);
-    } else {
-      setSelectedProjectId("");
-    }
-  }, [activeWorkspaceId, projects]);
 
   const project = activeProjects.find(p => p.id === selectedProjectId);
 
@@ -46,12 +53,12 @@ export const ProjectMemory: React.FC = () => {
         const content = await invoke<string>("read_project_file", { path });
         if (isSubscribed) {
           setFileContent(content);
-          setSaveStatus("idle");
+          setMemorySaveStatus("idle");
         }
       } catch (err) {
         if (isSubscribed) {
           setFileContent(`Failed to load ${selectedFile}. File may not exist yet or is empty.`);
-          setSaveStatus("idle");
+          setMemorySaveStatus("idle");
         }
       }
     };
@@ -64,12 +71,12 @@ export const ProjectMemory: React.FC = () => {
 
   const handleSaveFile = async () => {
     if (!project || !selectedFile) return;
-    setIsSaving(true);
-    setSaveStatus("idle");
+    setIsMemorySaving(true);
+    setMemorySaveStatus("idle");
     try {
       const path = `${project.path.replace(/\\/g, "/")}/${selectedFile}`;
       await invoke("write_project_file", { path, content: fileContent });
-      setSaveStatus("success");
+      setMemorySaveStatus("success");
       
       // If tasks.md was updated, reload tasks checklist in store
       if (selectedFile === "tasks.md") {
@@ -77,15 +84,23 @@ export const ProjectMemory: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setSaveStatus("error");
-      setErrorMessage(err.toString());
+      setMemorySaveStatus("error");
+      setMemorySaveError(err.toString());
     } finally {
-      setIsSaving(false);
+      setIsMemorySaving(false);
       setTimeout(() => {
-        setSaveStatus("idle");
+        setMemorySaveStatus("idle");
       }, 3000);
     }
   };
+
+  useEffect(() => {
+    const handleTriggerSave = () => {
+      handleSaveFile();
+    };
+    const unsub = EventBus.subscribe("project-memory:save", handleTriggerSave);
+    return unsub;
+  }, [selectedProjectId, selectedFile, fileContent, project]);
 
   // Basic markdown to HTML renderer for preview mode
   const renderSimpleMarkdown = (text: string) => {
@@ -115,7 +130,7 @@ export const ProjectMemory: React.FC = () => {
           <div key={idx} className="flex items-center gap-2 text-xs py-0.5 text-zinc-300">
             <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[9px] font-bold ${
               isDone ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" :
-              isDoing ? "bg-purple-500/20 border-purple-500/50 text-purple-400 animate-pulse" :
+              isDoing ? "bg-accent-primary/20 border-accent-primary/50 text-accent-primary animate-pulse" :
               "border-zinc-700 bg-transparent text-transparent"
             }`}>
               {isDone ? "✓" : isDoing ? "..." : ""}
@@ -140,7 +155,7 @@ export const ProjectMemory: React.FC = () => {
       // Blockquote / context warning boxes
       if (trimmed.startsWith("> ")) {
         return (
-          <div key={idx} className="border-l-2 border-purple-500 bg-purple-500/5 px-2.5 py-1 text-[10px] my-1 text-zinc-400 rounded-r">
+          <div key={idx} className="border-l-2 border-zinc-700 bg-zinc-850/20 px-2.5 py-1 text-[10px] my-1 text-zinc-400 rounded-r">
             {trimmed.substring(2)}
           </div>
         );
@@ -154,59 +169,20 @@ export const ProjectMemory: React.FC = () => {
   if (!activeWorkspaceId) return null;
 
   return (
-    <div className="flex flex-col h-full space-y-2 font-mono">
-      {/* Top bar controls */}
-      <div className="flex items-center justify-between flex-shrink-0 select-none pb-1 border-b border-[#232329]/40">
-        <div className="flex items-center gap-3">
-          <BookOpen size={13} className="text-purple-400" />
-          <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Project Memory Logs</span>
-          
-          <select
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="bg-[#121214] text-[10px] text-zinc-300 border border-[#232329] px-2 py-0.5 rounded outline-none cursor-pointer focus:border-purple-500/30 font-semibold"
-          >
-            {activeProjects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-            {activeProjects.length === 0 && (
-              <option value="">No Active Projects</option>
-            )}
-          </select>
-        </div>
-
-        {project && (
-          <div className="flex items-center gap-2">
-            {saveStatus === "success" && (
-              <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded animate-fade-in border border-emerald-500/20">Saved Successfully</span>
-            )}
-            {saveStatus === "error" && (
-              <span className="text-[9px] text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded animate-fade-in border border-rose-500/20" title={errorMessage}>Save Error</span>
-            )}
-            <button
-              onClick={handleSaveFile}
-              disabled={isSaving}
-              className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-800 text-white font-bold text-[9px] py-0.5 px-2.5 rounded transition-all uppercase"
-            >
-              <Save size={10} />
-              {isSaving ? "Saving..." : "Save Memory"}
-            </button>
-          </div>
-        )}
-      </div>
+    <div className="flex flex-col h-full space-y-2 font-mono overflow-hidden">
 
       {/* Main layout splits: File List vs Editor */}
-      <div className="flex-1 flex overflow-hidden min-h-0 gap-1.5">
+      <div className="flex-grow flex overflow-hidden min-h-0 gap-1.5">
         {/* Memory File Selectors */}
         <div className="w-40 flex-shrink-0 flex flex-col gap-1 overflow-y-auto pr-1">
           {files.map(f => (
             <button
               key={f.id}
               onClick={() => setSelectedFile(f.id)}
-              className={`w-full text-left p-1.5 border rounded transition-all flex flex-col ${
+              className={`w-full text-left p-2 border rounded-md transition-all flex flex-col cursor-pointer ${
                 selectedFile === f.id
-                  ? "bg-purple-500/10 border-purple-500/30 text-purple-400"
-                  : "bg-[#0c0c0e]/50 border-[#232329] text-zinc-400 hover:bg-[#121214] hover:border-zinc-800"
+                  ? "bg-accent-primary/10 border-accent-primary/30 text-accent-primary"
+                  : "bg-[#0c0c0e]/50 border-border-glass text-zinc-400 hover:bg-[#121214]/65 hover:border-border-glass-hover"
               }`}
             >
               <span className="text-[11px] font-bold font-mono">{f.label}</span>
@@ -214,24 +190,24 @@ export const ProjectMemory: React.FC = () => {
             </button>
           ))}
           {project && (
-            <div className="mt-3 bg-[#121214] border border-[#232329] rounded p-2.5 text-[9px] text-zinc-500 leading-normal font-sans">
+            <div className="mt-3 bg-[#09090b]/80 border border-border-glass rounded-md p-2.5 text-[9px] text-zinc-500 leading-normal font-sans">
               <span className="font-bold text-zinc-400 uppercase font-mono block mb-1">Location:</span>
-              <code className="break-all font-mono text-[9px]">{project.path}/{selectedFile}</code>
+              <code className="break-all font-mono text-[9px] text-zinc-350">{project.path}/{selectedFile}</code>
             </div>
           )}
         </div>
 
         {/* Editor or Preview split */}
-        <div className="flex-1 flex flex-col border border-[#232329] rounded bg-[#0c0c0e]/50 overflow-hidden">
+        <div className="flex-1 flex flex-col border border-border-glass rounded-md bg-[#09090b] overflow-hidden">
           {/* Editor Tabs Header */}
-          <div className="bg-[#0c0c0e] border-b border-[#232329] px-1.5 py-0.5 flex items-center justify-between flex-shrink-0 select-none">
+          <div className="bg-[#050507] border-b border-border-glass px-1.5 py-0.5 flex items-center justify-between flex-shrink-0 select-none">
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setActiveTab("edit")}
-                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-all ${
+                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-all cursor-pointer ${
                   activeTab === "edit"
-                    ? "bg-[#121214] text-zinc-200 border border-[#232329]"
-                    : "text-zinc-500 hover:text-zinc-300"
+                    ? "bg-accent-primary/10 text-accent-primary border border-accent-primary/20"
+                    : "text-zinc-500 hover:text-zinc-350"
                 }`}
               >
                 <FileEdit size={10} />
@@ -239,10 +215,10 @@ export const ProjectMemory: React.FC = () => {
               </button>
               <button
                 onClick={() => setActiveTab("preview")}
-                className={`flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded transition-all ${
+                className={`flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded transition-all cursor-pointer ${
                   activeTab === "preview"
-                    ? "bg-[#121214] text-zinc-200 border border-[#232329]"
-                    : "text-zinc-500 hover:text-zinc-300"
+                    ? "bg-accent-primary/10 text-accent-primary border border-accent-primary/20"
+                    : "text-zinc-500 hover:text-zinc-350"
                 }`}
               >
                 <Eye size={10} />
@@ -262,10 +238,10 @@ export const ProjectMemory: React.FC = () => {
                 value={fileContent}
                 onChange={(e) => setFileContent(e.target.value)}
                 placeholder={`Write markdown documentation for ${selectedFile} here...`}
-                className="w-full h-full p-2 bg-transparent text-zinc-300 text-xs font-mono outline-none border-none resize-none select-text leading-relaxed"
+                className="w-full h-full p-3 bg-transparent text-zinc-300 text-xs font-mono outline-none border-none resize-none select-text leading-relaxed"
               />
             ) : (
-              <div className="w-full h-full overflow-y-auto p-2 bg-[#0a0a0c]/60 space-y-1 font-mono">
+              <div className="w-full h-full overflow-y-auto p-3 bg-transparent space-y-1 font-mono">
                 {renderSimpleMarkdown(fileContent)}
               </div>
             )}

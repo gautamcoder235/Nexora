@@ -4,6 +4,16 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
+
+pub mod swarm_db;
+pub mod swarm_worktrees;
+pub mod swarm_ownership;
+pub mod swarm_lifecycle;
+pub mod swarm_agents;
+pub mod swarm_validation;
+pub mod swarm_queries;
+pub mod swarm_events;
+pub mod swarm_merge;
 use portable_pty::{PtySystem, NativePtySystem, PtySize, CommandBuilder, Child, MasterPty};
 use sysinfo::System;
 
@@ -65,7 +75,7 @@ fn spawn_pty(
     args: Option<Vec<String>>,
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
-) -> Result<(), String> {
+) -> Result<Option<u32>, String> {
     let pty_system = NativePtySystem::default();
     let size = PtySize {
         rows: 24,
@@ -113,6 +123,7 @@ fn spawn_pty(
 
     // Spawn the shell process inside slave PTY
     let child = pair.slave.spawn_command(cmd_builder).map_err(|e| e.to_string())?;
+    let process_id = child.process_id();
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let master = pair.master;
 
@@ -232,7 +243,7 @@ fn spawn_pty(
         child,
     });
 
-    Ok(())
+    Ok(process_id)
 }
 
 // Helper to emit and clear buffer with UTF-8 Splice Safety
@@ -363,8 +374,16 @@ fn load_config(app: AppHandle, filename: &str) -> Result<String, String> {
 #[tauri::command]
 fn check_cli_tool(command: String) -> bool {
     let check_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    std::process::Command::new(check_cmd)
-        .arg(&command)
+    
+    let mut cmd = std::process::Command::new(check_cmd);
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    
+    cmd.arg(&command)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -410,6 +429,17 @@ fn get_system_metrics() -> SystemMetrics {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            // Initialize Swarm SQLite Database
+            if let Err(e) = swarm_db::init_db(app.handle()) {
+                eprintln!("Failed to initialize swarm db: {}", e);
+            }
+
+            // Start Stalled Agent Watchdog
+            swarm_lifecycle::start_agent_watchdog(app.handle().clone());
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             spawn_pty,
             write_pty,
@@ -424,6 +454,35 @@ pub fn run() {
             write_project_file,
             set_terminal_visibility,
             get_system_metrics,
+            swarm_worktrees::validate_git_repository,
+            swarm_worktrees::create_worktree,
+            swarm_worktrees::remove_worktree,
+            swarm_worktrees::cleanup_worktrees,
+            swarm_ownership::validate_ownership,
+            swarm_lifecycle::start_task_execution,
+            swarm_lifecycle::finish_task_execution,
+            swarm_lifecycle::recover_swarm_state,
+            swarm_lifecycle::spawn_agent_session,
+            swarm_lifecycle::debug_simulate_agent_completion,
+            swarm_validation::run_validation_async,
+            swarm_agents::get_all_agents,
+            swarm_agents::register_agent,
+            swarm_agents::update_agent_status,
+            swarm_queries::get_validation_run,
+            swarm_queries::get_artifacts,
+            swarm_queries::get_execution_logs,
+            swarm_queries::get_execution_metadata,
+            swarm_queries::get_merge_candidate,
+            swarm_queries::review_merge_candidate,
+            swarm_queries::read_artifact,
+            // Phase 5: Swarm Control Center
+            swarm_queries::list_executions,
+            swarm_queries::terminate_execution,
+            swarm_queries::get_execution_events,
+            swarm_queries::save_execution_draft,
+            swarm_queries::list_execution_drafts,
+            swarm_queries::discard_execution_draft,
+            swarm_merge::apply_merge_candidate
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
