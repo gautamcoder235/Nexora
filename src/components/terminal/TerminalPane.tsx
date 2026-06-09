@@ -317,19 +317,29 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     }
   }, [settings.fontSize, settings.fontFamily, settings.cursorBlink, settings.cursorStyle]);
 
-  // Fit layout once transitions complete (debounced slightly to let layout fully settle)
+  // Fit layout once transitions complete
   useEffect(() => {
     if (!isAnimating && fitAddonRef.current && containerRef.current) {
-      const timer = setTimeout(() => {
-        if (fitAddonRef.current && containerRef.current) {
-          try {
-            fitAddonRef.current.fit();
-          } catch (e) {
-            // ignore
+      let rAF2: number;
+      const rAF1 = requestAnimationFrame(() => {
+        rAF2 = requestAnimationFrame(() => {
+          if (
+            fitAddonRef.current && 
+            containerRef.current && 
+            containerRef.current.isConnected
+          ) {
+            try {
+              fitAddonRef.current.fit();
+            } catch (e) {
+              // ignore
+            }
           }
-        }
-      }, 50);
-      return () => clearTimeout(timer);
+        });
+      });
+      return () => {
+        cancelAnimationFrame(rAF1);
+        if (rAF2) cancelAnimationFrame(rAF2);
+      };
     }
   }, [isAnimating]);
 
