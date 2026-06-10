@@ -40,6 +40,8 @@ interface OrchestratorState {
   tasks: Task[];
   isSidebarVisible: boolean;
   isTaskCenterVisible: boolean;
+  isAgentPanelPinned: boolean;
+  isTaskPanelPinned: boolean;
   sidebarWidth: number;
   topPanelHeight: number;
   
@@ -54,6 +56,8 @@ interface OrchestratorState {
   
   setSidebarVisible: (visible: boolean) => void;
   setTaskCenterVisible: (visible: boolean) => void;
+  setAgentPanelPinned: (pinned: boolean) => void;
+  setTaskPanelPinned: (pinned: boolean) => void;
   setSidebarWidth: (width: number) => void;
   setTopPanelHeight: (height: number) => void;
   initStore: () => Promise<void>;
@@ -126,11 +130,20 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   tasks: [],
   isSidebarVisible: true,
   isTaskCenterVisible: true,
+  isAgentPanelPinned: false,
+  isTaskPanelPinned: false,
   sidebarWidth: 490,
   topPanelHeight: 320,
 
   settings: DEFAULT_APP_SETTINGS,
   isSettingsModalOpen: false,
+
+  setSidebarVisible: (visible) => set({ isSidebarVisible: visible }),
+  setTaskCenterVisible: (visible) => set({ isTaskCenterVisible: visible }),
+  setAgentPanelPinned: (pinned) => { set({ isAgentPanelPinned: pinned }); get().saveSnapshot(); },
+  setTaskPanelPinned: (pinned) => { set({ isTaskPanelPinned: pinned }); get().saveSnapshot(); },
+  setSidebarWidth: (width) => set({ sidebarWidth: width }),
+  setTopPanelHeight: (height) => set({ topPanelHeight: height }),
 
   setSettingsModalOpen: (isOpen) => set({ isSettingsModalOpen: isOpen }),
   updateSettings: (updates) => {
@@ -435,6 +448,14 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   },
 
   spawnTerminal: async (projectId, agentId, customCommand, customArgs, startupInstruction) => {
+    if (get().terminals.length >= 16) {
+      get().showAlertDialog(
+        "Maximum Sessions Reached",
+        "You can only have up to 16 terminal sessions open at a time. Please close some before opening new ones."
+      );
+      return;
+    }
+
     const project = get().projects.find(p => p.id === projectId);
     const agent = agentId ? get().agents.find(a => a.id === agentId) : null;
     const sessionPath = project ? project.path : (get().workspaces.find(w => w.id === get().activeWorkspaceId)?.rootPath || "");

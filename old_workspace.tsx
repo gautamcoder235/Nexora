@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+﻿import React, { useState, useRef, useEffect } from "react";
 import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
@@ -13,62 +13,52 @@ interface TerminalFrameProps {
   isFocused: boolean;
   isAnimating: boolean;
   isHighlighted?: boolean;
-  isHidden?: boolean;
   onFocusToggle: (element: HTMLElement | null) => void;
 }
 
-const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, isHidden = false, onFocusToggle }) => {
+const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
   const frameRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('set_terminal_visibility', { 
-        sessionId: session.id, 
-        visibility: isHidden ? 'Hidden' : 'Visible' 
-      }).catch(err => console.error('Failed to set terminal visibility:', err));
-    });
-  }, [isHidden, session.id]);
   
   return (
     <div 
       ref={frameRef}
-      className={`flex-grow flex flex-col bg-[#050507] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
+      className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
         isHighlighted
-          ? "border-[#f59e0b] shadow-[0_0_12px_rgba(245,158,11,0.3)]"
+          ? "border-yellow-500 shadow-[0_0_12px_rgba(234,179,8,0.4)]"
           : isFocused 
-          ? "border-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.15)]" 
-          : "border-border-glass hover:border-border-glass-hover"
+          ? "border-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.15)]" 
+          : "border-[#232329] hover:border-zinc-800"
       }`}
     >
       {/* Title / Action bar */}
-      <div className="flex items-center justify-between px-2 h-[24px] bg-white/[0.03] backdrop-blur-md border-b border-border-glass/35 text-[9.5px] select-none text-zinc-400 flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] rounded-t-[inherit]">
-        <div className="flex items-center gap-1.5 truncate">
-          <TerminalIcon size={10.5} className="text-zinc-500 flex-shrink-0" />
+      <div className="flex items-center justify-between px-3 h-8 bg-[#0c0c0e] border-b border-[#1b1b22] text-[11px] select-none text-zinc-400 flex-shrink-0">
+        <div className="flex items-center gap-2 truncate">
+          <TerminalIcon size={12} className="text-zinc-500 flex-shrink-0" />
           <span className="truncate font-semibold">{session.title}</span>
-          <span className="text-[8px] bg-white/5 text-zinc-500 px-1 py-0.5 rounded font-bold font-mono tracking-wider">{session.id}</span>
+          <span className="text-[9px] bg-zinc-800 text-zinc-500 px-1 rounded font-bold">{session.id}</span>
         </div>
 
-        <div className="flex items-center gap-1 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-2 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
           <button 
             onClick={(e) => { e.stopPropagation(); onFocusToggle(frameRef.current); }} 
             title={isFocused ? "Exit Focus Mode" : "Focus Session"}
-            className="hover:text-zinc-300 p-1 hover:bg-white/5 rounded cursor-pointer transition-colors"
+            className="hover:text-zinc-300 p-0.5 hover:bg-[#1a1a20] rounded"
           >
-            {isFocused ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+            {isFocused ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
           </button>
           <button 
             onClick={(e) => { e.stopPropagation(); killTerminal(session.id); }} 
             title="Kill Terminal Session"
-            className="hover:text-rose-400 p-1 hover:bg-rose-500/10 rounded cursor-pointer transition-colors"
+            className="hover:text-rose-400 p-0.5 hover:bg-[#1a1a20] rounded"
           >
-            <X size={10} />
+            <X size={11} />
           </button>
         </div>
       </div>
 
       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
-      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#050507]">
+      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#0a0a0a]">
         <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} />
       </div>
     </div>
@@ -87,34 +77,29 @@ export const TerminalWorkspace: React.FC = () => {
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
   const isTaskCenterVisible = useOrchestratorStore(s => s.isTaskCenterVisible);
   const setTaskCenterVisible = useOrchestratorStore(s => s.setTaskCenterVisible);
-  const isSidebarVisible = useOrchestratorStore(s => s.isSidebarVisible);
   
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
-  const [highlightedAgentId, setHighlightedAgentId] = useState<string | null>(null);
   const [animatingSessionId, setAnimatingSessionId] = useState<string | null>(null);
   const [isExpanding, setIsExpanding] = useState(false);
-  const animationFallbackTimeoutRef = useRef<any>(null);
-  const [transformStyle, setTransformStyle] = useState<React.CSSProperties>({});
+  const [highlightedAgentId, setHighlightedAgentId] = useState<string | null>(null);
 
   useEffect(() => {
     let timeout: NodeJS.Timeout;
     const unsub = EventBus.subscribe("terminal:highlight", (payload: any) => {
       setHighlightedAgentId(payload.agentId);
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       timeout = setTimeout(() => setHighlightedAgentId(null), 2000);
     });
     return () => {
       unsub();
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
     };
   }, []);
-
-  useEffect(() => {
-    import('../services/TerminalMetrics').then(({ terminalMetricsCollector }) => {
-      terminalMetricsCollector.updateFocusSession(focusSessionId);
-    });
-  }, [focusSessionId]);
-
+  
+  
+  // Fallback timeout ref to prevent stuck animations
+  const animationFallbackTimeoutRef = useRef<any>(null);
+  const [transformStyle, setTransformStyle] = useState<React.CSSProperties>({});
   const workspaceRef = useRef<HTMLDivElement>(null);
 
   // Measure and trigger collapse animation once layout has updated and grid geometry is restored
@@ -164,7 +149,22 @@ export const TerminalWorkspace: React.FC = () => {
     }
   }, [terminals, focusSessionId]);
 
-  // Early return logic moved into the main render to keep background workspaces alive
+  if (!activeWorkspaceId) {
+    return null;
+  }
+
+  if (terminals.length === 0) {
+    return (
+      <div className="flex-grow flex flex-col items-center justify-center bg-[#070709] border border-[#232329] border-dashed rounded-lg h-full p-8 text-center text-zinc-500 font-mono select-none">
+        <TerminalIcon size={36} className="text-zinc-800 mb-3 animate-pulse" />
+        <p className="text-xs font-semibold text-zinc-400">Terminal Panel Idle</p>
+        <p className="text-[10px] text-zinc-600 mt-1 max-w-[280px]">
+          Launch an Agent CLI or click "+" in the Agent Panel to spawn interactive shells.
+        </p>
+      </div>
+    );
+  }
+
   // Calculate layout classes
   let containerClass = "flex gap-1.5 flex-1 min-h-0 ";
   const is2Terminals = terminals.length === 2;
@@ -177,9 +177,6 @@ export const TerminalWorkspace: React.FC = () => {
       containerClass += "flex-row";
     } else if (terminals.length === 4) {
       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 auto-rows-fr";
-    } else if (!isSidebarVisible && [8, 10, 11, 12, 16].includes(terminals.length)) {
-      // Use 4-column layout when space is fully available to optimize vertical space
-      containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-4 auto-rows-fr";
     } else {
       // Fallback to grid for 3+ terminals
       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 lg:grid-cols-3 auto-rows-fr";
@@ -294,7 +291,7 @@ export const TerminalWorkspace: React.FC = () => {
   };
 
   return (
-    <div className="flex-grow flex flex-col h-full space-y-1 relative">
+    <div className="flex-grow flex flex-col h-full space-y-1.5 relative">
       {/* Terminal Workspace Controls */}
       <div className="flex items-center justify-between px-1 select-none flex-shrink-0">
         <span className="text-[11px] font-bold text-zinc-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
@@ -307,10 +304,10 @@ export const TerminalWorkspace: React.FC = () => {
           <button
             onClick={() => setTaskCenterVisible(!isTaskCenterVisible)}
             title={isTaskCenterVisible ? "Maximize Terminal View (Hide Task Board)" : "Show Task Board"}
-            className={`p-1 rounded transition-colors border mr-1.5 cursor-pointer ${
+            className={`p-1.5 rounded transition-colors border mr-1.5 ${
               !isTaskCenterVisible 
-                ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' 
-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' 
+                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
           >
             {isTaskCenterVisible ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
@@ -319,9 +316,9 @@ export const TerminalWorkspace: React.FC = () => {
           <button
             onClick={() => changeLayoutType('grid')}
             title="Grid Layout"
-            className={`p-1 rounded transition-colors border cursor-pointer ${
+            className={`p-1.5 rounded transition-colors border ${
               layout.type === 'grid' 
-                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
+                ? 'bg-zinc-800 text-sky-400 border-zinc-700' 
                 : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
           >
@@ -330,10 +327,10 @@ export const TerminalWorkspace: React.FC = () => {
           <button
             onClick={() => changeLayoutType('vertical')}
             title="Vertical splits"
-            className={`p-1 rounded transition-colors border cursor-pointer ${
+            className={`p-1.5 rounded transition-colors border ${
               layout.type === 'vertical' 
-                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+                ? 'bg-zinc-800 text-sky-400 border-zinc-700' 
+                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
           >
             <AlignJustify size={13} className="rotate-90" />
@@ -341,10 +338,10 @@ export const TerminalWorkspace: React.FC = () => {
           <button
             onClick={() => changeLayoutType('horizontal')}
             title="Horizontal splits"
-            className={`p-1 rounded transition-colors border cursor-pointer ${
+            className={`p-1.5 rounded transition-colors border ${
               layout.type === 'horizontal' 
-                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+                ? 'bg-zinc-800 text-sky-400 border-zinc-700' 
+                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
           >
             <AlignJustify size={13} />
@@ -352,106 +349,94 @@ export const TerminalWorkspace: React.FC = () => {
         </div>
       </div>
 
-      {/* Render Grid/Splits of active terminals with smooth expand animation */}
-      {terminals.length === 0 ? (
-        <div className="flex-grow flex flex-col items-center justify-center bg-bg-primary/20 border border-border-glass border-dashed rounded-lg h-full p-8 text-center text-zinc-500 font-mono select-none">
-          <TerminalIcon size={36} className="text-zinc-850 mb-3 animate-pulse" />
-          <p className="text-xs font-semibold text-zinc-450">Terminal Panel Idle</p>
-          <p className="text-[10px] text-zinc-650 mt-1 max-w-[280px]">
-            Launch an Agent CLI or click "+" in the Agent Panel to spawn interactive shells.
-          </p>
-        </div>
-      ) : (
-        <div ref={workspaceRef} className={`${containerClass} relative`}>
-          {terminals.map((session) => {
-            const isFocused = focusSessionId === session.id;
-            const isAnimating = animatingSessionId === session.id;
-            const showPlaceholder = isFocused || isAnimating;
+      {/* Render Grid/Splits of terminals with smooth expand animation */}
+      <div ref={workspaceRef} className={`${containerClass} relative`}>
+        {terminals.map((session) => {
+          const isFocused = focusSessionId === session.id;
+          const isAnimating = animatingSessionId === session.id;
+          const showPlaceholder = isFocused || isAnimating;
 
-            let wrapperStyle: React.CSSProperties = {};
+          let wrapperStyle: React.CSSProperties = {};
 
-            if (isFocused || isAnimating) {
-              if (isAnimating) {
-                wrapperStyle = transformStyle;
-              } else {
-                wrapperStyle = {
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  zIndex: 50,
-                };
-              }
-            } else if (focusSessionId !== null) {
-              if (animatingSessionId !== null) {
-                // Fade out other terminals during the transition
-                wrapperStyle = {
-                  ...getNormalGridStyle(session.id),
-                  opacity: 0.15,
-                  transition: 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)',
-                  pointerEvents: 'none',
-                };
-              } else {
-                // Hide them completely once maximized without breaking xterm layout
-                wrapperStyle = {
-                  ...getNormalGridStyle(session.id),
-                  opacity: 0,
-                  pointerEvents: 'none',
-                  visibility: 'hidden', 
-                };
-              }
+          if (isFocused || isAnimating) {
+            if (isAnimating) {
+              wrapperStyle = transformStyle;
             } else {
-              // Normal layout flow
-              wrapperStyle = getNormalGridStyle(session.id);
-              wrapperStyle.transition = 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), flex-grow 300ms, width 300ms, height 300ms';
+              wrapperStyle = {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: 50,
+              };
             }
+          } else if (focusSessionId !== null) {
+            // Another terminal is focused/maximized
+            if (animatingSessionId !== null) {
+              // Fade out other terminals during the transition
+              wrapperStyle = {
+                ...getNormalGridStyle(session.id),
+                opacity: 0.15,
+                transition: 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                pointerEvents: 'none',
+              };
+            } else {
+              // Hide them completely once maximized without breaking xterm layout
+              wrapperStyle = {
+                ...getNormalGridStyle(session.id),
+                opacity: 0,
+                pointerEvents: 'none',
+                visibility: 'hidden', // Ensures they don't block anything or get focus
+              };
+            }
+          } else {
+            // Normal layout flow
+            wrapperStyle = getNormalGridStyle(session.id);
+            wrapperStyle.transition = 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), flex-grow 300ms, width 300ms, height 300ms';
+          }
 
-            return (
-              <React.Fragment key={session.id}>
-                {showPlaceholder && (
-                  <div 
-                    key={`placeholder-${session.id}`}
-                    data-placeholder-id={session.id}
-                    style={{ ...getNormalGridStyle(session.id), pointerEvents: 'none' }}
-                    className="border border-dashed border-border-glass rounded bg-[#050507]/40 min-h-0 min-w-0 h-full"
-                  />
-                )}
-                <div
-                  key={`frame-wrapper-${session.id}`}
-                  data-frame-id={session.id}
-                  className="overflow-hidden flex flex-col h-full min-h-0 min-w-0"
-                  style={wrapperStyle}
-                  onTransitionEnd={(e) => {
-                    if (isAnimating && e.propertyName === 'transform') {
-                      if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
-                      if (isExpanding) {
-                        setAnimatingSessionId(null);
-                        setTransformStyle({});
-                      } else {
-                        setFocusSessionId(null);
-                        setAnimatingSessionId(null);
-                        setTransformStyle({});
-                      }
+          return (
+            <React.Fragment key={session.id}>
+              {showPlaceholder && (
+                <div 
+                  key={`placeholder-${session.id}`}
+                  data-placeholder-id={session.id}
+                  style={{ ...getNormalGridStyle(session.id), pointerEvents: 'none' }}
+                  className="border border-dashed border-[#232329] rounded bg-[#08080a] min-h-0 min-w-0"
+                />
+              )}
+              <div
+                key={`frame-wrapper-${session.id}`}
+                data-frame-id={session.id}
+                className="overflow-hidden flex flex-col h-full"
+                style={wrapperStyle}
+                onTransitionEnd={(e) => {
+                  if (isAnimating && e.propertyName === 'transform') {
+                    if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
+                    if (isExpanding) {
+                      setAnimatingSessionId(null);
+                      setTransformStyle({});
+                    } else {
+                      setFocusSessionId(null);
+                      setAnimatingSessionId(null);
+                      setTransformStyle({});
                     }
-                  }}
-                >
-                  <TerminalFrame 
-                    session={session} 
-                    isFocused={isFocused}
-                    isAnimating={isAnimating}
-                    isHighlighted={session.agentId === highlightedAgentId}
-                    isHidden={focusSessionId !== null && focusSessionId !== session.id}
-                    onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
-                  />
-                </div>
-              </React.Fragment>
-            );
-          })}
-        </div>
-      )}
-
-
+                  }
+                }}
+              >
+                <TerminalFrame 
+                  session={session} 
+                  isFocused={isFocused}
+                  isAnimating={animatingSessionId !== null}
+                  isHighlighted={session.agentId === highlightedAgentId}
+                  onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
+                />
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 };

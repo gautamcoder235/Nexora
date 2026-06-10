@@ -98,28 +98,28 @@ export const CliSpawnerPanel: React.FC = () => {
           isExpanded ? 'opacity-100 translate-y-0 visible' : 'opacity-0 -translate-y-2 invisible pointer-events-none'
         }`}
       >
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[9px] uppercase tracking-wide text-zinc-500 font-mono ml-1">Agent Type</label>
+        <div className="flex flex-col gap-1">
+          <label className="text-[9px] uppercase tracking-wider text-zinc-400 font-bold ml-0.5">Agent Type</label>
           <select
             value={selectedCliId}
             onChange={(e) => setSelectedCliId(e.target.value)}
-            className="glass-input w-full text-[10px] text-zinc-300 font-semibold rounded px-2 py-1.5 outline-none cursor-pointer"
+            className="glass-input w-full text-[11px] text-zinc-200 font-medium rounded-md !py-2 !px-2.5 outline-none cursor-pointer border-border-glass/60 hover:border-border-glass focus:border-accent-primary/50 transition-all shadow-sm"
           >
-            <option value="" className="bg-[#0c0c0e]">-- Choose CLI --</option>
+            <option value="" className="bg-[#0c0c0e] text-zinc-500">-- Choose CLI Engine --</option>
             {allCLIs.map(cli => (
               <option key={cli.id} value={cli.id} className="bg-[#0c0c0e]">{cli.name}</option>
             ))}
           </select>
         </div>
         
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[9px] uppercase tracking-wide text-zinc-500 font-mono ml-1">Target Project</label>
+        <div className="flex flex-col gap-1">
+          <label className="text-[9px] uppercase tracking-wider text-zinc-400 font-bold ml-0.5">Target Project</label>
           <select
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="glass-input w-full text-[10px] text-zinc-300 font-semibold rounded px-2 py-1.5 outline-none cursor-pointer"
+            className="glass-input w-full text-[11px] text-zinc-200 font-medium rounded-md !py-2 !px-2.5 outline-none cursor-pointer border-border-glass/60 hover:border-border-glass focus:border-accent-primary/50 transition-all shadow-sm"
           >
-            <option value="" className="bg-[#0c0c0e]">-- Target Project --</option>
+            <option value="" className="bg-[#0c0c0e] text-zinc-500">-- Select Workspace Project --</option>
             {activeProjects.map(p => (
               <option key={p.id} value={p.id} className="bg-[#0c0c0e]">{p.name}</option>
             ))}
@@ -132,9 +132,11 @@ export const CliSpawnerPanel: React.FC = () => {
             setIsExpanded(false);
           }}
           disabled={!selectedCliId || !selectedProjectId}
-          className="mt-1 w-full flex items-center justify-center gap-1.5 py-1.5 px-2 text-[10px] font-bold tracking-wider text-black bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 rounded transition-all shadow-[0_0_8px_rgba(16,185,129,0.2)] disabled:opacity-40 disabled:shadow-none cursor-pointer"
+          className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 px-3 text-[11px] font-bold tracking-wider rounded-md transition-all duration-300 cursor-pointer border disabled:cursor-not-allowed
+            bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-[0_0_12px_rgba(16,185,129,0.15)]
+            disabled:opacity-30 disabled:hover:bg-emerald-500/10 disabled:hover:border-emerald-500/30 disabled:hover:shadow-none"
         >
-          Add Agent
+          <Plus size={12} className="stroke-[2.5px]" /> Add Agent to Swarm
         </button>
       </div>
     </div>

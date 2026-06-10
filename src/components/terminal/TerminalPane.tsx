@@ -4,7 +4,7 @@
  * Renders a direct, interactive xterm.js terminal.
  * Key input is forwarded directly to the backend PTY and output is rendered in real-time.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Terminal } from '@xterm/xterm';
@@ -13,6 +13,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { TerminalBufferManager } from '../../services/TerminalBufferManager';
+import { terminalMetricsCollector } from '../../services/TerminalMetrics';
 import '@xterm/xterm/css/xterm.css';
 import './TerminalPane.css';
 
@@ -27,6 +28,43 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const isAnimatingRef = useRef<boolean>(isAnimating);
+
+  const [isBlackout, setIsBlackout] = useState(isAnimating);
+  const isBlackoutRef = useRef(isBlackout);
+  const blackoutTimerRef = useRef<any>(null);
+
+  const startBlackout = () => {
+    if (!isBlackoutRef.current) {
+      setIsBlackout(true);
+      isBlackoutRef.current = true;
+    }
+    if (blackoutTimerRef.current) {
+      clearTimeout(blackoutTimerRef.current);
+      blackoutTimerRef.current = null;
+    }
+  };
+
+  const endBlackoutAfterDelay = (delay: number) => {
+    if (blackoutTimerRef.current) {
+      clearTimeout(blackoutTimerRef.current);
+    }
+    blackoutTimerRef.current = setTimeout(() => {
+      setIsBlackout(false);
+      isBlackoutRef.current = false;
+      blackoutTimerRef.current = null;
+    }, delay);
+  };
+
+  useEffect(() => {
+    if (isAnimating) {
+      startBlackout();
+    } else {
+      endBlackoutAfterDelay(400);
+    }
+    return () => {
+      if (blackoutTimerRef.current) clearTimeout(blackoutTimerRef.current);
+    };
+  }, [isAnimating]);
 
   // Sync the ref synchronously during render to prevent layout reflow race conditions
   isAnimatingRef.current = isAnimating;
@@ -220,17 +258,19 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       
       // Coalesce multiple chunks arriving within the same frame
       if (coalesceFrameId === null) {
-        coalesceFrameId = requestAnimationFrame(() => {
+        coalesceFrameId = requestAnimationFrame((now) => {
+          terminalMetricsCollector.recordFrame(paneId, now);
+          
           if (writeQueue.length > 0) {
             const startWrite = performance.now();
-            term.write(writeQueue);
-            const endWrite = performance.now();
+            const chunkLength = writeQueue.length;
             
-            // Frame-Time metrics
-            const writeDuration = endWrite - startWrite;
-            if (writeDuration > 10) {
-              console.warn(`[TerminalPane ${paneId}] Slow xterm.write: ${writeDuration.toFixed(2)}ms for ${new Blob([writeQueue]).size} bytes`);
-            }
+            terminalMetricsCollector.recordWrite(paneId, chunkLength);
+
+            term.write(writeQueue, () => {
+              const writeDuration = performance.now() - startWrite;
+              terminalMetricsCollector.recordRenderLatency(paneId, writeDuration);
+            });
             writeQueue = '';
           }
           coalesceFrameId = null;
@@ -259,24 +299,29 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     let resizeFrame: number | null = null;
     let resizeTimeout: any = null;
     const resizeObserver = new ResizeObserver(() => {
-      // 1. Skip constant resizing during heavy CSS layout transitions!
-      // This prevents the WebGL context from tearing and dropping frames (black screen).
-      if (isAnimatingRef.current) return;
-      
-      // 2. Debounce normal resize events slightly
+      // 2. Debounce normal resize events to save rendering time
       if (resizeTimeout) clearTimeout(resizeTimeout);
+      
+      // Instantly hide the canvas during any resize event
+      startBlackout();
+
       resizeTimeout = setTimeout(() => {
         if (resizeFrame) cancelAnimationFrame(resizeFrame);
-        resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = requestAnimationFrame((now) => {
+          terminalMetricsCollector.recordFrame(paneId, now);
           if (containerRef.current) {
             try {
               fitAddon.fit();
-            } catch (e) {
-              // ignore transient layout resize errors
-            }
+              // After fitting to the new idle size, start the 400ms blackout countdown!
+              if (!isAnimatingRef.current) {
+                endBlackoutAfterDelay(400);
+              }
+            } catch (e) {}
           }
+          resizeFrame = null;
         });
-      }, 30); // 30ms debounce keeps it feeling responsive but drops excess webgl teardown frames
+        resizeTimeout = null;
+      }, 40); // 40ms debounce saves massive GPU rebuild time
     });
     resizeObserver.observe(containerRef.current);
 
@@ -317,35 +362,19 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     }
   }, [settings.fontSize, settings.fontFamily, settings.cursorBlink, settings.cursorStyle]);
 
-  // Fit layout once transitions complete
-  useEffect(() => {
-    if (!isAnimating && fitAddonRef.current && containerRef.current) {
-      let rAF2: number;
-      const rAF1 = requestAnimationFrame(() => {
-        rAF2 = requestAnimationFrame(() => {
-          if (
-            fitAddonRef.current && 
-            containerRef.current && 
-            containerRef.current.isConnected
-          ) {
-            try {
-              fitAddonRef.current.fit();
-            } catch (e) {
-              // ignore
-            }
-          }
-        });
-      });
-      return () => {
-        cancelAnimationFrame(rAF1);
-        if (rAF2) cancelAnimationFrame(rAF2);
-      };
-    }
-  }, [isAnimating]);
+  // Fit layout once transitions complete has been removed as ResizeObserver natively handles it.
 
   return (
     <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#050507] font-mono overflow-hidden">
-      <div ref={containerRef} className="w-full h-full" style={{ minHeight: '100%' }} />
+      <div 
+        ref={containerRef} 
+        className="w-full h-full" 
+        style={{ 
+          minHeight: '100%',
+          opacity: isBlackout ? 0 : 1,
+          transition: isBlackout ? 'none' : 'opacity 150ms ease-in'
+        }} 
+      />
     </div>
   );
 });

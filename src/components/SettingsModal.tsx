@@ -441,6 +441,18 @@ export const SettingsModal: React.FC = () => {
                   />
                   <p className="text-[10px] text-zinc-500">Maximum number of lines kept in memory per terminal. Higher values use more RAM.</p>
                 </div>
+
+                <div className="space-y-2 pt-2">
+                  <label className="text-xs text-zinc-400 font-semibold uppercase tracking-wider">Background Workspace Idle Suspend (Minutes)</label>
+                  <input 
+                    type="number" 
+                    min="0" max="1440" step="5"
+                    value={localSettings.backgroundWorkspaceSuspendMinutes ?? 0}
+                    onChange={(e) => updateLocal('backgroundWorkspaceSuspendMinutes', parseInt(e.target.value) || 0)}
+                    className="glass-input"
+                  />
+                  <p className="text-[10px] text-zinc-500">Time in minutes before inactive workspaces auto-suspend terminals to save memory/CPU. Set to 0 to never suspend.</p>
+                </div>
               </div>
             )}
 

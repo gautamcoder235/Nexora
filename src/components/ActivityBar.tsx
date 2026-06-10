@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { FolderPlus, FolderOpen, Plus, Layout, Layers, Trash2, Settings, Box, Zap } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { useSwarmStore } from "../stores/swarmStore";
@@ -29,12 +30,18 @@ export const ActivityBar: React.FC = () => {
   const [showNewWsModal, setShowNewWsModal] = useState(false);
   const [showNewProjModal, setShowNewProjModal] = useState(false);
   const [showWsMenu, setShowWsMenu] = useState(false);
+  const [wsMenuPos, setWsMenuPos] = useState({ top: 0, left: 0 });
 
   const wsMenuRef = useRef<HTMLDivElement>(null);
+  const wsPopoverRef = useRef<HTMLDivElement>(null);
+  const wsButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (wsMenuRef.current && !wsMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inButton = wsButtonRef.current?.contains(target);
+      const inPopover = wsPopoverRef.current?.contains(target);
+      if (!inButton && !inPopover) {
         setShowWsMenu(false);
       }
     };
@@ -88,7 +95,14 @@ export const ActivityBar: React.FC = () => {
 
         {/* Workspace Switcher Button */}
         <button
-          onClick={() => setShowWsMenu(!showWsMenu)}
+          ref={wsButtonRef}
+          onClick={() => {
+            if (!showWsMenu && wsButtonRef.current) {
+              const rect = wsButtonRef.current.getBoundingClientRect();
+              setWsMenuPos({ top: rect.top, left: rect.right + 8 });
+            }
+            setShowWsMenu(!showWsMenu);
+          }}
           className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative ${
             showWsMenu ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
           }`}
@@ -102,9 +116,13 @@ export const ActivityBar: React.FC = () => {
           )}
         </button>
 
-        {/* Workspace Popover Menu */}
-        {showWsMenu && (
-          <div className="absolute left-14 top-10 w-64 glass-panel-elevated shadow-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-200 z-50">
+        {/* Workspace Popover Menu — portal to escape sidebar stacking context */}
+        {showWsMenu && createPortal(
+          <div
+            ref={wsPopoverRef}
+            className="w-64 glass-panel-elevated shadow-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-200"
+            style={{ position: 'fixed', top: wsMenuPos.top, left: wsMenuPos.left, zIndex: 200 }}
+          >
             <div className="px-3 py-2 border-b border-border-glass bg-bg-secondary/40">
               <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-wider">Switch Workspace</span>
             </div>
@@ -158,7 +176,8 @@ export const ActivityBar: React.FC = () => {
                 <Plus size={14} /> Create Workspace
               </button>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
 
@@ -237,9 +256,9 @@ export const ActivityBar: React.FC = () => {
         )}
       </div>
 
-      {/* Workspace Modal */}
-      {showNewWsModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center">
+      {/* Workspace Modal — rendered via portal to escape sidebar stacking context */}
+      {showNewWsModal && createPortal(
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4">
             <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
               <FolderPlus size={16} className="text-accent-primary" />
@@ -271,12 +290,13 @@ export const ActivityBar: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Project Modal */}
-      {showNewProjModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center">
+      {/* Project Modal — rendered via portal to escape sidebar stacking context */}
+      {showNewProjModal && createPortal(
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4">
             <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
               <FolderPlus size={16} className="text-accent-primary" />
@@ -308,7 +328,8 @@ export const ActivityBar: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

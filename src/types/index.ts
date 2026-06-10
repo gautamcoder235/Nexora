@@ -141,6 +141,8 @@ export interface AppSettings {
 
   restoreTabsOnStartup: boolean;
   confirmBeforeClosing: boolean;
+  // 0 = never suspend background workspace PTYs; any positive value = minutes of inactivity before suspension
+  backgroundWorkspaceSuspendMinutes: number;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -167,6 +169,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   
   restoreTabsOnStartup: true,
   confirmBeforeClosing: true,
+  backgroundWorkspaceSuspendMinutes: 0, // 0 = never auto-suspend background workspace terminals
 };
 
 export type ActivityLogSource = 'agent' | 'terminal' | 'workspace' | 'system';

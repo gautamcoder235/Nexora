@@ -16,6 +16,22 @@ pub mod swarm_events;
 pub mod swarm_merge;
 use portable_pty::{PtySystem, NativePtySystem, PtySize, CommandBuilder, Child, MasterPty};
 use sysinfo::System;
+use std::time::{Instant, Duration};
+use serde::Serialize;
+
+#[derive(Serialize, Clone, Default)]
+pub struct BackendMetrics {
+    pub pending_bytes: usize,
+    pub oldest_pending_age_ms: u64,
+    pub events_per_second: u32,
+    pub bytes_per_second: usize,
+    pub emit_avg_ms: f64,
+    pub emit_max_ms: f64,
+}
+
+lazy_static::lazy_static! {
+    static ref TERMINAL_METRICS: Mutex<HashMap<String, BackendMetrics>> = Mutex::new(HashMap::new());
+}
 
 // Struct mapping to an active PTY session on the OS
 struct PtySession {
@@ -138,7 +154,7 @@ fn spawn_pty(
     // 2. PTY Reader Thread (Blocking)
     let thread_session_id = session_id_clone.clone();
     std::thread::spawn(move || {
-        let mut buffer = [0u8; 8192];
+        let mut buffer = [0u8; 65536];
         let mut backpressure_events = 0;
         
         loop {
@@ -179,7 +195,45 @@ fn spawn_pty(
         // Ensure visibility is registered by default
         get_visibilities().lock().unwrap().insert(session_id_clone.clone(), "Visible".to_string());
 
+        let mut first_chunk_arrival: Option<Instant> = None;
+        let mut last_second_reset = Instant::now();
+        let mut bytes_this_sec = 0;
+        let mut events_this_sec = 0;
+        let mut events_per_sec = 0;
+        let mut bytes_per_sec = 0;
+        
+        let mut emit_durations = Vec::new();
+
         loop {
+            // Update per-second metrics
+            if last_second_reset.elapsed().as_millis() >= 1000 {
+                events_per_sec = events_this_sec;
+                bytes_per_sec = bytes_this_sec;
+                events_this_sec = 0;
+                bytes_this_sec = 0;
+                last_second_reset = Instant::now();
+                emit_durations.clear(); // Reset max/avg window every second
+            }
+
+            // Sync metrics to global state
+            {
+                let mut metrics = TERMINAL_METRICS.lock().unwrap();
+                let m = metrics.entry(session_id_clone.clone()).or_insert_with(BackendMetrics::default);
+                m.pending_bytes = buffer.len();
+                m.oldest_pending_age_ms = if buffer.is_empty() { 0 } else { first_chunk_arrival.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) };
+                m.events_per_second = events_per_sec;
+                m.bytes_per_second = bytes_per_sec;
+                
+                if !emit_durations.is_empty() {
+                    let sum: u128 = emit_durations.iter().map(|d: &Duration| d.as_micros()).sum();
+                    m.emit_avg_ms = (sum as f64 / emit_durations.len() as f64) / 1000.0;
+                    m.emit_max_ms = (emit_durations.iter().map(|d: &Duration| d.as_micros()).max().unwrap_or(0) as f64) / 1000.0;
+                } else {
+                    m.emit_avg_ms = 0.0;
+                    m.emit_max_ms = 0.0;
+                }
+            }
+
             tokio::select! {
                 // Wait for interval tick
                 _ = interval.tick() => {
@@ -193,7 +247,10 @@ fn spawn_pty(
                         };
 
                         if should_emit {
-                            emit_buffer(&app_clone, &session_id_clone, &mut buffer);
+                            if let Some(dur) = emit_buffer(&app_clone, &session_id_clone, &mut buffer) {
+                                emit_durations.push(dur);
+                            }
+                            first_chunk_arrival = None;
                         }
                     }
                 }
@@ -202,10 +259,19 @@ fn spawn_pty(
                 msg = rx.recv() => {
                     match msg {
                         Some(data) => {
+                            if buffer.is_empty() {
+                                first_chunk_arrival = Some(Instant::now());
+                            }
+                            bytes_this_sec += data.len();
+                            events_this_sec += 1;
+                            
                             buffer.extend(data);
                             // Safety max threshold: Even if hidden, if buffer hits 5MB, force emit to not OOM
                             if buffer.len() > 1024 * 1024 * 5 { 
-                                emit_buffer(&app_clone, &session_id_clone, &mut buffer);
+                                if let Some(dur) = emit_buffer(&app_clone, &session_id_clone, &mut buffer) {
+                                    emit_durations.push(dur);
+                                }
+                                first_chunk_arrival = None;
                             }
                         }
                         None => {
@@ -247,7 +313,11 @@ fn spawn_pty(
 }
 
 // Helper to emit and clear buffer with UTF-8 Splice Safety
-fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) {
+fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) -> Option<Duration> {
+    if buffer.is_empty() { return None; }
+    
+    let start = Instant::now();
+
     // Safety against slicing a multi-byte unicode character
     match std::str::from_utf8(buffer) {
         Ok(valid_str) => {
@@ -269,6 +339,13 @@ fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) {
             }
         }
     }
+    
+    Some(start.elapsed())
+}
+
+#[tauri::command]
+fn get_terminal_metrics() -> HashMap<String, BackendMetrics> {
+    TERMINAL_METRICS.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -453,6 +530,7 @@ pub fn run() {
             read_project_file,
             write_project_file,
             set_terminal_visibility,
+            get_terminal_metrics,
             get_system_metrics,
             swarm_worktrees::validate_git_repository,
             swarm_worktrees::create_worktree,

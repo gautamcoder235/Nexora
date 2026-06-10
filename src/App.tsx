@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save } from "lucide-react";
+import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentGrid } from "./components/AgentGrid";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
@@ -46,11 +46,15 @@ function App() {
 
   const isSidebarVisible = useOrchestratorStore(s => s.isSidebarVisible);
   const isTaskCenterVisible = useOrchestratorStore(s => s.isTaskCenterVisible);
+  const isAgentPanelPinned = useOrchestratorStore(s => s.isAgentPanelPinned);
+  const isTaskPanelPinned = useOrchestratorStore(s => s.isTaskPanelPinned);
   const sidebarWidth = useOrchestratorStore(s => s.sidebarWidth);
   const topPanelHeight = useOrchestratorStore(s => s.topPanelHeight);
 
   const setSidebarVisible = useOrchestratorStore(s => s.setSidebarVisible);
   const setTaskCenterVisible = useOrchestratorStore(s => s.setTaskCenterVisible);
+  const setAgentPanelPinned = useOrchestratorStore(s => s.setAgentPanelPinned);
+  const setTaskPanelPinned = useOrchestratorStore(s => s.setTaskPanelPinned);
   const setSidebarWidth = useOrchestratorStore(s => s.setSidebarWidth);
   const setTopPanelHeight = useOrchestratorStore(s => s.setTopPanelHeight);
 
@@ -350,18 +354,41 @@ function App() {
       {/* Main content column */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* 2. Main Dashboard Layout splits */}
-        <div className="flex-1 flex overflow-hidden p-1 gap-0">
+        <div className="flex-1 flex overflow-hidden p-1 gap-0 relative">
         {/* Left Side Dock columns (resizable) - Agents & Telemetry Feed */}
+        {isSidebarVisible && !isAgentPanelPinned && (
+          <div 
+            className="fixed inset-0 z-20"
+            style={{ left: '56px' }} 
+            onClick={() => setSidebarVisible(false)}
+          />
+        )}
         <div 
-          className={`flex flex-col gap-1 flex-shrink-0 h-full overflow-hidden ${
-            isSidebarDragging ? '' : 'transition-[width,opacity,margin] duration-300 ease-out'
-          } ${isSidebarVisible ? 'opacity-100 mr-1' : 'opacity-0 pointer-events-none'}`}
+          className={`flex flex-col gap-1 h-full overflow-hidden ${
+            isAgentPanelPinned ? 'flex-shrink-0 relative' : 'absolute left-0 top-0 bottom-0 z-30 shadow-2xl bg-[#0a0a0f]/95 backdrop-blur-xl border border-border-glass rounded-lg'
+          } ${
+            isSidebarDragging ? '' : 'transition-[width,opacity,margin,transform] duration-300 ease-out'
+          } ${
+            isSidebarVisible 
+              ? `opacity-100 ${isAgentPanelPinned ? 'mr-1' : 'translate-x-0'}` 
+              : `opacity-0 pointer-events-none ${isAgentPanelPinned ? 'mr-0' : '-translate-x-4'}`
+          }`}
           style={{ width: isSidebarVisible ? `${sidebarWidth}px` : '0px' }}
         >
           {/* Inner container to prevent text reflow while width animates */}
           <div className="flex-1 flex flex-col h-full gap-1" style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }}>
             {/* Active Agent Profiles list */}
-            <div className="flex-grow flex flex-col glass-panel px-1.5 pt-1.5 pb-0 min-h-[300px] overflow-hidden">
+            <div className="flex-grow flex flex-col glass-panel px-1.5 pb-0 min-h-[300px] overflow-hidden relative">
+              <div className="flex items-center justify-between px-1 py-1">
+                <span className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-wider">Agents</span>
+                <button
+                  onClick={() => setAgentPanelPinned(!isAgentPanelPinned)}
+                  className={`p-1 rounded transition-colors ${isAgentPanelPinned ? 'text-accent-primary bg-accent-primary/10' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+                  title={isAgentPanelPinned ? "Unpin Agent Panel (Float)" : "Pin Agent Panel (Dock)"}
+                >
+                  {isAgentPanelPinned ? <Pin size={10} className="fill-accent-primary" /> : <PinOff size={10} />}
+                </button>
+              </div>
               <AgentGrid />
             </div>
 
@@ -372,7 +399,7 @@ function App() {
           </div>
         </div>
 
-        {isSidebarVisible && (
+        {isSidebarVisible && isAgentPanelPinned && (
           <div
             onMouseDown={startSidebarResize}
             onDoubleClick={() => setSidebarVisible(false)}
@@ -390,22 +417,55 @@ function App() {
             </div>
           </div>
         )}
+        
+        {/* Floating Resizer for unpinned Agent Panel */}
+        {isSidebarVisible && !isAgentPanelPinned && (
+          <div
+            onMouseDown={startSidebarResize}
+            className="absolute top-1 bottom-1 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
+            style={{ left: `${sidebarWidth}px` }}
+          >
+            <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+            </div>
+          </div>
+        )}
 
         {/* Right Side Dock viewport (split into top controls panel & bottom PTY workspace) */}
         <div className="flex-1 h-full min-w-0 flex flex-col gap-0 overflow-hidden relative">
           
+          {/* Top Panel Overlay Backdrop */}
+          {activeWs && isTaskCenterVisible && !isTaskPanelPinned && (
+            <div 
+              className="absolute inset-0 z-10" 
+              onClick={() => setTaskCenterVisible(false)} 
+            />
+          )}
+
           {/* Top Panel (Task Board & Project Memory tabs) */}
           {activeWs && (
             <div 
-              className={`!absolute top-0 left-0 right-0 z-20 flex flex-col glass-panel shadow-2xl bg-[#0a0a0f]/95 backdrop-blur-xl overflow-hidden ${
-                isHeightDragging ? '' : 'transition-[transform,opacity] duration-300 ease-out'
-              } p-2 border-b border-border-glass`}
-              style={{ 
-                height: `${topPanelHeight}px`,
-                transform: isTaskCenterVisible ? 'translateY(0)' : `translateY(-${topPanelHeight}px)`,
-                opacity: isTaskCenterVisible ? 1 : 0,
-                pointerEvents: isTaskCenterVisible ? 'auto' : 'none'
-              }}
+              className={`flex flex-col glass-panel shadow-2xl bg-[#0a0a0f]/95 backdrop-blur-xl overflow-hidden ${
+                isTaskPanelPinned ? 'relative z-10 flex-shrink-0' : '!absolute top-0 left-0 right-0 z-20'
+              } ${isHeightDragging ? '' : 'transition-all duration-300 ease-out'} p-2 border-b border-border-glass`}
+              style={
+                isTaskPanelPinned 
+                  ? { 
+                      height: isTaskCenterVisible ? `${topPanelHeight}px` : '0px', 
+                      opacity: isTaskCenterVisible ? 1 : 0,
+                      padding: isTaskCenterVisible ? undefined : '0px',
+                      borderWidth: isTaskCenterVisible ? undefined : '0px'
+                    }
+                  : { 
+                      height: `${topPanelHeight}px`,
+                      left: (isSidebarVisible && !isAgentPanelPinned) ? `${sidebarWidth + 4}px` : '0px',
+                      transform: isTaskCenterVisible ? 'translateY(0)' : `translateY(-${topPanelHeight}px)`,
+                      opacity: isTaskCenterVisible ? 1 : 0,
+                      pointerEvents: isTaskCenterVisible ? 'auto' : 'none'
+                    }
+              }
             >
               {/* Header Tabs */}
               <div className="flex items-center justify-between select-none border-b border-border-glass pb-1.5 mb-2.5 flex-shrink-0">
@@ -479,6 +539,13 @@ function App() {
                   )}
 
                   <button
+                    onClick={() => setTaskPanelPinned(!isTaskPanelPinned)}
+                    className={`p-1 rounded transition-colors ${isTaskPanelPinned ? 'text-accent-primary bg-accent-primary/10' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+                    title={isTaskPanelPinned ? "Unpin Task Panel (Float)" : "Pin Task Panel (Dock)"}
+                  >
+                    {isTaskPanelPinned ? <Pin size={10} className="fill-accent-primary" /> : <PinOff size={10} />}
+                  </button>
+                  <button
                     onClick={() => setTaskCenterVisible(false)}
                     className="text-zinc-550 hover:text-rose-450 px-2 py-1 hover:bg-white/5 border border-transparent hover:border-border-glass/40 rounded transition-all text-[9.5px] font-bold uppercase flex items-center gap-1 font-mono cursor-pointer h-[24px]"
                     title="Collapse Panel"
@@ -517,8 +584,11 @@ function App() {
             <div
               onMouseDown={startHeightResize}
               onDoubleClick={() => setTaskCenterVisible(false)}
-              className="absolute left-0 right-0 z-30 h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none"
-              style={{ top: `${topPanelHeight}px` }}
+              className={`${isTaskPanelPinned ? 'relative' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
+              style={isTaskPanelPinned ? {} : { 
+                top: `${topPanelHeight}px`,
+                left: (isSidebarVisible && !isAgentPanelPinned) ? `${sidebarWidth + 4}px` : '0px'
+              }}
               title="Drag to resize top panel, Double-click to collapse"
             >
               {/* Horizontal line divider */}
@@ -557,7 +627,7 @@ function App() {
           )}
 
           {/* Bottom Panel (Terminal Workspace) */}
-          <div className="flex-1 h-full min-h-0 flex flex-col glass-panel p-2 overflow-hidden">
+          <div className="flex-1 h-full min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
             <TerminalWorkspace />
           </div>
         </div>

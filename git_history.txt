@@ -1,0 +1,305 @@
+﻿commit e5a2dbf0c78bb72da4c9a6c9beb47d5948e8f038
+Author: Gautam Kumar <sharmagautamkumar235@gmail.com>
+Date:   Tue Jun 9 21:34:53 2026 +0530
+
+    feat: UI polish, customizable shortcuts, and terminal rendering optimizations
+
+diff --git a/src/components/TerminalWorkspace.tsx b/src/components/TerminalWorkspace.tsx
+index f964227..266b039 100644
+--- a/src/components/TerminalWorkspace.tsx
++++ b/src/components/TerminalWorkspace.tsx
+@@ -23,42 +23,42 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
+   return (
+     <div 
+       ref={frameRef}
+-      className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
++      className={`flex-grow flex flex-col bg-[#050507] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
+         isHighlighted
+-          ? "border-yellow-500 shadow-[0_0_12px_rgba(234,179,8,0.4)]"
++          ? "border-[#f59e0b] shadow-[0_0_12px_rgba(245,158,11,0.3)]"
+           : isFocused 
+-          ? "border-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.15)]" 
+-          : "border-[#232329] hover:border-zinc-800"
++          ? "border-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.15)]" 
++          : "border-border-glass hover:border-border-glass-hover"
+       }`}
+     >
+       {/* Title / Action bar */}
+-      <div className="flex items-center justify-between px-3 h-8 bg-[#0c0c0e] border-b border-[#1b1b22] text-[11px] select-none text-zinc-400 flex-shrink-0">
+-        <div className="flex items-center gap-2 truncate">
+-          <TerminalIcon size={12} className="text-zinc-500 flex-shrink-0" />
++      <div className="flex items-center justify-between px-2.5 h-[26px] bg-white/[0.03] backdrop-blur-md border-b border-border-glass/35 text-[9.5px] select-none text-zinc-400 flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
++        <div className="flex items-center gap-1.5 truncate">
++          <TerminalIcon size={10.5} className="text-zinc-500 flex-shrink-0" />
+           <span className="truncate font-semibold">{session.title}</span>
+-          <span className="text-[9px] bg-zinc-800 text-zinc-500 px-1 rounded font-bold">{session.id}</span>
++          <span className="text-[8px] bg-white/5 text-zinc-500 px-1 py-0.5 rounded font-bold font-mono tracking-wider">{session.id}</span>
+         </div>
+ 
+-        <div className="flex items-center gap-2 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
++        <div className="flex items-center gap-1 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
+           <button 
+             onClick={(e) => { e.stopPropagation(); onFocusToggle(frameRef.current); }} 
+             title={isFocused ? "Exit Focus Mode" : "Focus Session"}
+-            className="hover:text-zinc-300 p-0.5 hover:bg-[#1a1a20] rounded"
++            className="hover:text-zinc-300 p-1 hover:bg-white/5 rounded cursor-pointer transition-colors"
+           >
+-            {isFocused ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
++            {isFocused ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+           </button>
+           <button 
+             onClick={(e) => { e.stopPropagation(); killTerminal(session.id); }} 
+             title="Kill Terminal Session"
+-            className="hover:text-rose-400 p-0.5 hover:bg-[#1a1a20] rounded"
++            className="hover:text-rose-400 p-1 hover:bg-rose-500/10 rounded cursor-pointer transition-colors"
+           >
+-            <X size={11} />
++            <X size={10} />
+           </button>
+         </div>
+       </div>
+ 
+       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
+-      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#0a0a0a]">
++      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#050507]">
+         <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} />
+       </div>
+     </div>
+@@ -150,16 +150,12 @@ export const TerminalWorkspace: React.FC = () => {
+     }
+   }, [terminals, focusSessionId]);
+ 
+-  if (!activeWorkspaceId) {
+-    return null;
+-  }
+-
+   if (terminals.length === 0) {
+     return (
+-      <div className="flex-grow flex flex-col items-center justify-center bg-[#070709] border border-[#232329] border-dashed rounded-lg h-full p-8 text-center text-zinc-500 font-mono select-none">
+-        <TerminalIcon size={36} className="text-zinc-800 mb-3 animate-pulse" />
+-        <p className="text-xs font-semibold text-zinc-400">Terminal Panel Idle</p>
+-        <p className="text-[10px] text-zinc-600 mt-1 max-w-[280px]">
++      <div className="flex-grow flex flex-col items-center justify-center bg-bg-primary/20 border border-border-glass border-dashed rounded-lg h-full p-8 text-center text-zinc-500 font-mono select-none">
++        <TerminalIcon size={36} className="text-zinc-850 mb-3 animate-pulse" />
++        <p className="text-xs font-semibold text-zinc-450">Terminal Panel Idle</p>
++        <p className="text-[10px] text-zinc-650 mt-1 max-w-[280px]">
+           Launch an Agent CLI or click "+" in the Agent Panel to spawn interactive shells.
+         </p>
+       </div>
+@@ -308,10 +304,10 @@ export const TerminalWorkspace: React.FC = () => {
+           <button
+             onClick={() => setTaskCenterVisible(!isTaskCenterVisible)}
+             title={isTaskCenterVisible ? "Maximize Terminal View (Hide Task Board)" : "Show Task Board"}
+-            className={`p-1.5 rounded transition-colors border mr-1.5 ${
++            className={`p-1.5 rounded transition-colors border mr-1.5 cursor-pointer ${
+               !isTaskCenterVisible 
+-                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' 
+-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
++                ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' 
++                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+             }`}
+           >
+             {isTaskCenterVisible ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+@@ -320,9 +316,9 @@ export const TerminalWorkspace: React.FC = () => {
+           <button
+             onClick={() => changeLayoutType('grid')}
+             title="Grid Layout"
+-            className={`p-1.5 rounded transition-colors border ${
++            className={`p-1.5 rounded transition-colors border cursor-pointer ${
+               layout.type === 'grid' 
+-                ? 'bg-zinc-800 text-sky-400 border-zinc-700' 
++                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
+                 : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
+             }`}
+           >
+@@ -331,10 +327,10 @@ export const TerminalWorkspace: React.FC = () => {
+           <button
+             onClick={() => changeLayoutType('vertical')}
+             title="Vertical splits"
+-            className={`p-1.5 rounded transition-colors border ${
++            className={`p-1.5 rounded transition-colors border cursor-pointer ${
+               layout.type === 'vertical' 
+-                ? 'bg-zinc-800 text-sky-400 border-zinc-700' 
+-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
++                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
++                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+             }`}
+           >
+             <AlignJustify size={13} className="rotate-90" />
+@@ -342,10 +338,10 @@ export const TerminalWorkspace: React.FC = () => {
+           <button
+             onClick={() => changeLayoutType('horizontal')}
+             title="Horizontal splits"
+-            className={`p-1.5 rounded transition-colors border ${
++            className={`p-1.5 rounded transition-colors border cursor-pointer ${
+               layout.type === 'horizontal' 
+-                ? 'bg-zinc-800 text-sky-400 border-zinc-700' 
+-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
++                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
++                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+             }`}
+           >
+             <AlignJustify size={13} />
+@@ -407,7 +403,7 @@ export const TerminalWorkspace: React.FC = () => {
+                   key={`placeholder-${session.id}`}
+                   data-placeholder-id={session.id}
+                   style={{ ...getNormalGridStyle(session.id), pointerEvents: 'none' }}
+-                  className="border border-dashed border-[#232329] rounded bg-[#08080a] min-h-0 min-w-0"
++                  className="border border-dashed border-border-glass rounded bg-[#050507]/40 min-h-0 min-w-0"
+                 />
+               )}
+               <div
+
+commit c102919a61bd5cf1321b89c3dfacfcf40e88c241
+Author: Gautam Kumar <sharmagautamkumar235@gmail.com>
+Date:   Mon Jun 8 00:23:13 2026 +0530
+
+    feat: real system metrics, fix terminal resize clear, update 8-12 terminal grid layout
+
+diff --git a/src/components/TerminalWorkspace.tsx b/src/components/TerminalWorkspace.tsx
+index 99b57ed..f964227 100644
+--- a/src/components/TerminalWorkspace.tsx
++++ b/src/components/TerminalWorkspace.tsx
+@@ -77,6 +77,7 @@ export const TerminalWorkspace: React.FC = () => {
+   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
+   const isTaskCenterVisible = useOrchestratorStore(s => s.isTaskCenterVisible);
+   const setTaskCenterVisible = useOrchestratorStore(s => s.setTaskCenterVisible);
++  const isSidebarVisible = useOrchestratorStore(s => s.isSidebarVisible);
+   
+   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
+   const [animatingSessionId, setAnimatingSessionId] = useState<string | null>(null);
+@@ -177,6 +178,9 @@ export const TerminalWorkspace: React.FC = () => {
+       containerClass += "flex-row";
+     } else if (terminals.length === 4) {
+       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 auto-rows-fr";
++    } else if (!isSidebarVisible && [8, 10, 11, 12, 16].includes(terminals.length)) {
++      // Use 4-column layout when space is fully available to optimize vertical space
++      containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-4 auto-rows-fr";
+     } else {
+       // Fallback to grid for 3+ terminals
+       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 lg:grid-cols-3 auto-rows-fr";
+
+commit fbf189698bd465611dccbbbbf4e08777e9ab62bd
+Author: Gautam Kumar <sharmagautamkumar235@gmail.com>
+Date:   Mon Jun 8 00:05:03 2026 +0530
+
+    fix: terminal paste bug, grid layout, and click highlights
+
+diff --git a/src/components/TerminalWorkspace.tsx b/src/components/TerminalWorkspace.tsx
+index 1a8fdeb..99b57ed 100644
+--- a/src/components/TerminalWorkspace.tsx
++++ b/src/components/TerminalWorkspace.tsx
+@@ -3,6 +3,7 @@ import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2 }
+ import { useOrchestratorStore } from "../stores/orchestratorStore";
+ import { TerminalSession } from "../types";
+ import { TerminalPane } from "./terminal/TerminalPane";
++import { EventBus } from "../core/events";
+ 
+ // ==========================================
+ // Single Terminal Panel Component
+@@ -11,18 +12,21 @@ interface TerminalFrameProps {
+   session: TerminalSession;
+   isFocused: boolean;
+   isAnimating: boolean;
++  isHighlighted?: boolean;
+   onFocusToggle: (element: HTMLElement | null) => void;
+ }
+ 
+-const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, onFocusToggle }) => {
++const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, onFocusToggle }) => {
+   const killTerminal = useOrchestratorStore(s => s.killTerminal);
+   const frameRef = useRef<HTMLDivElement>(null);
+   
+   return (
+     <div 
+       ref={frameRef}
+-      className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all h-full min-h-0 ${
+-        isFocused 
++      className={`flex-grow flex flex-col bg-[#0a0a0a] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
++        isHighlighted
++          ? "border-yellow-500 shadow-[0_0_12px_rgba(234,179,8,0.4)]"
++          : isFocused 
+           ? "border-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.15)]" 
+           : "border-[#232329] hover:border-zinc-800"
+       }`}
+@@ -77,6 +81,21 @@ export const TerminalWorkspace: React.FC = () => {
+   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
+   const [animatingSessionId, setAnimatingSessionId] = useState<string | null>(null);
+   const [isExpanding, setIsExpanding] = useState(false);
++  const [highlightedAgentId, setHighlightedAgentId] = useState<string | null>(null);
++
++  useEffect(() => {
++    let timeout: NodeJS.Timeout;
++    const unsub = EventBus.subscribe("terminal:highlight", (payload: any) => {
++      setHighlightedAgentId(payload.agentId);
++      if (timeout) clearTimeout(timeout);
++      timeout = setTimeout(() => setHighlightedAgentId(null), 2000);
++    });
++    return () => {
++      unsub();
++      if (timeout) clearTimeout(timeout);
++    };
++  }, []);
++  
+   
+   // Fallback timeout ref to prevent stuck animations
+   const animationFallbackTimeoutRef = useRef<any>(null);
+@@ -156,6 +175,8 @@ export const TerminalWorkspace: React.FC = () => {
+       containerClass += "flex-row";
+     } else if (is2Terminals) {
+       containerClass += "flex-row";
++    } else if (terminals.length === 4) {
++      containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 auto-rows-fr";
+     } else {
+       // Fallback to grid for 3+ terminals
+       containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-2 lg:grid-cols-3 auto-rows-fr";
+@@ -169,21 +190,15 @@ export const TerminalWorkspace: React.FC = () => {
+   // Check if we are using the grid fallback
+   const isGridFallback = layout.type === 'grid' && terminals.length > 2;
+ 
+-  const getNormalGridStyle = (sessId: string): React.CSSProperties => {
++  const getNormalGridStyle = (_sessId: string): React.CSSProperties => {
+     if (isGridFallback) return {};
+     
+-    const isFirstTerminal = sessId === terminals[0].id;
+-    const lockLeftTerminal = terminals.length > 1 && isFirstTerminal;
+-    
+     return {
+-      width: isVertical
+-        ? (lockLeftTerminal ? "490px" : "auto")
+-        : "100%",
+-      height: !isVertical
+-        ? "auto"
+-        : "100%",
+-      flexGrow: (isVertical && lockLeftTerminal ? 0 : 1),
++      width: isVertical ? "auto" : "100%",
++      height: !isVertical ? "auto" : "100%",
++      flexGrow: 1,
+       flexShrink: 1,
++      flexBasis: 0,
+     };
+   };
+ 
+@@ -367,9 +382,12 @@ export const TerminalWorkspace: React.FC = () => {
+                 pointerEvents: 'none',
+               };
+             } else {
+-              // Hide them completely once maximized
++              // Hide them completely once maximized without breaking xterm layout
+               wrapperStyle = {
+-                display: 'none',
++                ...getNormalGridStyle(session.id),
++                opacity: 0,
++                pointerEvents: 'none',
++                visibility: 'hidden', // Ensures they don't block anything or get focus
+               };
+             }
+           } else {
+@@ -411,6 +429,7 @@ export const TerminalWorkspace: React.FC = () => {
+                   session={session} 
+                   isFocused={isFocused}
+                   isAnimating={animatingSessionId !== null}
++                  isHighlighted={session.agentId === highlightedAgentId}
+                   onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
+                 />
+               </div>
