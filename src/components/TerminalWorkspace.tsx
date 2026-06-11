@@ -131,6 +131,14 @@ export const TerminalWorkspace: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (animationFallbackTimeoutRef.current) {
+        clearTimeout(animationFallbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     import('../services/TerminalMetrics').then(({ terminalMetricsCollector }) => {
       terminalMetricsCollector.updateFocusSession(focusSessionId);
     });

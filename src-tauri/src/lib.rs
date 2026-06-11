@@ -92,6 +92,13 @@ fn spawn_pty(
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
 ) -> Result<Option<u32>, String> {
+    {
+        let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
+        if sessions.len() >= 32 {
+            return Err("MAX_PTY_SESSIONS limit (32) reached. Please close some terminals before opening more.".to_string());
+        }
+    }
+
     let pty_system = NativePtySystem::default();
     let size = PtySize {
         rows: 24,
@@ -154,34 +161,36 @@ fn spawn_pty(
     // 2. PTY Reader Thread (Blocking)
     let thread_session_id = session_id_clone.clone();
     std::thread::spawn(move || {
-        let mut buffer = [0u8; 65536];
-        let mut backpressure_events = 0;
-        
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break, // EOF, PTY closed
-                Ok(n) => {
-                    // Try to send immediately. If full, backpressure activated!
-                    let data = buffer[..n].to_vec();
-                    if let Err(tokio::sync::mpsc::error::TrySendError::Full(returned_data)) = tx.try_send(data.clone()) {
-                        backpressure_events += 1;
-                        if backpressure_events % 100 == 1 {
-                            println!("[Telemetry] Session {} hit backpressure {} times.", thread_session_id, backpressure_events);
-                        }
-                        // Fallback to blocking send to ensure zero data loss
-                        if tx.blocking_send(returned_data).is_err() {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut buffer = [0u8; 65536];
+            let mut backpressure_events = 0;
+            
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break, // EOF, PTY closed
+                    Ok(n) => {
+                        // Try to send immediately. If full, backpressure activated!
+                        let data = buffer[..n].to_vec();
+                        if let Err(tokio::sync::mpsc::error::TrySendError::Full(returned_data)) = tx.try_send(data.clone()) {
+                            backpressure_events += 1;
+                            if backpressure_events % 100 == 1 {
+                                println!("[Telemetry] Session {} hit backpressure {} times.", thread_session_id, backpressure_events);
+                            }
+                            // Fallback to blocking send to ensure zero data loss
+                            if tx.blocking_send(returned_data).is_err() {
+                                break;
+                            }
+                        } else if tx.is_closed() {
                             break;
                         }
-                    } else if tx.is_closed() {
-                        break;
                     }
+                    Err(_) => break, // Reader broken
                 }
-                Err(_) => break, // Reader broken
             }
-        }
-        if backpressure_events > 0 {
-            println!("[Telemetry] Session {} finished. Experienced backpressure {} times.", thread_session_id, backpressure_events);
-        }
+            if backpressure_events > 0 {
+                println!("[Telemetry] Session {} finished. Experienced backpressure {} times.", thread_session_id, backpressure_events);
+            }
+        }));
     });
 
     // 3. Batching / Emitter Task (Async)
@@ -193,7 +202,7 @@ fn spawn_pty(
         let mut buffer: Vec<u8> = Vec::new();
         
         // Ensure visibility is registered by default
-        get_visibilities().lock().unwrap().insert(session_id_clone.clone(), "Visible".to_string());
+        get_visibilities().lock().unwrap_or_else(|e| e.into_inner()).insert(session_id_clone.clone(), "Visible".to_string());
 
         let mut first_chunk_arrival: Option<Instant> = None;
         let mut last_second_reset = Instant::now();
@@ -217,7 +226,7 @@ fn spawn_pty(
 
             // Sync metrics to global state
             {
-                let mut metrics = TERMINAL_METRICS.lock().unwrap();
+                let mut metrics = TERMINAL_METRICS.lock().unwrap_or_else(|e| e.into_inner());
                 let m = metrics.entry(session_id_clone.clone()).or_insert_with(BackendMetrics::default);
                 m.pending_bytes = buffer.len();
                 m.oldest_pending_age_ms = if buffer.is_empty() { 0 } else { first_chunk_arrival.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) };
@@ -238,7 +247,7 @@ fn spawn_pty(
                 // Wait for interval tick
                 _ = interval.tick() => {
                     if !buffer.is_empty() {
-                        let vis = get_visibilities().lock().unwrap().get(&session_id_clone).cloned().unwrap_or_else(|| "Visible".to_string());
+                        let vis = get_visibilities().lock().unwrap_or_else(|e| e.into_inner()).get(&session_id_clone).cloned().unwrap_or_else(|| "Visible".to_string());
                         
                         let should_emit = match vis.as_str() {
                             "Visible" => true, // Emit 60Hz
@@ -266,8 +275,17 @@ fn spawn_pty(
                             events_this_sec += 1;
                             
                             buffer.extend(data);
-                            // Safety max threshold: Even if hidden, if buffer hits 5MB, force emit to not OOM
-                            if buffer.len() > 1024 * 1024 * 5 { 
+                            
+                            // Explicit Backpressure Policy: MAX_BUFFER_SIZE = 10MB per terminal
+                            let max_buffer_size = 10 * 1024 * 1024;
+                            if buffer.len() > max_buffer_size {
+                                let drop_amount = buffer.len() - (max_buffer_size / 2);
+                                buffer.drain(0..drop_amount);
+                                println!("[Warning] Session {} hit MAX_BUFFER_SIZE. Dropped {} oldest bytes.", session_id_clone, drop_amount);
+                            }
+
+                            // Safety threshold for hidden terminals: start emitting if buffer gets too large
+                            if buffer.len() > 1024 * 512 { 
                                 if let Some(dur) = emit_buffer(&app_clone, &session_id_clone, &mut buffer) {
                                     emit_durations.push(dur);
                                 }
@@ -293,7 +311,7 @@ fn spawn_pty(
     });
 
     // Save PTY session
-    let mut sessions = get_sessions().lock().unwrap();
+    let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     
     // 🔥 THE FIX: Explicitly kill the old process before overwriting it.
     // In Rust portable-pty, dropping the Child struct does not kill the OS process.
@@ -312,20 +330,23 @@ fn spawn_pty(
     Ok(process_id)
 }
 
-// Helper to emit and clear buffer with UTF-8 Splice Safety
+// Helper to emit and clear buffer with UTF-8 Splice Safety, up to MAX_CHUNK_SIZE
 fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) -> Option<Duration> {
     if buffer.is_empty() { return None; }
     
     let start = Instant::now();
+    let max_chunk_size = 256 * 1024; // 256KB limit per payload
+    
+    let chunk_len = std::cmp::min(buffer.len(), max_chunk_size);
 
     // Safety against slicing a multi-byte unicode character
-    match std::str::from_utf8(buffer) {
+    match std::str::from_utf8(&buffer[..chunk_len]) {
         Ok(valid_str) => {
             let _ = app.emit("terminal:stdout", PtyOutput {
                 session_id: session_id.to_string(),
                 data: valid_str.to_string(),
             });
-            buffer.clear();
+            buffer.drain(..chunk_len);
         }
         Err(e) => {
             let valid_len = e.valid_up_to();
@@ -336,6 +357,10 @@ fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) -> Optio
                     data: valid_str.to_string(),
                 });
                 buffer.drain(..valid_len); // Leave incomplete bytes for next tick
+            } else {
+                // If the very first bytes form an incomplete UTF-8 sequence,
+                // we must wait for more data to complete it.
+                return None;
             }
         }
     }
@@ -345,17 +370,17 @@ fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) -> Optio
 
 #[tauri::command]
 fn get_terminal_metrics() -> HashMap<String, BackendMetrics> {
-    TERMINAL_METRICS.lock().unwrap().clone()
+    TERMINAL_METRICS.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 #[tauri::command]
 fn set_terminal_visibility(session_id: String, visibility: String) {
-    get_visibilities().lock().unwrap().insert(session_id, visibility);
+    get_visibilities().lock().unwrap_or_else(|e| e.into_inner()).insert(session_id, visibility);
 }
 
 #[tauri::command]
 fn write_pty(session_id: String, data: String) -> Result<(), String> {
-    let mut sessions = get_sessions().lock().unwrap();
+    let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(session) = sessions.get_mut(&session_id) {
         session.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
         session.writer.flush().map_err(|e| e.to_string())?;
@@ -371,7 +396,7 @@ fn resize_pty(session_id: String, mut rows: u16, mut cols: u16) -> Result<(), St
     if cols < 2 { cols = 2; }
     if rows < 1 { rows = 1; }
 
-    let sessions = get_sessions().lock().unwrap();
+    let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(session) = sessions.get(&session_id) {
         session.master.resize(PtySize {
             rows,
@@ -388,7 +413,7 @@ fn resize_pty(session_id: String, mut rows: u16, mut cols: u16) -> Result<(), St
 
 #[tauri::command]
 fn kill_pty(session_id: String) -> Result<(), String> {
-    let mut sessions = get_sessions().lock().unwrap();
+    let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(mut session) = sessions.remove(&session_id) {
         let _ = session.child.kill();
         Ok(())
@@ -399,7 +424,7 @@ fn kill_pty(session_id: String) -> Result<(), String> {
 
 #[tauri::command]
 fn kill_all_ptys() -> Result<(), String> {
-    let mut sessions = get_sessions().lock().unwrap();
+    let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     for (_, mut session) in sessions.drain() {
         let _ = session.child.kill();
     }
@@ -489,7 +514,7 @@ struct SystemMetrics {
 
 #[tauri::command]
 fn get_system_metrics() -> SystemMetrics {
-    let mut sys = get_system_info().lock().unwrap();
+    let mut sys = get_system_info().lock().unwrap_or_else(|e| e.into_inner());
     sys.refresh_cpu_usage();
     sys.refresh_memory();
     

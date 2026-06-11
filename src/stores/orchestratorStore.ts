@@ -15,9 +15,10 @@ import {
   DEFAULT_APP_SETTINGS
 } from "../types";
 import { EventBus } from "../core/events";
+import { TerminalBufferManager } from '../services/TerminalBufferManager';
+import { PersistenceManager } from '../services/PersistenceManager';
 import { agentTemplates } from "../agents/templates";
 import { PluginRegistry } from "../plugins";
-import { TerminalBufferManager } from "../services/TerminalBufferManager";
 
 export interface DialogConfig {
   type: 'alert' | 'confirm';
@@ -96,7 +97,8 @@ interface OrchestratorState {
   clearActivityFeed: () => void;
   
   // Snapshot/Session triggers
-  saveSnapshot: () => Promise<void>;
+  saveSnapshot: () => void;
+  performActualSave: () => Promise<void>;
   loadSnapshot: () => Promise<void>;
 
   // V2 additions
@@ -284,7 +286,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     get().logActivity('workspace', 'info', `Created workspace: ${name} at ${rootPath}`, '', undefined);
     
     // Save database mappings
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   selectWorkspace: async (workspaceId) => {
@@ -317,7 +319,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       await get().initializeProjectMemory(proj.id);
     }
     
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   deleteWorkspace: async (workspaceId) => {
@@ -350,7 +352,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     });
 
     get().logActivity('workspace', 'warning', `Deleted Workspace Session`, '', undefined);
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   addProject: async (name, path) => {
@@ -382,7 +384,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     get().logActivity('workspace', 'info', `Added project "${name}" mapping to ${path}`, newProject.id);
     await get().initializeProjectMemory(newProject.id);
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   createAgent: async (profile) => {
@@ -411,7 +413,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     });
 
     get().logActivity('system', 'info', `Registered Agent Profile: "${profile.name}"`, profile.projectId || '');
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   deleteAgent: async (agentId) => {
@@ -439,7 +441,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     });
 
     get().logActivity('system', 'warning', `Deleted Agent Profile: "${agent.name}"`, agent.projectId || '');
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   spawnTerminal: async (projectId, agentId, customCommand, customArgs, startupInstruction) => {
@@ -581,7 +583,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       get().logActivity('terminal', 'error', `PTY Spawner failed: ${e}`, projectId, agentId);
     }
 
-    await get().saveSnapshot();
+    get().saveSnapshot();
     return sessionId;
   },
 
@@ -630,7 +632,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     });
 
     get().logActivity('terminal', 'info', `Terminated terminal session: "${term.title}"`, term.projectId, term.agentId);
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   changeLayoutType: (layoutType) => {
@@ -740,7 +742,11 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     get().saveSnapshot();
   },
 
-  saveSnapshot: async () => {
+  saveSnapshot: () => {
+    PersistenceManager.getInstance().requestSave();
+  },
+
+  performActualSave: async () => {
     const start = performance.now();
     const state = get();
     
@@ -909,7 +915,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       await get().spawnTerminal(projectId, agentId);
     }
 
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   updateAgent: async (agentId, updates) => {
@@ -948,7 +954,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     const agent = get().agents.find((a) => a.id === agentId);
     get().logActivity('system', 'info', `Updated Agent Profile: "${agent?.name}"`, agent?.projectId || '');
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   createTask: async (projectId, title, description, priority = 'medium', tags = []) => {
@@ -970,7 +976,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     get().logActivity('workspace', 'info', `Created task: "${title}"`, projectId);
     await get().syncTasksWithFile(projectId);
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   updateTask: async (taskId, updates) => {
@@ -989,7 +995,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     if (projectId) {
       await get().syncTasksWithFile(projectId);
     }
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   deleteTask: async (taskId) => {
@@ -1002,7 +1008,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     get().logActivity('workspace', 'warning', `Deleted task: "${task.title}"`, task.projectId);
     await get().syncTasksWithFile(task.projectId);
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   moveTask: async (taskId, status) => {
@@ -1021,7 +1027,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     if (projectId) {
       await get().syncTasksWithFile(projectId);
     }
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   assignTask: async (taskId, agentId) => {
@@ -1040,7 +1046,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     if (projectId) {
       await get().syncTasksWithFile(projectId);
     }
-    await get().saveSnapshot();
+    get().saveSnapshot();
   },
 
   syncTasksWithFile: async (projectId) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Cpu, Play, Square, Trash2, AlertCircle, GripVertical, MoreVertical, Edit2, Copy, RotateCcw, FileText, Trash } from "lucide-react";
 import {
@@ -23,6 +23,7 @@ import { AgentProfile, Project } from "../types";
 import { PluginRegistry } from "../plugins";
 import { CliSpawnerPanel } from "./CliSpawnerPanel";
 import { EventBus } from "../core/events";
+import { useShallow } from "zustand/react/shallow";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sortable Card Component
@@ -48,7 +49,7 @@ interface SortableAgentCardProps {
   onOpenLogs: () => void;
 }
 
-const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
+const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
   agent,
   proj,
   activeProjects,
@@ -68,6 +69,17 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
   onRestart,
   onOpenLogs
 }) => {
+  const startRender = performance.now();
+  const renderCountRef = useRef(0);
+  renderCountRef.current++;
+
+  useEffect(() => {
+    const duration = performance.now() - startRender;
+    if (duration > 5) {
+      console.warn(`[SortableAgentCard] ${agent.name} Render ${renderCountRef.current} took ${duration.toFixed(1)}ms`);
+    }
+  });
+
   const {
     attributes,
     listeners,
@@ -456,21 +468,32 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
       </div>
     </div>
   );
-};
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AgentGrid – Main Container
 // ─────────────────────────────────────────────────────────────────────────────
 export const AgentGrid: React.FC = () => {
-  const projects = useOrchestratorStore((s) => s.projects);
-  const agents = useOrchestratorStore((s) => s.agents);
-  const tasks = useOrchestratorStore((s) => s.tasks);
+  const startRender = performance.now();
+  const renderCountRef = useRef(0);
+  renderCountRef.current++;
+
+  useEffect(() => {
+    const duration = performance.now() - startRender;
+    if (duration > 10) {
+      console.warn(`[AgentGrid] Render ${renderCountRef.current} took ${duration.toFixed(1)}ms`);
+    }
+  });
+
+  const activeWorkspaceId = useOrchestratorStore((s) => s.activeWorkspaceId);
+  const projects = useOrchestratorStore(useShallow((s) => s.projects));
+  const agents = useOrchestratorStore(useShallow((s) => s.agents));
+  const tasks = useOrchestratorStore(useShallow((s) => s.tasks));
   const deleteAgent = useOrchestratorStore((s) => s.deleteAgent);
   const updateAgent = useOrchestratorStore((s) => s.updateAgent);
   const createAgent = useOrchestratorStore((s) => s.createAgent);
   const spawnTerminal = useOrchestratorStore((s) => s.spawnTerminal);
   const killTerminal = useOrchestratorStore((s) => s.killTerminal);
-  const activeWorkspaceId = useOrchestratorStore((s) => s.activeWorkspaceId);
   const cliInstalledStatuses = useOrchestratorStore(
     (s) => s.cliInstalledStatuses
   );
@@ -525,7 +548,7 @@ export const AgentGrid: React.FC = () => {
     useOrchestratorStore.getState().saveSnapshot();
   };
 
-  const handleStartAgent = async (agent: AgentProfile) => {
+  const handleStartAgent = useCallback(async (agent: AgentProfile) => {
     if (!agent.projectId) {
       showAlertDialog(
         "Project Required",
@@ -534,18 +557,18 @@ export const AgentGrid: React.FC = () => {
       return;
     }
     await spawnTerminal(agent.projectId, agent.id);
-  };
+  }, [showAlertDialog, spawnTerminal]);
 
-  const handleStopAgent = async (agent: AgentProfile) => {
+  const handleStopAgent = useCallback(async (agent: AgentProfile) => {
     if (agent.terminalSessionIds.length > 0) {
       const terminals = [...agent.terminalSessionIds];
       for (const termId of terminals) {
         await killTerminal(termId);
       }
     }
-  };
+  }, [killTerminal]);
 
-  const handleEditAgent = (agent: AgentProfile) => {
+  const handleEditAgent = useCallback((agent: AgentProfile) => {
     const newName = prompt("Edit Agent Profile Name:", agent.name);
     if (newName !== null) {
       const newArgsStr = prompt("Edit CLI Arguments (comma-separated):", agent.arguments.join(", "));
@@ -557,9 +580,9 @@ export const AgentGrid: React.FC = () => {
         });
       }
     }
-  };
+  }, [updateAgent]);
 
-  const handleDuplicateAgent = (agent: AgentProfile) => {
+  const handleDuplicateAgent = useCallback((agent: AgentProfile) => {
     createAgent({
       name: `${agent.name} (Copy)`,
       groupId: agent.groupId || "",
@@ -571,22 +594,22 @@ export const AgentGrid: React.FC = () => {
       capabilities: agent.capabilities,
       role: agent.role || ""
     });
-  };
+  }, [createAgent]);
 
-  const handleRestartAgent = async (agent: AgentProfile) => {
+  const handleRestartAgent = useCallback(async (agent: AgentProfile) => {
     await handleStopAgent(agent);
     setTimeout(() => {
       handleStartAgent(agent);
     }, 400);
-  };
+  }, [handleStopAgent, handleStartAgent]);
 
-  const handleOpenLogsAgent = (agent: AgentProfile) => {
+  const handleOpenLogsAgent = useCallback((agent: AgentProfile) => {
     if (agent.status === "running") {
       EventBus.publish("terminal:highlight", { agentId: agent.id });
     } else {
       showAlertDialog("Agent Offline", "Terminal logs are only accessible for active running agents.");
     }
-  };
+  }, [showAlertDialog]);
 
   const formatRuntime = (seconds: number) => {
     const m = Math.floor(seconds / 60)

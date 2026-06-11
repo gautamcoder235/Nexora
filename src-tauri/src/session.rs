@@ -153,7 +153,7 @@ pub struct TelemetryReport {
 }
 
 pub fn generate_telemetry_report() -> TelemetryReport {
-    let sessions = get_sessions().lock().unwrap();
+    let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     let active_sessions = sessions.len();
     let mut visible_terminals = 0;
     let mut hidden_terminals = 0;

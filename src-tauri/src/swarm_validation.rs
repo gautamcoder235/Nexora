@@ -99,7 +99,7 @@ pub fn run_validation_pipeline(
 
     macro_rules! fail_pipeline {
         ($step:expr, $exit_code:expr, $duration:expr, $output:expr) => {{
-            let cg = db_state.0.lock().unwrap();
+            let cg = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
             let c = cg.as_ref().unwrap();
             c.execute(
                 "UPDATE validation_runs SET status = 'failed', ended_at = CURRENT_TIMESTAMP WHERE id = ?1",
@@ -125,7 +125,7 @@ pub fn run_validation_pipeline(
 
     macro_rules! pass_step {
         ($step:expr, $duration:expr, $output:expr) => {{
-            let cg = db_state.0.lock().unwrap();
+            let cg = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
             let c = cg.as_ref().unwrap();
             c.execute(
                 "INSERT INTO validation_steps (id, validation_run_id, step_name, exit_code, duration_ms, status) VALUES (?1, ?2, ?3, 0, ?4, 'passed')",
@@ -154,7 +154,7 @@ pub fn run_validation_pipeline(
     if let Ok(head_out) = git_head {
         if head_out.status.success() {
             let commit = String::from_utf8_lossy(&head_out.stdout).trim().to_string();
-            db_state.0.lock().unwrap().as_ref().unwrap().execute(
+            db_state.0.lock().unwrap_or_else(|e| e.into_inner()).as_ref().unwrap().execute(
                 "INSERT INTO execution_snapshots (id, execution_id, head_commit, branch) VALUES (?1, ?2, ?3, 'worktree')",
                 rusqlite::params![format!("snap-{}", run_id), execution_id, commit]
             ).ok();

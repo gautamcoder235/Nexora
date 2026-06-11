@@ -16,14 +16,16 @@ import { CustomDialog } from "./components/CustomDialog";
 import { SettingsModal } from "./components/SettingsModal";
 import { EventBus } from "./core/events";
 import { DEFAULT_APP_SETTINGS } from "./types";
+import { useShallow } from 'zustand/react/shallow';
+
 function App() {
   const initStore = useOrchestratorStore(s => s.initStore);
   const showConfirmDialog = useOrchestratorStore(s => s.showConfirmDialog);
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
-  const workspaces = useOrchestratorStore(s => s.workspaces);
+  const workspaces = useOrchestratorStore(useShallow(s => s.workspaces));
   const createWorkspace = useOrchestratorStore(s => s.createWorkspace);
-  const terminals = useOrchestratorStore(s => s.terminals);
-  const projects = useOrchestratorStore(s => s.projects);
+  const terminals = useOrchestratorStore(useShallow(s => s.terminals));
+  const projects = useOrchestratorStore(useShallow(s => s.projects));
 
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -114,7 +116,7 @@ function App() {
 
   const startHeightResize = (e: React.MouseEvent) => {
     e.preventDefault();
-    resizeRef.current = { startY: e.clientY, startHeight: topPanelHeight };
+    resizeRef.current = { startY: e.clientY, startHeight: topPanelHeight, lastHeight: 0, lastWidth: 0 };
     setIsHeightDragging(true);
   };
 

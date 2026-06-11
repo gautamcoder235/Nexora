@@ -60,7 +60,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     if (isAnimating) {
       startBlackout();
     } else {
-      endBlackoutAfterDelay(400);
+      endBlackoutAfterDelay(800);
     }
     return () => {
       if (blackoutTimerRef.current) clearTimeout(blackoutTimerRef.current);
@@ -68,10 +68,13 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   }, [isAnimating]);
 
   useEffect(() => {
+    let t1: any = null;
+    let t2: any = null;
+    
     if (refreshKey && refreshKey > 0) {
       startBlackout();
       // Allow DOM to process the blackout first, then trigger fit, then restore
-      setTimeout(() => {
+      t1 = setTimeout(() => {
         if (termRef.current) {
           try {
             // Force a backend redraw by faking a tiny resize oscillation 
@@ -86,7 +89,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
               rows: currentRows, 
               cols: Math.max(2, currentCols - 1) 
             }).then(() => {
-              setTimeout(() => {
+              t2 = setTimeout(() => {
                 invoke('resize_pty', { 
                   sessionId: paneId, 
                   rows: currentRows, 
@@ -110,6 +113,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         endBlackoutAfterDelay(320);
       }, 40);
     }
+    
+    return () => {
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+    };
   }, [refreshKey, paneId]);
 
   // Sync the ref synchronously during render to prevent layout reflow race conditions
@@ -301,28 +309,46 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     let writeQueue = '';
     let coalesceFrameId: number | null = null;
     
+    const drainQueue = (now: number) => {
+      terminalMetricsCollector.recordFrame(paneId, now);
+      
+      if (writeQueue.length > 0) {
+        const startWrite = performance.now();
+        
+        // Limit characters written per frame to avoid freezing the UI thread
+        const MAX_CHARS_PER_FRAME = 256 * 1024; // 256KB
+        const chunkToWrite = writeQueue.length > MAX_CHARS_PER_FRAME ? writeQueue.slice(0, MAX_CHARS_PER_FRAME) : writeQueue;
+        writeQueue = writeQueue.length > MAX_CHARS_PER_FRAME ? writeQueue.slice(MAX_CHARS_PER_FRAME) : '';
+        
+        terminalMetricsCollector.recordWrite(paneId, chunkToWrite.length);
+
+        term.write(chunkToWrite, () => {
+          const writeDuration = performance.now() - startWrite;
+          terminalMetricsCollector.recordRenderLatency(paneId, writeDuration);
+        });
+
+        const syncDuration = performance.now() - startWrite;
+        if (syncDuration > 15) {
+          console.warn(`[TerminalPane] High INP Warning: drainQueue sync parsing took ${syncDuration.toFixed(1)}ms for ${chunkToWrite.length} bytes`);
+        }
+        
+        // If there's more in the queue, schedule another frame
+        if (writeQueue.length > 0) {
+          coalesceFrameId = requestAnimationFrame(drainQueue);
+        } else {
+          coalesceFrameId = null;
+        }
+      } else {
+        coalesceFrameId = null;
+      }
+    };
+
     bufferManager.subscribe(paneId, (chunk) => {
       writeQueue += chunk.data;
       
       // Coalesce multiple chunks arriving within the same frame
       if (coalesceFrameId === null) {
-        coalesceFrameId = requestAnimationFrame((now) => {
-          terminalMetricsCollector.recordFrame(paneId, now);
-          
-          if (writeQueue.length > 0) {
-            const startWrite = performance.now();
-            const chunkLength = writeQueue.length;
-            
-            terminalMetricsCollector.recordWrite(paneId, chunkLength);
-
-            term.write(writeQueue, () => {
-              const writeDuration = performance.now() - startWrite;
-              terminalMetricsCollector.recordRenderLatency(paneId, writeDuration);
-            });
-            writeQueue = '';
-          }
-          coalesceFrameId = null;
-        });
+        coalesceFrameId = requestAnimationFrame(drainQueue);
       }
     });
 
@@ -390,6 +416,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       if (ptyResizeTimeout) clearTimeout(ptyResizeTimeout);
       onResizeDisposable.dispose();
       resizeObserver.disconnect();
+      if (resizeTimeout) clearTimeout(resizeTimeout);
       if (unlistenExit) unlistenExit();
       try {
         term.dispose();

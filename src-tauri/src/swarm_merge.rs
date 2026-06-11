@@ -35,7 +35,7 @@ pub async fn apply_merge_candidate(
     let db_state: State<'_, DbState> = app_handle.state();
     
     {
-        let conn_guard = db_state.0.lock().unwrap();
+        let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
         swarm_db::insert_execution_event(
             conn_guard.as_ref().unwrap(),
             &format!("evt-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
@@ -90,7 +90,7 @@ pub async fn apply_merge_candidate(
     macro_rules! fail_merge_step {
         ($err:expr) => {
             {
-                let conn_guard = db_state.0.lock().unwrap();
+                let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
                 let conn = conn_guard.as_ref().unwrap();
                 return fail_merge(&app_handle, &execution_id, $err, conn);
             }
@@ -112,7 +112,7 @@ pub async fn apply_merge_candidate(
         "porcelain": String::from_utf8_lossy(&status_output.stdout),
     });
     {
-        let conn_guard = db_state.0.lock().unwrap();
+        let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
         save_merge_artifact(conn_guard.as_ref().unwrap(), repo_dir, &execution_id, "merge_precheck_report", &serde_json::to_string(&precheck_report).unwrap_or_default());
     }
 
@@ -192,7 +192,7 @@ pub async fn apply_merge_candidate(
         "stderr": String::from_utf8_lossy(&apply_run.stderr),
     });
     {
-        let conn_guard = db_state.0.lock().unwrap();
+        let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
         save_merge_artifact(conn_guard.as_ref().unwrap(), repo_dir, &execution_id, "merge_apply_report", &serde_json::to_string(&apply_report).unwrap_or_default());
     }
 
@@ -247,7 +247,7 @@ pub async fn apply_merge_candidate(
 
     // Success! Update state
     {
-        let conn_guard = db_state.0.lock().unwrap();
+        let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().unwrap();
 
         let current_head_after_commit = Command::new("git")

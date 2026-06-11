@@ -228,7 +228,7 @@ pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Resul
     let mut recovered_merges = 0;
     {
         let state = app_handle.state::<DbState>();
-        let mut conn_guard = state.0.lock().unwrap();
+        let mut conn_guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_mut().unwrap();
 
         let merging_candidates: Vec<String> = {
