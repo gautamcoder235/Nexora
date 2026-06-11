@@ -75,18 +75,25 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: agent.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  } = useSortable({ 
+    id: agent.id,
+    transition: {
+      duration: 350,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    }
+  });
 
   const isHighlighted = dragOverId === agent.id && !isDragging;
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ x: number; y: number } | null>(null);
   const [isEditingProject, setIsEditingProject] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const style = {
+    transform: CSS.Transform.toString(transform) + (isDragging ? ' scale(0.97)' : ''),
+    transition: transition || 'transform 350ms cubic-bezier(0.25, 1, 0.5, 1)',
+    zIndex: isDragging ? 50 : showDropdown ? 40 : 10,
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -176,7 +183,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = ({
         isHighlighted
           ? "border-accent-primary shadow-[0_0_12px_rgba(245,158,11,0.2)] bg-accent-primary/[0.03]"
           : ""
-      } ${isDragging ? "shadow-2xl border-accent-primary/40 opacity-70 scale-95 z-50" : ""} ${showDropdown ? "z-40" : "z-10"}`}
+      } ${isDragging ? "shadow-2xl border-accent-primary/40 opacity-80" : ""} ${showDropdown ? "z-40" : "z-10"}`}
     >
       {/* 1. TOP HEADER ZONE */}
       <div className="flex items-start gap-1.5 flex-shrink-0 min-w-0">
@@ -678,7 +685,7 @@ export const AgentGrid: React.FC = () => {
       {/* Agents List – dnd-kit Sortable */}
       {filteredAgents.length === 0 ? (
         <div className="text-zinc-500 text-xs font-mono py-12 text-center border border-border-glass border-dashed rounded-lg bg-bg-secondary/20 flex-grow flex flex-col justify-center items-center gap-2">
-          <span>🤖 No CLI agent profiles found.</span>
+          <span>No CLI agent profiles found.</span>
           <span className="text-[10px] text-zinc-605">Ready to launch a new swarm agent profile above.</span>
         </div>
       ) : (

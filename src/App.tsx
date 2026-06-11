@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentGrid } from "./components/AgentGrid";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
@@ -58,6 +58,14 @@ function App() {
   const setSidebarWidth = useOrchestratorStore(s => s.setSidebarWidth);
   const setTopPanelHeight = useOrchestratorStore(s => s.setTopPanelHeight);
 
+  // Enforce Max 8 Terminals Docking Rule
+  useEffect(() => {
+    if (terminals.length > 8) {
+      if (isAgentPanelPinned) setAgentPanelPinned(false);
+      if (isTaskPanelPinned) setTaskPanelPinned(false);
+    }
+  }, [terminals.length, isAgentPanelPinned, isTaskPanelPinned, setAgentPanelPinned, setTaskPanelPinned]);
+
   const [initName, setInitName] = useState("");
   const [isActivityFeedExpanded, setIsActivityFeedExpanded] = useState(false);
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
@@ -101,8 +109,12 @@ function App() {
     setIsSidebarDragging(true);
   };
 
+  const resizeRef = useRef({ startY: 0, startHeight: 0, lastHeight: 0, lastWidth: 0 });
+  const appRef = useRef<HTMLDivElement>(null);
+
   const startHeightResize = (e: React.MouseEvent) => {
     e.preventDefault();
+    resizeRef.current = { startY: e.clientY, startHeight: topPanelHeight };
     setIsHeightDragging(true);
   };
 
@@ -113,13 +125,16 @@ function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
-        const newWidth = Math.max(420, Math.min(e.clientX - 56, 800));
-        setSidebarWidth(newWidth);
+        const maxWidth = window.innerWidth - 300; // Leave at least 300px for main content
+        const newWidth = Math.max(420, Math.min(e.clientX - 56, maxWidth));
+        if (appRef.current) appRef.current.style.setProperty('--sidebar-width', `${newWidth}px`);
+        resizeRef.current.lastWidth = newWidth;
       });
     };
 
     const handleMouseUp = () => {
       if (frameId) cancelAnimationFrame(frameId);
+      if (resizeRef.current.lastWidth) setSidebarWidth(resizeRef.current.lastWidth);
       setIsSidebarDragging(false);
       useOrchestratorStore.getState().saveSnapshot();
     };
@@ -141,13 +156,17 @@ function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
-        const newHeight = Math.max(150, Math.min(e.clientY - 80, 600));
-        setTopPanelHeight(newHeight);
+        const delta = e.clientY - resizeRef.current.startY;
+        const maxHeight = window.innerHeight - 150; // Leave at least 150px for the terminal pane
+        const newHeight = Math.max(150, Math.min(resizeRef.current.startHeight + delta, maxHeight));
+        if (appRef.current) appRef.current.style.setProperty('--top-panel-height', `${newHeight}px`);
+        resizeRef.current.lastHeight = newHeight;
       });
     };
 
     const handleMouseUp = () => {
       if (frameId) cancelAnimationFrame(frameId);
+      if (resizeRef.current.lastHeight) setTopPanelHeight(resizeRef.current.lastHeight);
       setIsHeightDragging(false);
       useOrchestratorStore.getState().saveSnapshot();
     };
@@ -161,6 +180,26 @@ function App() {
       document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isHeightDragging, setTopPanelHeight]);
+
+  // Constrain panels to window size on mount and on window resize
+  // This repairs any persisted state that might be out of bounds.
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const maxHeight = window.innerHeight - 150;
+      const maxWidth = window.innerWidth - 300;
+      
+      if (topPanelHeight > maxHeight) {
+        setTopPanelHeight(maxHeight);
+      }
+      if (sidebarWidth > maxWidth) {
+        setSidebarWidth(maxWidth);
+      }
+    };
+
+    handleWindowResize(); // Run once on mount
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, [topPanelHeight, sidebarWidth, setTopPanelHeight, setSidebarWidth]);
 
   useEffect(() => {
     if (!isSwarmDragging) return;
@@ -190,11 +229,8 @@ function App() {
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts if user is typing in an input or textarea
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) {
-        return;
-      }
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
 
       const state = useOrchestratorStore.getState();
       const shortcuts = { ...DEFAULT_APP_SETTINGS.shortcuts, ...(state.settings?.shortcuts || {}) };
@@ -206,6 +242,11 @@ function App() {
         const needsCtrl = parts.includes('ctrl') || parts.includes('cmd');
         const needsShift = parts.includes('shift');
         const needsAlt = parts.includes('alt');
+        
+        // Safety: If input/terminal is focused and the shortcut doesn't require any modifiers, don't trigger it to avoid stealing typing.
+        if (isInputFocused && !needsCtrl && !needsAlt) {
+          return false;
+        }
         
         const hasCtrl = e.ctrlKey || e.metaKey;
         if (needsCtrl !== hasCtrl) return false;
@@ -348,7 +389,11 @@ function App() {
   const activeWs = workspaces.find(w => w.id === activeWorkspaceId);
 
   return (
-    <div className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative ${(isSidebarDragging || isHeightDragging || isSwarmDragging) ? "is-dragging" : ""}`}>
+    <div 
+      ref={appRef}
+      style={{ '--sidebar-width': `${sidebarWidth}px`, '--top-panel-height': `${topPanelHeight}px` } as React.CSSProperties}
+      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative ${(isSidebarDragging || isHeightDragging || isSwarmDragging) ? "is-dragging" : ""}`}
+    >
       <ActivityBar />
 
       {/* Main content column */}
@@ -373,20 +418,22 @@ function App() {
               ? `opacity-100 ${isAgentPanelPinned ? 'mr-1' : 'translate-x-0'}` 
               : `opacity-0 pointer-events-none ${isAgentPanelPinned ? 'mr-0' : '-translate-x-4'}`
           }`}
-          style={{ width: isSidebarVisible ? `${sidebarWidth}px` : '0px' }}
+          style={{ width: isSidebarVisible ? 'var(--sidebar-width)' : '0px' }}
         >
           {/* Inner container to prevent text reflow while width animates */}
-          <div className="flex-1 flex flex-col h-full gap-1" style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }}>
+          <div className="flex-1 flex flex-col h-full gap-1" style={{ width: 'var(--sidebar-width)', minWidth: 'var(--sidebar-width)' }}>
             {/* Active Agent Profiles list */}
             <div className="flex-grow flex flex-col glass-panel px-1.5 pb-0 min-h-[300px] overflow-hidden relative">
               <div className="flex items-center justify-between px-1 py-1">
                 <span className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-wider">Agents</span>
                 <button
-                  onClick={() => setAgentPanelPinned(!isAgentPanelPinned)}
-                  className={`p-1 rounded transition-colors ${isAgentPanelPinned ? 'text-accent-primary bg-accent-primary/10' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-                  title={isAgentPanelPinned ? "Unpin Agent Panel (Float)" : "Pin Agent Panel (Dock)"}
+                  onClick={() => {
+                    if (terminals.length <= 8) setAgentPanelPinned(!isAgentPanelPinned);
+                  }}
+                  className={`p-1 rounded transition-colors ${terminals.length > 8 ? 'opacity-50 cursor-not-allowed text-zinc-600' : isAgentPanelPinned ? 'text-accent-primary bg-accent-primary/10' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+                  title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isAgentPanelPinned ? "Unpin Agent Panel (Float)" : "Pin Agent Panel (Dock)"}
                 >
-                  {isAgentPanelPinned ? <Pin size={10} className="fill-accent-primary" /> : <PinOff size={10} />}
+                  {isAgentPanelPinned ? <Pin size={10} className={terminals.length > 8 ? "fill-zinc-600" : "fill-accent-primary"} /> : <PinOff size={10} />}
                 </button>
               </div>
               <AgentGrid />
@@ -423,7 +470,7 @@ function App() {
           <div
             onMouseDown={startSidebarResize}
             className="absolute top-1 bottom-1 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
-            style={{ left: `${sidebarWidth}px` }}
+            style={{ left: 'var(--sidebar-width)' }}
           >
             <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
@@ -453,107 +500,128 @@ function App() {
               style={
                 isTaskPanelPinned 
                   ? { 
-                      height: isTaskCenterVisible ? `${topPanelHeight}px` : '0px', 
+                      height: isTaskCenterVisible ? 'var(--top-panel-height)' : '0px', 
                       opacity: isTaskCenterVisible ? 1 : 0,
                       padding: isTaskCenterVisible ? undefined : '0px',
                       borderWidth: isTaskCenterVisible ? undefined : '0px'
                     }
                   : { 
-                      height: `${topPanelHeight}px`,
-                      left: (isSidebarVisible && !isAgentPanelPinned) ? `${sidebarWidth + 4}px` : '0px',
-                      transform: isTaskCenterVisible ? 'translateY(0)' : `translateY(-${topPanelHeight}px)`,
+                      height: 'var(--top-panel-height)',
+                      left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 4px)' : '0px',
+                      transform: isTaskCenterVisible ? 'translateY(0)' : 'translateY(calc(-1 * var(--top-panel-height)))',
                       opacity: isTaskCenterVisible ? 1 : 0,
                       pointerEvents: isTaskCenterVisible ? 'auto' : 'none'
                     }
               }
             >
               {/* Header Tabs */}
-              <div className="flex items-center justify-between select-none border-b border-border-glass pb-1.5 mb-2.5 flex-shrink-0">
+              <header className="h-[46px] bg-[#0a0a0c] border-b border-[#1e1e28] px-4 flex items-center justify-between select-none flex-shrink-0">
+                {/* Left Section: Navigation Tabs & Project Selector */}
                 <div className="flex items-center gap-2">
+                  {/* Task Center Tab */}
                   <button
-                    onClick={() => setActiveRightTab("tasks")}
-                    className={`flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded transition-all transform active:scale-95 whitespace-nowrap flex-shrink-0 ${
-                      activeRightTab === "tasks"
-                        ? "bg-accent-primary/10 text-accent-primary border border-accent-primary/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
-                        : "text-zinc-550 hover:text-zinc-300 hover:bg-white/5 border border-transparent cursor-pointer"
+                    onClick={() => setActiveRightTab('tasks')}
+                    className={`flex items-center gap-1.5 h-[30px] px-2.5 rounded text-[10px] font-bold tracking-wider uppercase border transition-all ${
+                      activeRightTab === 'tasks'
+                        ? 'border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/5'
+                        : 'border-[#2a2a38] text-[#555568] hover:text-[#e2e2ea] hover:border-[#444458]'
                     }`}
                   >
-                    <Layers size={10} />
-                    Task Center
+                    <LayoutGrid size={12} />
+                    <span>Task Center</span>
                   </button>
+
+                  {/* Project Memory Tab */}
                   <button
-                    onClick={() => setActiveRightTab("memory")}
-                    className={`flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded transition-all transform active:scale-95 whitespace-nowrap flex-shrink-0 ${
-                      activeRightTab === "memory"
-                        ? "bg-accent-primary/10 text-accent-primary border border-accent-primary/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
-                        : "text-zinc-550 hover:text-zinc-300 hover:bg-white/5 border border-transparent cursor-pointer"
+                    onClick={() => setActiveRightTab('memory')}
+                    className={`flex items-center gap-1.5 h-[30px] px-2.5 rounded text-[10px] font-bold tracking-wider uppercase border transition-all ${
+                      activeRightTab === 'memory'
+                        ? 'border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/5'
+                        : 'border-transparent text-[#555568] hover:text-[#e2e2ea]'
                     }`}
                   >
-                    <HardDrive size={10} />
-                    Project Memory
+                    <FileText size={12} />
+                    <span>Project Memory</span>
                   </button>
 
-                  <div className="h-3 w-px bg-border-glass/40 mx-1"></div>
+                  <div className="w-px h-3.5 bg-[#1e1e28] mx-1"></div>
 
-                  {activeProjects.length > 0 && (
-                    <select
-                      value={selectedProjectId}
-                      onChange={(e) => setSelectedProjectId(e.target.value)}
-                      className="glass-input text-[9.5px] text-zinc-300 font-semibold font-mono cursor-pointer w-auto !py-0 !pl-2 !pr-6 h-[24px] border-border-glass/30 rounded leading-none"
-                    >
-                      {activeProjects.map(p => (
-                        <option key={p.id} value={p.id} className="bg-[#0f0f15]">{p.name}</option>
-                      ))}
-                    </select>
-                  )}
+                  {/* Project Dropdown Selector */}
+                  <div className="relative">
+                    {activeProjects.length > 0 && (
+                      <select
+                        value={selectedProjectId}
+                        onChange={(e) => setSelectedProjectId(e.target.value)}
+                        className="appearance-none flex items-center gap-1.5 h-[30px] px-2.5 pr-7 rounded bg-[#111116] border border-[#2a2a38] text-[11px] font-medium text-[#e2e2ea] hover:border-[#444458] transition-colors outline-none cursor-pointer"
+                      >
+                        {activeProjects.map(p => (
+                          <option key={p.id} value={p.id} className="bg-[#0f0f15]">{p.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    {/* Custom Chevron since appearance is none */}
+                    {activeProjects.length > 0 && (
+                      <ChevronDown size={10} className="text-[#555568] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                {/* Right Section: Action Buttons */}
+                <div className="flex items-center gap-2">
+                  {/* Create Task Button */}
                   {activeRightTab === "tasks" && selectedProjectId && (
                     <button
                       onClick={() => setShowAddForm(!showAddForm)}
-                      className="flex items-center gap-1 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black text-[9px] font-bold py-1 px-3 rounded transition-all transform active:scale-95 shadow-[0_0_10px_rgba(245,158,11,0.15)] hover:shadow-[0_0_16px_rgba(245,158,11,0.3)] cursor-pointer h-[24px]"
+                      className="flex items-center gap-1.5 h-[30px] px-3.5 rounded-lg bg-[#f59e0b] hover:bg-[#d97706] text-black text-[10px] font-bold tracking-wide transition-colors shadow-lg shadow-[#f59e0b]/5"
                     >
-                      <Plus size={10} />
-                      {showAddForm ? "Hide Form" : "Create Task"}
+                      <Plus size={12} strokeWidth={2.5} />
+                      <span>{showAddForm ? "Hide Form" : "Create Task"}</span>
                     </button>
                   )}
 
+                  {/* Save Memory Button */}
                   {activeRightTab === "memory" && selectedProjectId && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       {memorySaveStatus === "success" && (
-                        <span className="text-[8.5px] text-emerald-455 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">Saved</span>
+                        <span className="text-[9px] text-emerald-455 font-bold bg-emerald-500/10 px-1.5 py-1 rounded border border-emerald-500/20">Saved</span>
                       )}
                       {memorySaveStatus === "error" && (
-                        <span className="text-[8.5px] text-rose-455 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20" title={memorySaveError}>Error</span>
+                        <span className="text-[9px] text-rose-455 font-bold bg-rose-500/10 px-1.5 py-1 rounded border border-rose-500/20" title={memorySaveError}>Error</span>
                       )}
                       <button
                         onClick={() => EventBus.publish("project-memory:save", undefined)}
                         disabled={isMemorySaving}
-                        className="flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 border border-zinc-700/50 text-zinc-200 font-bold text-[9px] py-1 px-3 rounded transition-all uppercase cursor-pointer h-[24px]"
+                        className="flex items-center gap-1 h-[30px] px-3 rounded-lg bg-[#111116] border border-[#2a2a38] text-[#e2e2ea] hover:bg-[#1a1a22] hover:border-[#444458] text-[10px] font-bold tracking-wide transition-colors disabled:opacity-50"
                       >
-                        <Save size={10} />
-                        {isMemorySaving ? "Saving..." : "Save Memory"}
+                        <Save size={12} />
+                        <span>{isMemorySaving ? "Saving..." : "Save Memory"}</span>
                       </button>
                     </div>
                   )}
 
+                  <div className="w-px h-3.5 bg-[#1e1e28] mx-0.5"></div>
+
+                  {/* Pin Panel Toggle */}
                   <button
-                    onClick={() => setTaskPanelPinned(!isTaskPanelPinned)}
-                    className={`p-1 rounded transition-colors ${isTaskPanelPinned ? 'text-accent-primary bg-accent-primary/10' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-                    title={isTaskPanelPinned ? "Unpin Task Panel (Float)" : "Pin Task Panel (Dock)"}
+                    onClick={() => {
+                      if (terminals.length <= 8) setTaskPanelPinned(!isTaskPanelPinned);
+                    }}
+                    className={`flex items-center justify-center w-[30px] h-[30px] rounded-lg border transition-colors ${terminals.length > 8 ? 'opacity-50 cursor-not-allowed border-[#2a2a38] text-[#555568]' : isTaskPanelPinned ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30 text-[#f59e0b]' : 'bg-[#111116] border-[#2a2a38] text-[#888899] hover:text-[#e2e2ea] hover:border-[#444458]'}`}
+                    title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isTaskPanelPinned ? "Unpin Panel (Float)" : "Pin Panel (Dock)"}
                   >
-                    {isTaskPanelPinned ? <Pin size={10} className="fill-accent-primary" /> : <PinOff size={10} />}
+                    {isTaskPanelPinned ? <Pin size={12} /> : <PinOff size={12} />}
                   </button>
+
+                  {/* Hide Panel Toggle */}
                   <button
                     onClick={() => setTaskCenterVisible(false)}
-                    className="text-zinc-550 hover:text-rose-450 px-2 py-1 hover:bg-white/5 border border-transparent hover:border-border-glass/40 rounded transition-all text-[9.5px] font-bold uppercase flex items-center gap-1 font-mono cursor-pointer h-[24px]"
-                    title="Collapse Panel"
+                    className="flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg bg-[#111116] border border-[#2a2a38] text-[#888899] hover:text-[#e2e2ea] hover:border-[#444458] text-[10px] font-bold tracking-wider uppercase transition-colors"
                   >
-                    Hide Panel
+                    <SidebarClose size={12} className="rotate-180" />
+                    <span>Hide</span>
                   </button>
                 </div>
-              </div>
+              </header>
 
               {/* Tab Contents */}
               <div className="flex-1 overflow-hidden min-h-0">
@@ -584,21 +652,18 @@ function App() {
             <div
               onMouseDown={startHeightResize}
               onDoubleClick={() => setTaskCenterVisible(false)}
-              className={`${isTaskPanelPinned ? 'relative' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
+              className={`${isTaskPanelPinned ? 'relative w-full' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
               style={isTaskPanelPinned ? {} : { 
-                top: `${topPanelHeight}px`,
-                left: (isSidebarVisible && !isAgentPanelPinned) ? `${sidebarWidth + 4}px` : '0px'
+                top: 'var(--top-panel-height)',
+                left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 4px)' : '0px'
               }}
               title="Drag to resize top panel, Double-click to collapse"
             >
-              {/* Horizontal line divider */}
-              <div className="h-[1px] w-full bg-border-glass group-hover:bg-accent-primary/50 group-active:bg-accent-primary transition-colors duration-150" />
-              
               {/* Drag handle button */}
-              <div className="absolute left-1/2 -translate-x-1/2 h-1.5 w-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex justify-center items-center gap-[2px] px-1 shadow-md">
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+              <div className="absolute left-1/2 -translate-x-1/2 h-1.5 w-6 rounded glass-panel transition-all duration-150 flex justify-center items-center gap-[2px] px-1 shadow-md">
+                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
               </div>
             </div>
           )}

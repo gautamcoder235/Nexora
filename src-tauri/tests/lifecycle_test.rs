@@ -86,8 +86,16 @@ fn test_recover_swarm_state_missing_worktree() {
 
     if is_missing {
         // Correctly identified as missing worktree, update status
-        swarm_db::update_execution_status(&conn, &exec.execution_id, "failed").unwrap();
-        swarm_db::mark_worktree_deleted(&conn, &exec.worktree_id).unwrap();
+        conn.execute(
+            "UPDATE executions SET status = ?1 WHERE id = ?2",
+            rusqlite::params!["failed", &exec.execution_id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE worktrees SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            rusqlite::params![&exec.worktree_id],
+        )
+        .unwrap();
     }
 
     // Verify it was marked failed and deleted

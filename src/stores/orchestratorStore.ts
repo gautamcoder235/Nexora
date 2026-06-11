@@ -69,7 +69,7 @@ interface OrchestratorState {
   deleteAgent: (agentId: string) => Promise<void>;
   
   // Tasks actions
-  createTask: (projectId: string, title: string, description: string) => Promise<void>;
+  createTask: (projectId: string, title: string, description: string, priority?: import('../types').Priority, tags?: string[]) => Promise<void>;
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
   moveTask: (taskId: string, status: Task['status']) => Promise<void>;
@@ -78,7 +78,7 @@ interface OrchestratorState {
   initializeProjectMemory: (projectId: string) => Promise<void>;
 
   // Terminal actions
-  spawnTerminal: (projectId: string, agentId?: string, customCommand?: string, customArgs?: string[], startupInstruction?: string) => Promise<string>;
+  spawnTerminal: (projectId: string, agentId?: string, customCommand?: string, customArgs?: string[], startupInstruction?: string) => Promise<string | undefined>;
   killTerminal: (sessionId: string) => Promise<void>;
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
   updateTerminalStatus: (sessionId: string, status: import('../types').TerminalStatus) => void;
@@ -138,13 +138,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   settings: DEFAULT_APP_SETTINGS,
   isSettingsModalOpen: false,
 
-  setSidebarVisible: (visible) => set({ isSidebarVisible: visible }),
-  setTaskCenterVisible: (visible) => set({ isTaskCenterVisible: visible }),
   setAgentPanelPinned: (pinned) => { set({ isAgentPanelPinned: pinned }); get().saveSnapshot(); },
   setTaskPanelPinned: (pinned) => { set({ isTaskPanelPinned: pinned }); get().saveSnapshot(); },
-  setSidebarWidth: (width) => set({ sidebarWidth: width }),
-  setTopPanelHeight: (height) => set({ topPanelHeight: height }),
-
   setSettingsModalOpen: (isOpen) => set({ isSettingsModalOpen: isOpen }),
   updateSettings: (updates) => {
     set((state) => ({
@@ -649,13 +644,29 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   },
 
   updateTerminalStatus: (sessionId, status) => {
-    set((state) => ({
-      terminals: state.terminals.map((terminal) =>
+    set((state) => {
+      const updatedTerminals = state.terminals.map((terminal) =>
         terminal.id === sessionId
           ? { ...terminal, status }
           : terminal
-      )
-    }));
+      );
+      
+      const term = state.terminals.find(t => t.id === sessionId);
+      
+      const updatedAgents = state.agents.map((agent) => {
+        if (term && term.agentId && agent.id === term.agentId) {
+          const otherTerms = updatedTerminals.filter(t => t.agentId === agent.id && t.status !== 'disconnected');
+          if (otherTerms.length === 0 && status === 'disconnected') {
+            return { ...agent, status: 'idle' as AgentStatus };
+          } else if (status === 'connected' || status === 'reconnecting') {
+            return { ...agent, status: 'running' as AgentStatus };
+          }
+        }
+        return agent;
+      });
+
+      return { terminals: updatedTerminals, agents: updatedAgents };
+    });
   },
 
   reconnectTerminal: async (sessionId) => {
@@ -940,7 +951,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     await get().saveSnapshot();
   },
 
-  createTask: async (projectId, title, description) => {
+  createTask: async (projectId, title, description, priority = 'medium', tags = []) => {
     const newTask: Task = {
       id: Math.random().toString(36).substring(7),
       projectId,
@@ -948,6 +959,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       description,
       status: 'todo',
       assignedAgentId: null,
+      priority,
+      tags,
       createdAt: new Date().toISOString()
     };
     
@@ -1258,6 +1271,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
               description: description.trim(),
               status,
               assignedAgentId,
+              priority: 'medium',
+              tags: [],
               createdAt
             });
           }

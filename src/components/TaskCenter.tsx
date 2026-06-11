@@ -1,8 +1,28 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, ArrowLeft, ArrowRight, UserPlus, FileText, Zap, ClipboardList, Eye, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ArrowRight, UserPlus, FileText, Zap, ClipboardList, Eye, CheckCircle2, Star, AlertTriangle, AlertOctagon, Tag } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { useSwarmStore } from "../stores/swarmStore";
-import { Task } from "../types";
+import { Task, Priority } from "../types";
+import CreateTaskModal from "./CreateTaskModal";
+
+function getRelativeTime(dateString: string) {
+  const diff = Date.now() - new Date(dateString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 60) return `${Math.max(1, minutes)}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function getPriorityConfig(p: Priority | undefined) {
+  switch (p) {
+    case 'critical': return { icon: AlertOctagon, color: 'text-[#ef4444]', label: 'Critical' };
+    case 'high': return { icon: AlertTriangle, color: 'text-[#f97316]', label: 'High' };
+    case 'medium': return { icon: Star, color: 'text-[#f59e0b]', label: 'Medium' };
+    case 'low': return { icon: Star, color: 'text-[#38bdf8]', label: 'Low' };
+    default: return { icon: Star, color: 'text-[#38bdf8]', label: 'None' };
+  }
+}
 
 interface TaskCenterProps {
   selectedProjectId: string;
@@ -22,34 +42,37 @@ export const TaskCenter: React.FC<TaskCenterProps> = ({
     agents,
     tasks,
     createTask,
+    updateTask,
     deleteTask,
     moveTask,
     assignTask,
     activeWorkspaceId
   } = useOrchestratorStore();
 
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+
+  const toggleTaskExpansion = (taskId: string) => {
+    setExpandedTaskIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
+    });
+  };
+
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
   const projectTasks = tasks.filter(t => t.projectId === selectedProjectId);
   const projectAgents = agents.filter(a => a.projectId === selectedProjectId);
 
-  // Quick inputs
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskDesc, setNewTaskDesc] = useState("");
 
-  const handleCreateTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim() || !selectedProjectId) return;
-    await createTask(selectedProjectId, newTaskTitle, newTaskDesc);
-    setNewTaskTitle("");
-    setNewTaskDesc("");
-    setShowAddForm(false);
-  };
-
-  const columns: { id: Task['status']; title: string; color: string }[] = [
-    { id: 'todo', title: 'Todo', color: 'border-t-zinc-500 bg-bg-secondary/20 shadow-sm' },
-    { id: 'doing', title: 'Doing', color: 'border-t-amber-500 bg-bg-secondary/20 shadow-[0_0_12px_rgba(245,158,11,0.06)]' },
-    { id: 'review', title: 'Review', color: 'border-t-indigo-500 bg-bg-secondary/20 shadow-sm' },
-    { id: 'done', title: 'Done', color: 'border-t-emerald-500 bg-bg-secondary/20 shadow-sm' }
+  const columns: { id: Task['status']; title: string; topBorder: string; textColor: string; badgeBg: string }[] = [
+    { id: 'todo', title: 'TODO', topBorder: 'border-t-[#f59e0b]', textColor: 'text-[#f59e0b]', badgeBg: 'bg-[#f59e0b]/10 border-[#f59e0b]/20' },
+    { id: 'doing', title: 'DOING', topBorder: 'border-t-[#f97316]', textColor: 'text-[#f97316]', badgeBg: 'bg-[#f97316]/10 border-[#f97316]/20' },
+    { id: 'review', title: 'REVIEW', topBorder: 'border-t-[#3b82f6]', textColor: 'text-[#3b82f6]', badgeBg: 'bg-[#3b82f6]/10 border-[#3b82f6]/20' },
+    { id: 'done', title: 'DONE', topBorder: 'border-t-[#10b981]', textColor: 'text-[#10b981]', badgeBg: 'bg-[#10b981]/10 border-[#10b981]/20' }
   ];
 
   const handleMove = async (task: Task, direction: 'left' | 'right') => {
@@ -82,42 +105,16 @@ export const TaskCenter: React.FC<TaskCenterProps> = ({
   return (
     <div className="flex flex-col h-full space-y-2 font-mono pb-1 overflow-hidden">
 
-      {/* Task Creation Form */}
+      {/* Task Creation Modal */}
       {showAddForm && (
-        <form onSubmit={handleCreateTask} className="glass-panel bg-bg-secondary/40 border border-border-glass p-3.5 rounded-lg space-y-3 flex-shrink-0 shadow-lg animate-in fade-in duration-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <input
-              type="text"
-              required
-              placeholder="Task Title (e.g. Implement Login API)"
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              className="glass-input text-[11px]"
-            />
-            <input
-              type="text"
-              placeholder="Task Description / Details"
-              value={newTaskDesc}
-              onChange={(e) => setNewTaskDesc(e.target.value)}
-              className="glass-input text-[11px]"
-            />
-          </div>
-          <div className="flex justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => setShowAddForm(false)}
-              className="glass-button glass-button--ghost text-[10px] px-3 py-1 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="glass-button glass-button--accent text-[10px] font-bold px-4 py-1 cursor-pointer shadow-glow"
-            >
-              Save Task
-            </button>
-          </div>
-        </form>
+        <CreateTaskModal
+          onClose={() => setShowAddForm(false)}
+          onCreate={(taskData) => {
+            if (!selectedProjectId) return;
+            createTask(selectedProjectId, taskData.title, taskData.description, taskData.priority, taskData.tags);
+            setShowAddForm(false);
+          }}
+        />
       )}
 
       {/* Kanban Board Columns Grid */}
@@ -125,45 +122,80 @@ export const TaskCenter: React.FC<TaskCenterProps> = ({
         {columns.map(col => {
           const colTasks = projectTasks.filter(t => t.status === col.id);
           return (
-            <div 
-              key={col.id} 
-              className={`flex flex-col border border-border-glass border-t-2 rounded-md overflow-hidden min-w-0 transition-all ${col.color}`}
+            <div
+              key={col.id}
+              className={`flex flex-col border border-[#1e1e28] border-t-2 rounded-md overflow-hidden min-w-0 transition-all bg-[#0a0a0f] ${col.topBorder}`}
             >
               {/* Column Header */}
-              <div className="bg-bg-secondary/35 px-2.5 py-1 border-b border-border-glass flex items-center justify-between select-none">
-                <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">{col.title}</span>
-                <span className="bg-white/5 h-[16px] min-w-[16px] px-1 rounded text-zinc-400 text-[8.5px] font-bold border border-border-glass/30 flex items-center justify-center">
+              <div className="px-2 py-1.5 flex items-center justify-between select-none border-b border-[#1e1e28]">
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${col.textColor}`}>{col.title}</span>
+                <span className={`h-[18px] min-w-[18px] px-1 rounded text-[9px] font-bold border flex items-center justify-center ${col.textColor} ${col.badgeBg}`}>
                   {colTasks.length}
                 </span>
               </div>
 
               {/* Column Content Scrollable Area */}
-              <div className="flex-1 flex flex-col p-2 min-h-0 overflow-hidden">
+              <div className="flex-1 flex flex-col p-1.5 min-h-0 overflow-hidden">
                 {colTasks.length > 0 ? (
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 scrollbar-thin">
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
                     {colTasks.map(task => {
                       return (
-                        <div 
-                          key={task.id} 
-                          className="bg-bg-secondary/40 border border-border-glass hover:border-zinc-700/60 rounded-md p-2.5 space-y-2.5 hover:shadow-md hover:scale-[1.01] transition-all select-none relative group"
+                        <div
+                          key={task.id}
+                          className="bg-[#111116] border border-[#2a2a38] hover:border-zinc-700/60 rounded-lg p-3 space-y-3 hover:shadow-md hover:scale-[1.01] transition-all select-none relative group"
                         >
-                          {/* Title & Description */}
-                          <div className="space-y-1 select-text">
-                            <h4 className="text-[10.5px] font-bold text-zinc-200 break-words leading-tight">{task.title}</h4>
-                            {task.description && (
-                              <p className="text-[9.5px] text-zinc-500 break-words leading-relaxed font-sans">{task.description}</p>
+                          {/* Title & Priority */}
+                          <div className="flex items-start justify-between gap-2 select-text">
+                            <h4 className="flex-1 min-w-0 text-[12px] font-bold text-[#e2e2ea] break-all leading-tight">{task.title}</h4>
+                            {task.priority && (
+                              <div className={`flex items-center gap-1.5 ${getPriorityConfig(task.priority).color} shrink-0`}>
+                                {React.createElement(getPriorityConfig(task.priority).icon, { size: 12 })}
+                                <span className="text-[11px] font-mono font-bold">{getPriorityConfig(task.priority).label}</span>
+                              </div>
                             )}
                           </div>
 
-                          {/* Assignment & Action row */}
-                          <div className="flex items-center justify-between pt-1 border-t border-border-glass/20 text-[9px] gap-1">
+                          {/* Description */}
+                          {task.description && (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleTaskExpansion(task.id);
+                              }}
+                              className="cursor-pointer group/desc flex flex-col"
+                            >
+                              <p className={`text-[11px] text-[#888899] break-all leading-relaxed font-sans transition-all ${expandedTaskIds.has(task.id) ? '' : 'line-clamp-2'}`}>
+                                {task.description}
+                              </p>
+                              {task.description.length > 80 && !expandedTaskIds.has(task.id) && (
+                                <span className="text-[10px] text-[#555568] group-hover/desc:text-[#888899] transition-colors mt-1 font-semibold">
+                                  read more...
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Tags */}
+                          {task.tags && task.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {task.tags.map(tag => (
+                                <span key={tag} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1a1a22] border border-[#2a2a38] text-[#888899] text-[10px]">
+                                  <Tag size={9} />
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Assignment & Actions */}
+                          <div className="flex items-center justify-between gap-1">
                             {/* Assign Agent Selector */}
-                            <div className="flex items-center gap-1.5 max-w-[65%] truncate bg-white/5 border border-border-glass/40 px-1.5 py-0.5 rounded">
-                              <UserPlus size={10} className="text-zinc-500 flex-shrink-0" />
+                            <div className="flex items-center gap-1.5 max-w-[65%] truncate bg-[#1a1a22] border border-[#2a2a38] px-1.5 py-1 rounded">
+                              <UserPlus size={11} className="text-[#555568] flex-shrink-0" />
                               <select
                                 value={task.assignedAgentId || ""}
                                 onChange={(e) => assignTask(task.id, e.target.value || null)}
-                                className="bg-transparent text-zinc-400 outline-none cursor-pointer max-w-full hover:text-zinc-200 transition-colors font-mono font-semibold"
+                                className="bg-transparent text-[#e2e2ea] outline-none cursor-pointer max-w-full hover:text-white transition-colors font-mono font-semibold text-[10px]"
                               >
                                 <option value="" className="bg-[#0f0f15]">Unassigned</option>
                                 {projectAgents.map(agent => (
@@ -174,48 +206,38 @@ export const TaskCenter: React.FC<TaskCenterProps> = ({
                               </select>
                             </div>
 
-                            {/* Actions list shown ONLY on hover for cleaner UI layout */}
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                            {/* Actions list */}
+                            <div className="flex items-center gap-1">
                               {col.id !== 'todo' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMove(task, 'left')}
-                                  title="Move back"
-                                  className="text-zinc-400 hover:text-accent-primary p-1 hover:bg-white/5 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
-                                >
-                                  <ArrowLeft size={9} />
+                                <button type="button" onClick={() => handleMove(task, 'left')} className="text-[#555568] hover:text-[#e2e2ea] p-1.5 hover:bg-[#1a1a22] rounded border border-[#2a2a38] transition-colors cursor-pointer">
+                                  <ArrowLeft size={11} />
                                 </button>
                               )}
                               {col.id !== 'done' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMove(task, 'right')}
-                                  title="Move forward"
-                                  className="text-zinc-400 hover:text-accent-primary p-1 hover:bg-white/5 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
-                                >
-                                  <ArrowRight size={9} />
+                                <button type="button" onClick={() => handleMove(task, 'right')} className="text-[#555568] hover:text-[#e2e2ea] p-1.5 hover:bg-[#1a1a22] rounded border border-[#2a2a38] transition-colors cursor-pointer">
+                                  <ArrowRight size={11} />
                                 </button>
                               )}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  useSwarmStore.getState().setSwarmPanelVisible(true);
-                                  useSwarmStore.getState().setFilter('all');
-                                }}
-                                title="View Swarm Executions"
-                                className="text-zinc-400 hover:text-accent-primary p-1 hover:bg-white/5 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
+                                onClick={() => updateTask(task.id, { isStarred: !task.isStarred })}
+                                className={`p-1.5 rounded border transition-colors cursor-pointer ${task.isStarred
+                                    ? 'text-[#f59e0b] border-[#f59e0b]/30 bg-[#f59e0b]/10'
+                                    : 'text-[#555568] hover:text-[#f59e0b] hover:bg-[#1a1a22] border-[#2a2a38]'
+                                  }`}
                               >
-                                <Zap size={9} />
+                                <Star size={11} fill={task.isStarred ? '#f59e0b' : 'none'} />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteTask(task.id)}
-                                title="Delete Task"
-                                className="text-zinc-400 hover:text-rose-400 p-1 hover:bg-rose-500/10 rounded border border-border-glass/40 cursor-pointer transition-colors flex items-center justify-center"
-                              >
-                                <Trash2 size={9} />
+                              <button type="button" onClick={() => deleteTask(task.id)} className="text-[#555568] hover:text-[#ef4444] p-1.5 hover:bg-[#1a1a22] rounded border border-[#2a2a38] transition-colors cursor-pointer">
+                                <Trash2 size={11} />
                               </button>
                             </div>
+                          </div>
+
+                          {/* Footer: Time & Task ID */}
+                          <div className="flex items-center justify-between pt-2 border-t border-[#1e1e28] text-[10px] text-[#555568]">
+                            <span>{getRelativeTime(task.createdAt)}</span>
+                            <span className="font-mono"># {projectTasks.findIndex(t => t.id === task.id) + 1}</span>
                           </div>
                         </div>
                       );

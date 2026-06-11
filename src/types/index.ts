@@ -25,13 +25,19 @@ export interface AgentCapabilities {
 }
 
 import { AgentPlugin } from '../plugins/types';
+export type Priority = 'low' | 'medium' | 'high' | 'critical';
+export type TaskStatus = 'todo' | 'doing' | 'review' | 'done';
+
 export interface Task {
   id: string;
   projectId: string;
   title: string;
   description: string;
-  status: 'todo' | 'doing' | 'review' | 'done';
-  assignedAgentId: string | null;
+  status: TaskStatus;
+  assignedAgentId: string | null; // Agent ID
+  priority: Priority;
+  tags: string[];
+  isStarred?: boolean;
   createdAt: string;
 }
 

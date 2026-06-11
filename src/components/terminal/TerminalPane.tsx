@@ -21,9 +21,10 @@ interface TerminalPaneProps {
   paneId: string;
   isFocused: boolean;
   isAnimating: boolean;
+  refreshKey?: number;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -65,6 +66,51 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       if (blackoutTimerRef.current) clearTimeout(blackoutTimerRef.current);
     };
   }, [isAnimating]);
+
+  useEffect(() => {
+    if (refreshKey && refreshKey > 0) {
+      startBlackout();
+      // Allow DOM to process the blackout first, then trigger fit, then restore
+      setTimeout(() => {
+        if (termRef.current) {
+          try {
+            // Force a backend redraw by faking a tiny resize oscillation 
+            // to guarantee the kernel dispatches a SIGWINCH to the CLI.
+            // This forces interactive CLIs to completely reprint their layout from scratch.
+            termRef.current.clear();
+            const currentRows = termRef.current.rows;
+            const currentCols = termRef.current.cols;
+            
+            invoke('resize_pty', { 
+              sessionId: paneId, 
+              rows: currentRows, 
+              cols: Math.max(2, currentCols - 1) 
+            }).then(() => {
+              setTimeout(() => {
+                invoke('resize_pty', { 
+                  sessionId: paneId, 
+                  rows: currentRows, 
+                  cols: currentCols 
+                }).catch(() => {});
+              }, 50);
+            }).catch(() => {});
+
+          } catch (e) {
+            console.error('Manual redraw signal failed:', e);
+          }
+        }
+        
+        if (fitAddonRef.current) {
+          try {
+            fitAddonRef.current.fit();
+          } catch (e) {
+            console.error('Manual fit failed:', e);
+          }
+        }
+        endBlackoutAfterDelay(320);
+      }, 40);
+    }
+  }, [refreshKey, paneId]);
 
   // Sync the ref synchronously during render to prevent layout reflow race conditions
   isAnimatingRef.current = isAnimating;
@@ -128,14 +174,16 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         // Safely handle WebGL context loss
         webglAddon.onContextLoss(() => {
           console.warn('WebGL context lost. Disposing and falling back to Canvas renderer.');
-          webglAddon.dispose();
-          
-          try {
-            const canvasAddon = new CanvasAddon();
-            term.loadAddon(canvasAddon);
-          } catch (e) {
-            console.warn('Canvas fallback failed. Using standard DOM renderer.', e);
-          }
+          // Defer to avoid crashing xterm's internal event dispatcher during the event
+          setTimeout(() => {
+            try { webglAddon.dispose(); } catch (e) {}
+            try {
+              const canvasAddon = new CanvasAddon();
+              term.loadAddon(canvasAddon);
+            } catch (e) {
+              console.warn('Canvas fallback failed. Using standard DOM renderer.', e);
+            }
+          }, 0);
         });
 
         term.loadAddon(webglAddon);
@@ -305,6 +353,9 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       // Instantly hide the canvas during any resize event
       startBlackout();
 
+      // Jitter the timeout randomly to stagger mass GPU texture reallocations
+      // preventing Chromium GPU crashes when 15+ terminals resize simultaneously.
+      const staggerJitter = 40 + Math.random() * 80;
       resizeTimeout = setTimeout(() => {
         if (resizeFrame) cancelAnimationFrame(resizeFrame);
         resizeFrame = requestAnimationFrame((now) => {
@@ -312,16 +363,16 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
           if (containerRef.current) {
             try {
               fitAddon.fit();
-              // After fitting to the new idle size, start the 400ms blackout countdown!
+              // After fitting to the new idle size, start the 800ms blackout countdown!
               if (!isAnimatingRef.current) {
-                endBlackoutAfterDelay(400);
+                endBlackoutAfterDelay(800);
               }
             } catch (e) {}
           }
           resizeFrame = null;
         });
         resizeTimeout = null;
-      }, 40); // 40ms debounce saves massive GPU rebuild time
+      }, staggerJitter);
     });
     resizeObserver.observe(containerRef.current);
 
@@ -340,7 +391,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       onResizeDisposable.dispose();
       resizeObserver.disconnect();
       if (unlistenExit) unlistenExit();
-      term.dispose();
+      try {
+        term.dispose();
+      } catch (e) {
+        console.warn('Error during terminal cleanup:', e);
+      }
     };
   }, [paneId]);
 

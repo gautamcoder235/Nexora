@@ -52,11 +52,11 @@ export class CommandRegistry {
 // Concrete Command Implementations
 // ==========================================
 
-export class SpawnTerminalCommand implements Command<{ projectId: string; agentId?: string; command?: string; args?: string[] }, string> {
+export class SpawnTerminalCommand implements Command<{ projectId: string; agentId?: string; command?: string; args?: string[] }, string | undefined> {
   id = "spawnTerminal";
   name = "Spawn Terminal Process";
 
-  async execute(args: { projectId: string; agentId?: string; command?: string; args?: string[] }): Promise<string> {
+  async execute(args: { projectId: string; agentId?: string; command?: string; args?: string[] }): Promise<string | undefined> {
     if (!args || !args.projectId) {
       throw new Error("Cannot execute spawnTerminal: missing projectId argument.");
     }
@@ -81,11 +81,11 @@ export class KillTerminalCommand implements Command<{ sessionId: string }, void>
   }
 }
 
-export class RunAgentCommand implements Command<{ agentId: string; projectId: string }, string> {
+export class RunAgentCommand implements Command<{ agentId: string; projectId: string }, string | undefined> {
   id = "runAgent";
   name = "Launch Agent CLI";
 
-  async execute(args: { agentId: string; projectId: string }): Promise<string> {
+  async execute(args: { agentId: string; projectId: string }): Promise<string | undefined> {
     if (!args || !args.agentId || !args.projectId) {
       throw new Error("Cannot execute runAgent: missing agentId or projectId arguments.");
     }
