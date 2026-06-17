@@ -91,6 +91,8 @@ fn spawn_pty(
     args: Option<Vec<String>>,
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
+    rows: Option<u16>,
+    cols: Option<u16>,
 ) -> Result<Option<u32>, String> {
     {
         let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
@@ -101,8 +103,8 @@ fn spawn_pty(
 
     let pty_system = NativePtySystem::default();
     let size = PtySize {
-        rows: 24,
-        cols: 80,
+        rows: rows.unwrap_or(24),
+        cols: cols.unwrap_or(80),
         pixel_width: 0,
         pixel_height: 0,
     };

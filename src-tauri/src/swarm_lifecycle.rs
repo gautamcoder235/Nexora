@@ -339,6 +339,8 @@ pub fn spawn_agent_session(
         None,
         Some(cwd),
         None,
+        None,
+        None,
     )?;
 
     // 5. Re-acquire DB to update PID and State

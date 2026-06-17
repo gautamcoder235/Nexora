@@ -130,8 +130,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   activityFeed: [],
   cliInstalledStatuses: {},
   tasks: [],
-  isSidebarVisible: true,
-  isTaskCenterVisible: true,
+  isSidebarVisible: false,
+  isTaskCenterVisible: false,
   isAgentPanelPinned: false,
   isTaskPanelPinned: false,
   sidebarWidth: 490,
@@ -543,12 +543,18 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     // 3. Invoke Tauri Rust shell spawner
     try {
+      // Estimate initial terminal size based on window dimensions (approx 9px width, 17px height per char)
+      const estimatedCols = Math.max(80, Math.floor((window.innerWidth * 0.8) / 9));
+      const estimatedRows = Math.max(24, Math.floor((window.innerHeight * 0.8) / 17));
+
       await invoke("spawn_pty", {
         sessionId,
         command,
         args,
         cwd: sessionPath,
-        env: agent ? agent.env : {}
+        env: agent ? agent.env : {},
+        rows: estimatedRows,
+        cols: estimatedCols
       });
 
       EventBus.publish("terminal:spawned", { sessionId, projectId });

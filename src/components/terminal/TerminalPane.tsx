@@ -30,7 +30,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   const fitAddonRef = useRef<FitAddon | null>(null);
   const isAnimatingRef = useRef<boolean>(isAnimating);
 
-  const [isBlackout, setIsBlackout] = useState(isAnimating);
+  const [isBlackout, setIsBlackout] = useState(true); // Always start fully blacked out
   const isBlackoutRef = useRef(isBlackout);
   const blackoutTimerRef = useRef<any>(null);
 
@@ -120,6 +120,43 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     };
   }, [refreshKey, paneId]);
 
+  // Auto-refresh ONCE at startup. Many heavy TUIs boot faster than the frontend finishes
+  // flexbox layout animations. This forces the PTY to redraw its static boundaries exactly 
+  // right before the initial blackout lifts, guaranteeing perfect layout synchronization.
+  useEffect(() => {
+    let t1: any = null;
+    let t2: any = null;
+    
+    t1 = setTimeout(() => {
+      if (termRef.current) {
+        try {
+          const currentRows = termRef.current.rows;
+          const currentCols = termRef.current.cols;
+          
+          // Dispatch fake SIGWINCH via slight oscillation
+          invoke('resize_pty', { 
+            sessionId: paneId, 
+            rows: currentRows, 
+            cols: Math.max(2, currentCols - 1) 
+          }).then(() => {
+            t2 = setTimeout(() => {
+              invoke('resize_pty', { 
+                sessionId: paneId, 
+                rows: currentRows, 
+                cols: currentCols 
+              }).catch(() => {});
+            }, 50);
+          }).catch(() => {});
+        } catch (e) {}
+      }
+    }, 700);
+
+    return () => {
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+    };
+  }, [paneId]);
+
   // Sync the ref synchronously during render to prevent layout reflow race conditions
   isAnimatingRef.current = isAnimating;
 
@@ -137,7 +174,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       fontSize: settings.fontSize,
       fontFamily: settings.fontFamily,
       theme: {
-        background: 'rgba(5, 5, 7, 0.95)',
+        background: '#000000',
         foreground: '#e2e8f0',
         cursor: '#f59e0b',
         black: '#0f0f15',
@@ -164,6 +201,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
+    term.open(containerRef.current);
+
     // Helper to safely check if WebGL2 is supported by the environment
     const isWebGL2Supported = () => {
       try {
@@ -175,6 +214,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     };
 
     // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
+    // MUST be called AFTER term.open() according to xterm.js spec!
     if (settings.hardwareAcceleration && isWebGL2Supported()) {
       try {
         const webglAddon = new WebglAddon();
@@ -215,19 +255,20 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       }
     }
     
-    term.open(containerRef.current);
-    
     // Fit to parent container dimensions and initialize size in PTY
-    try {
-      fitAddon.fit();
-      invoke('resize_pty', {
-        sessionId: paneId,
-        rows: term.rows,
-        cols: term.cols,
-      }).catch(err => console.warn('Initial PTY resize failed:', err));
-    } catch (e) {
-      console.warn('Initial terminal fit failed:', e);
-    }
+    // Wait for fonts to be ready so character metrics are correct!
+    document.fonts.ready.then(() => {
+      try {
+        fitAddon.fit();
+        invoke('resize_pty', {
+          sessionId: paneId,
+          rows: term.rows,
+          cols: term.cols,
+        }).catch(err => console.warn('Initial PTY resize failed:', err));
+      } catch (e) {
+        console.warn('Initial terminal fit failed:', e);
+      }
+    });
 
     // Restore history safely from standalone Buffer Manager
     const bufferManager = TerminalBufferManager.getInstance();
@@ -460,7 +501,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden">
       <div 
         ref={containerRef} 
-        className="w-full h-full" 
+        className="w-full h-full flex-1" 
         style={{ 
           minHeight: '100%',
           opacity: isBlackout ? 0 : 1,
