@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Cpu, Play, Square, Trash2, AlertCircle, GripVertical, MoreVertical, Edit2, Copy, RotateCcw, FileText, Trash } from "lucide-react";
+import { Cpu, Play, Square, Trash2, AlertCircle, GripVertical, MoreVertical, Edit2, Copy, RotateCcw, FileText, Trash, Bot } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -74,10 +74,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
   renderCountRef.current++;
 
   useEffect(() => {
-    const duration = performance.now() - startRender;
-    if (duration > 5) {
-      console.warn(`[SortableAgentCard] ${agent.name} Render ${renderCountRef.current} took ${duration.toFixed(1)}ms`);
-    }
+    // Removed profile logging
   });
 
   const {
@@ -99,11 +96,24 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ x: number; y: number } | null>(null);
   const [isEditingProject, setIsEditingProject] = useState(false);
+  const [runtimeSeconds, setRuntimeSeconds] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (isRunning && agent.startedAt) {
+      setRuntimeSeconds(Math.floor((Date.now() - agent.startedAt) / 1000));
+      const interval = setInterval(() => {
+        setRuntimeSeconds(Math.floor((Date.now() - agent.startedAt!) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setRuntimeSeconds(0);
+    }
+  }, [isRunning, agent.startedAt]);
+
   const style = {
-    transform: CSS.Transform.toString(transform) + (isDragging ? ' scale(0.97)' : ''),
-    transition: transition || 'transform 350ms cubic-bezier(0.25, 1, 0.5, 1)',
+    transform: transform ? CSS.Transform.toString(transform) : undefined,
+    transition: transition || undefined,
     zIndex: isDragging ? 50 : showDropdown ? 40 : 10,
   };
 
@@ -168,35 +178,32 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
     }
 
     return (
-      <div className="flex items-center gap-1 py-0.5 px-1.5 rounded bg-white/5 border border-border-glass/40 select-none flex-shrink-0">
+      <div className="flex items-center gap-1 py-0.5 px-1.5 rounded-full bg-white/5 border border-border-glass shadow-sm select-none flex-shrink-0">
         <span className="relative flex h-1 w-1">
           {pulseDot && (
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
           )}
           <span className={`relative inline-flex rounded-full h-1 w-1 ${colorClass}`}></span>
         </span>
-        <span className="text-[8px] uppercase tracking-wide font-bold font-mono text-zinc-400">{text}</span>
+        <span className="text-[8px] uppercase tracking-wider font-bold font-mono text-zinc-300">{text}</span>
       </div>
     );
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onClick={() => {
-        if (isRunning) {
-          EventBus.publish("terminal:highlight", { agentId: agent.id });
-        }
-      }}
-      className={`glass-panel p-3 flex flex-col justify-between gap-3 transition-all duration-250 relative min-h-[195px] overflow-visible select-none hover:-translate-y-0.5 ${
-        isRunning ? "cursor-pointer border-accent-primary/25 bg-accent-primary/[0.02] shadow-[0_4px_16px_rgba(0,0,0,0.35),0_0_12px_rgba(245,158,11,0.05)]" : "border-border-glass hover:border-border-glass-hover bg-white/[0.03] shadow-sm hover:shadow-md hover:border-zinc-700/60"
-      } ${
-        isHighlighted
-          ? "border-accent-primary shadow-[0_0_12px_rgba(245,158,11,0.2)] bg-accent-primary/[0.03]"
-          : ""
-      } ${isDragging ? "shadow-2xl border-accent-primary/40 opacity-80" : ""} ${showDropdown ? "z-40" : "z-10"}`}
-    >
+    <div ref={setNodeRef} style={style} className="h-full relative">
+      <div
+        onClick={() => {
+          if (isRunning) {
+            EventBus.publish("terminal:highlight", { agentId: agent.id });
+          }
+        }}
+        className={`glass-card p-3 flex flex-col justify-between gap-3 transition-all duration-250 relative min-h-[195px] h-full overflow-visible select-none ${
+          isRunning ? "glass-card--active" : ""
+        } ${isHighlighted ? "border-accent-primary shadow-[var(--shadow-glow)]" : ""} ${
+          isDragging ? "shadow-2xl border-accent-primary/40 opacity-80 scale-[0.97]" : "scale-100"
+        }`}
+      >
       {/* 1. TOP HEADER ZONE */}
       <div className="flex items-start gap-1.5 flex-shrink-0 min-w-0">
         <div
@@ -207,11 +214,11 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
         >
           <GripVertical size={11} />
         </div>
-        <div className="flex flex-col min-w-0 flex-1">
+        <div className="flex flex-col min-w-0 flex-1 gap-0.5">
           <span className="text-[13px] font-bold text-zinc-100 truncate block leading-snug" title={agent.name}>
-            🤖 {agent.name}
+            {agent.name}
           </span>
-          <span className="text-[9.5px] text-zinc-500 truncate block font-sans mt-0.5">
+          <span className="text-[9.5px] text-zinc-500 truncate block font-sans">
             {agent.role || agent.groupId || "AI Coding Assistant"}
           </span>
         </div>
@@ -220,43 +227,43 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
       {/* 2. CAPABILITIES */}
       <div className="flex flex-wrap gap-1">
         {agent.capabilities.coding && (
-          <span className="text-[8.5px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+          <span className="glass-badge text-[8.5px]">
             ⌨️ Coding
           </span>
         )}
         {agent.capabilities.review && (
-          <span className="text-[8.5px] bg-purple-500/10 text-purple-300 border border-purple-500/20 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+          <span className="glass-badge text-[8.5px]">
             🔍 Review
           </span>
         )}
         {agent.capabilities.planning && (
-          <span className="text-[8.5px] bg-amber-500/10 text-amber-300 border border-amber-500/20 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+          <span className="glass-badge glass-badge--accent text-[8.5px]">
             🧠 Planning
           </span>
         )}
         {agent.capabilities.testing && (
-          <span className="text-[8.5px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+          <span className="glass-badge text-[8.5px]">
             🧪 Testing
           </span>
         )}
       </div>
 
       {/* 3. METRICS ROW */}
-      <div className="grid grid-cols-3 gap-1 text-center bg-white/[0.01] border border-border-glass/30 rounded-md p-1.5 flex-shrink-0 select-none">
+      <div className="grid grid-cols-3 gap-1 text-center bg-black/20 border border-border-glass rounded-md p-1.5 flex-shrink-0 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]">
         <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="text-[8px] uppercase font-bold text-zinc-555 font-sans tracking-wide truncate">Tasks</span>
+          <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tasks</span>
           <span className="text-[11px] font-semibold text-zinc-200 truncate">{tasksCount}</span>
         </div>
-        <div className="flex flex-col gap-0.5 border-x border-border-glass/35 min-w-0">
-          <span className="text-[8px] uppercase font-bold text-zinc-555 font-sans tracking-wide truncate">Tokens</span>
+        <div className="flex flex-col gap-0.5 border-x border-border-glass min-w-0">
+          <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tokens</span>
           <span className="text-[11px] font-semibold text-zinc-200 truncate">
             {isRunning ? "12K" : "84K"}
           </span>
         </div>
         <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="text-[8px] uppercase font-bold text-zinc-555 font-sans tracking-wide truncate">Activity</span>
+          <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Activity</span>
           <span className="text-[11px] font-semibold text-zinc-200 truncate">
-            {isRunning ? formatRuntime(agent.runtimeSeconds) : formatLastActiveHours(agent.lastActive)}
+            {isRunning ? formatRuntime(runtimeSeconds) : formatLastActiveHours(agent.lastActive)}
           </span>
         </div>
       </div>
@@ -310,9 +317,9 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
 
         {/* Card Footer Actions */}
         <div className="mt-4 pt-3 border-t border-border-glass flex flex-col gap-2 relative">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 min-w-0">
             {/* Main Action Button */}
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               {isRunning ? (
                 <button
                   type="button"
@@ -320,10 +327,10 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
                     e.stopPropagation();
                     onStop(agent);
                   }}
-                  className="glass-button glass-button--danger w-full flex items-center justify-center gap-1 h-[34px] text-[10px] font-bold tracking-wide transition-all shadow-glow-error cursor-pointer"
+                  className="glass-button glass-button--danger w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
                 >
-                  <Square size={8} className="fill-current" />
-                  Stop Agent
+                  <Square size={10} className="fill-current shrink-0" />
+                  <span className="truncate">Stop</span>
                 </button>
               ) : (
                 <button
@@ -332,10 +339,10 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
                     e.stopPropagation();
                     onStart(agent);
                   }}
-                  className="w-full flex items-center justify-center gap-1 h-[34px] text-[10px] font-bold tracking-wide text-black bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 rounded transition-all transform hover:scale-[1.01] shadow-[0_0_10px_rgba(245,158,11,0.15)] hover:shadow-[0_0_16px_rgba(245,158,11,0.3)] cursor-pointer"
+                  className="glass-button glass-button--accent w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
                 >
-                  <Play size={8} className="fill-current" />
-                  Launch Agent
+                  <Play size={10} className="fill-current shrink-0" />
+                  <span className="truncate">Launch</span>
                 </button>
               )}
             </div>
@@ -424,19 +431,17 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
                   <Copy size={10} className="text-zinc-400" />
                   <span>Duplicate Profile</span>
                 </button>
-                {isRunning && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDropdown(false);
-                      onRestart();
-                    }}
-                    className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <RotateCcw size={10} className="text-zinc-400" />
-                    <span>Restart Agent</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDropdown(false);
+                    onRestart();
+                  }}
+                  className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <RotateCcw size={10} className="text-zinc-400" />
+                  <span>Restart Agent</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -467,6 +472,20 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
         </div>
       </div>
     </div>
+    </div>
+  );
+}, (prev, next) => {
+  return (
+    prev.agent.id === next.agent.id &&
+    prev.agent.status === next.agent.status &&
+    prev.agent.projectId === next.agent.projectId &&
+    prev.agent.name === next.agent.name &&
+    prev.isRunning === next.isRunning &&
+    prev.pluginId === next.pluginId &&
+    prev.isInstalled === next.isInstalled &&
+    prev.dragOverId === next.dragOverId &&
+    prev.tasksCount === next.tasksCount &&
+    prev.agent.terminalSessionIds.length === next.agent.terminalSessionIds.length
   );
 });
 
@@ -479,10 +498,7 @@ export const AgentGrid: React.FC = () => {
   renderCountRef.current++;
 
   useEffect(() => {
-    const duration = performance.now() - startRender;
-    if (duration > 10) {
-      console.warn(`[AgentGrid] Render ${renderCountRef.current} took ${duration.toFixed(1)}ms`);
-    }
+    // Removed profile logging
   });
 
   const activeWorkspaceId = useOrchestratorStore((s) => s.activeWorkspaceId);
@@ -548,23 +564,31 @@ export const AgentGrid: React.FC = () => {
     useOrchestratorStore.getState().saveSnapshot();
   };
 
-  const handleStartAgent = useCallback(async (agent: AgentProfile) => {
-    if (!agent.projectId) {
+  const handleStartAgent = useCallback((agent: AgentProfile) => {
+    const projectId = agent.projectId;
+    if (!projectId) {
       showAlertDialog(
         "Project Required",
         "Please assign a project to this agent first before launching."
       );
       return;
     }
-    await spawnTerminal(agent.projectId, agent.id);
+    // Yield to the main thread to allow the launch button animation to paint
+    setTimeout(async () => {
+      await spawnTerminal(projectId, agent.id);
+    }, 0);
   }, [showAlertDialog, spawnTerminal]);
 
-  const handleStopAgent = useCallback(async (agent: AgentProfile) => {
+  const handleStopAgent = useCallback((agent: AgentProfile) => {
     if (agent.terminalSessionIds.length > 0) {
       const terminals = [...agent.terminalSessionIds];
-      for (const termId of terminals) {
-        await killTerminal(termId);
-      }
+      // Yield to the main thread to allow the button click animation and hover states to paint,
+      // eliminating the 1,024ms INP lockup before the heavy terminal teardown begins.
+      setTimeout(async () => {
+        for (const termId of terminals) {
+          await killTerminal(termId);
+        }
+      }, 0);
     }
   }, [killTerminal]);
 

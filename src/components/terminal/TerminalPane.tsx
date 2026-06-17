@@ -110,7 +110,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
             console.error('Manual fit failed:', e);
           }
         }
-        endBlackoutAfterDelay(320);
+        endBlackoutAfterDelay(800);
       }, 40);
     }
     
@@ -372,7 +372,17 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     // Resize observer
     let resizeFrame: number | null = null;
     let resizeTimeout: any = null;
-    const resizeObserver = new ResizeObserver(() => {
+    let lastWidth = 0;
+    let lastHeight = 0;
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries.length === 0) return;
+      const { width, height } = entries[0].contentRect;
+      if (Math.abs(width - lastWidth) < 1 && Math.abs(height - lastHeight) < 1) {
+        return; // Ignore subpixel flex layout shifts that don't change actual size
+      }
+      lastWidth = width;
+      lastHeight = height;
+
       // 2. Debounce normal resize events to save rendering time
       if (resizeTimeout) clearTimeout(resizeTimeout);
       
@@ -447,7 +457,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   // Fit layout once transitions complete has been removed as ResizeObserver natively handles it.
 
   return (
-    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#050507] font-mono overflow-hidden">
+    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden">
       <div 
         ref={containerRef} 
         className="w-full h-full" 

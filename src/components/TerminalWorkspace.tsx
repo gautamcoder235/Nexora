@@ -36,11 +36,11 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
   return (
     <div 
       ref={frameRef}
-      className={`flex-grow flex flex-col bg-[#050507] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
+      className={`flex-grow flex flex-col bg-[#000000] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${
         isHighlighted
           ? "border-[#f59e0b] shadow-[0_0_12px_rgba(245,158,11,0.3)]"
           : isFocused 
-          ? "border-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.15)]" 
+          ? "border-border-glass hover:border-border-glass-hover" 
           : "border-border-glass hover:border-border-glass-hover"
       }`}
     >
@@ -78,7 +78,7 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
       </div>
 
       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
-      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#050507]">
+      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#000000]">
         <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} refreshKey={refreshKey} />
       </div>
     </div>
@@ -258,11 +258,11 @@ export const TerminalWorkspace: React.FC = () => {
       // Minimize (Exit Focus Mode)
       setAnimatingSessionId(sessionId);
       setIsExpanding(false);
+      setFocusSessionId(null);
       
       if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
       animationFallbackTimeoutRef.current = setTimeout(() => {
         if (animatingSessionId === sessionId) {
-          setFocusSessionId(null);
           setAnimatingSessionId(null);
           setTransformStyle({});
         }
@@ -447,13 +447,20 @@ export const TerminalWorkspace: React.FC = () => {
                   ...getNormalGridStyle(session.id, index),
                   opacity: 0,
                   pointerEvents: 'none',
-                  visibility: 'hidden', 
                 };
               }
+            } else if (animatingSessionId !== null) {
+              // Fade in other terminals smoothly during the minimize transition
+              wrapperStyle = {
+                ...getNormalGridStyle(session.id, index),
+                opacity: 0.15,
+                transition: 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                pointerEvents: 'none',
+              };
             } else {
               // Normal layout flow
               wrapperStyle = getNormalGridStyle(session.id, index);
-              wrapperStyle.transition = 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), flex-grow 300ms, width 300ms, height 300ms';
+              wrapperStyle.transition = 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)';
             }
 
             return (
@@ -463,7 +470,7 @@ export const TerminalWorkspace: React.FC = () => {
                     key={`placeholder-${session.id}`}
                     data-placeholder-id={session.id}
                     style={{ ...getNormalGridStyle(session.id, index), pointerEvents: 'none' }}
-                    className="border border-dashed border-border-glass rounded bg-[#050507]/40 min-h-0 min-w-0 h-full"
+                    className="border border-dashed border-border-glass rounded bg-[#000000]/40 min-h-0 min-w-0 h-full"
                   />
                 )}
                 <div
@@ -474,14 +481,8 @@ export const TerminalWorkspace: React.FC = () => {
                   onTransitionEnd={(e) => {
                     if (isAnimating && e.propertyName === 'transform') {
                       if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
-                      if (isExpanding) {
-                        setAnimatingSessionId(null);
-                        setTransformStyle({});
-                      } else {
-                        setFocusSessionId(null);
-                        setAnimatingSessionId(null);
-                        setTransformStyle({});
-                      }
+                      setAnimatingSessionId(null);
+                      setTransformStyle({});
                     }
                   }}
                 >

@@ -394,7 +394,7 @@ function App() {
     <div 
       ref={appRef}
       style={{ '--sidebar-width': `${sidebarWidth}px`, '--top-panel-height': `${topPanelHeight}px` } as React.CSSProperties}
-      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative ${(isSidebarDragging || isHeightDragging || isSwarmDragging) ? "is-dragging" : ""}`}
+      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-black ${(isSidebarDragging || isHeightDragging || isSwarmDragging) ? "is-dragging" : ""}`}
     >
       <ActivityBar />
 
@@ -412,7 +412,7 @@ function App() {
         )}
         <div 
           className={`flex flex-col gap-1 h-full overflow-hidden ${
-            isAgentPanelPinned ? 'flex-shrink-0 relative' : 'absolute left-0 top-0 bottom-0 z-30 shadow-2xl bg-[#0a0a0f]/95 backdrop-blur-xl border border-border-glass rounded-lg'
+            isAgentPanelPinned ? 'flex-shrink-0 relative' : 'absolute left-0 top-0 bottom-0 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg'
           } ${
             isSidebarDragging ? '' : 'transition-[width,opacity,margin,transform] duration-300 ease-out'
           } ${
@@ -496,7 +496,7 @@ function App() {
           {/* Top Panel (Task Board & Project Memory tabs) */}
           {activeWs && (
             <div 
-              className={`flex flex-col glass-panel shadow-2xl bg-[#0a0a0f]/95 backdrop-blur-xl overflow-hidden ${
+              className={`flex flex-col glass-panel shadow-2xl bg-black backdrop-blur-xl overflow-hidden ${
                 isTaskPanelPinned ? 'relative z-10 flex-shrink-0' : '!absolute top-0 left-0 right-0 z-20'
               } ${isHeightDragging ? '' : 'transition-all duration-300 ease-out'} p-2 border-b border-border-glass`}
               style={
@@ -517,7 +517,7 @@ function App() {
               }
             >
               {/* Header Tabs */}
-              <header className="h-[46px] bg-[#0a0a0c] border-b border-[#1e1e28] px-4 flex items-center justify-between select-none flex-shrink-0">
+              <header className="h-[46px] bg-black border-b border-[#1e1e28] px-4 flex items-center justify-between select-none flex-shrink-0">
                 {/* Left Section: Navigation Tabs & Project Selector */}
                 <div className="flex items-center gap-2">
                   {/* Task Center Tab */}

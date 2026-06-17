@@ -82,10 +82,10 @@ export const CliSpawnerPanel: React.FC = () => {
         
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className={`flex items-center gap-1 py-1 px-2 text-[9px] font-bold tracking-wider rounded transition-all cursor-pointer h-[22px] whitespace-nowrap shrink-0 ${
+          className={`flex items-center justify-center gap-1 shrink-0 ${
             isExpanded 
-              ? 'text-zinc-400 bg-bg-tertiary hover:bg-zinc-800 border border-border-glass' 
-              : 'text-black bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+              ? 'glass-button glass-button--sm' 
+              : 'glass-button glass-button--accent glass-button--sm'
           }`}
         >
           {isExpanded ? 'Cancel' : <><Plus size={10} /> New Agent</>}
@@ -132,9 +132,7 @@ export const CliSpawnerPanel: React.FC = () => {
             setIsExpanded(false);
           }}
           disabled={!selectedCliId || !selectedProjectId}
-          className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 px-3 text-[11px] font-bold tracking-wider rounded-md transition-all duration-300 cursor-pointer border disabled:cursor-not-allowed
-            bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-[0_0_12px_rgba(16,185,129,0.15)]
-            disabled:opacity-30 disabled:hover:bg-emerald-500/10 disabled:hover:border-emerald-500/30 disabled:hover:shadow-none"
+          className="mt-2 glass-button glass-button--accent w-full h-[34px] !text-[10px] uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus size={12} className="stroke-[2.5px]" /> Add Agent to Swarm
         </button>

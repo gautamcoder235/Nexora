@@ -12,6 +12,10 @@
   --color-bg-tertiary: var(--bg-tertiary);
   --color-bg-glass: var(--bg-glass);
   
+  --color-border-glass: var(--border-glass);
+  --color-border-glass-hover: var(--border-glass-hover);
+  --color-border-glass-active: var(--border-glass-active);
+  
   --color-accent-primary: var(--accent-primary);
   --color-accent-secondary: var(--accent-secondary);
   
@@ -32,11 +36,7 @@
 
 @layer base {
   body {
-    background-color: var(--bg-primary);
-    /* Subtle ambient background lighting ( felt rather than seen ) */
-    background-image: 
-      radial-gradient(ellipse 55% 55% at 15% 10%, rgba(245, 158, 11, 0.035), transparent),
-      radial-gradient(ellipse 60% 60% at 85% 90%, rgba(59, 130, 246, 0.045), transparent);
+    background-color: #000000 !important;
     background-attachment: fixed;
     color: var(--text-primary);
     font-family: var(--font-ui);

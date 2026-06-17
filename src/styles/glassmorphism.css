@@ -22,14 +22,14 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  background: rgba(10, 10, 15, 0.75);
+  background: rgba(0, 0, 0, 0.75);
   border: 1px solid var(--border-glass);
   box-shadow: var(--shadow-inset-highlight), var(--shadow-sm);
   border-radius: var(--radius-md);
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 .glass-subtle:hover {
-  background: rgba(15, 15, 22, 0.8);
+  background: rgba(10, 10, 10, 0.8);
   border-color: var(--border-glass-hover);
 }
 
@@ -38,7 +38,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  background: rgba(10, 10, 15, var(--glass-opacity-panel));
+  background: rgba(0, 0, 0, var(--glass-opacity-panel));
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-highlight), var(--shadow-md);
@@ -58,7 +58,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturation));
-  background: rgba(12, 12, 18, var(--glass-opacity-elevated));
+  background: rgba(0, 0, 0, var(--glass-opacity-elevated));
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-highlight), var(--shadow-elevated);
@@ -69,7 +69,7 @@
 }
 
 .glass-panel-elevated:hover {
-  background: rgba(18, 18, 26, 0.9);
+  background: rgba(10, 10, 10, 0.93);
   border-color: var(--border-glass-hover);
 }
 
@@ -78,7 +78,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur-modal)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur-modal)) saturate(var(--glass-saturation));
-  background: rgba(15, 15, 22, var(--glass-opacity-modal));
+  background: rgba(0, 0, 0, var(--glass-opacity-modal));
   border: 1px solid var(--border-glass-hover);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-inset-highlight), var(--shadow-elevated);
@@ -90,7 +90,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  background: rgba(10, 10, 15, 0.85);
+  background: rgba(0, 0, 0, 0.9);
   border: 1px solid rgba(var(--accent-primary-rgb), 0.3);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-highlight), var(--shadow-glow);
@@ -111,7 +111,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturation));
-  background: rgba(8, 8, 12, 0.85);
+  background: #000000;
   border-right: 1px solid var(--border-glass);
   width: var(--sidebar-width);
   height: 100%;
@@ -143,7 +143,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  background: rgba(8, 8, 12, 0.8);
+  background: #000000;
   border-bottom: 1px solid var(--border-glass);
   height: var(--topbar-height);
   display: flex;
@@ -159,7 +159,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  background: rgba(8, 8, 12, 0.85);
+  background: #000000;
   border-top: 1px solid var(--border-glass);
   height: var(--bottombar-height);
   display: flex;
@@ -175,7 +175,7 @@
   position: relative;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  background: rgba(10, 10, 15, 0.65);
+  background: rgba(0, 0, 0, 0.75);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-md);
   padding: var(--space-4);

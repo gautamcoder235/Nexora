@@ -5,13 +5,13 @@
 
 :root {
   /* ── Background Colors ─────────────────────────────────── */
-  --bg-primary: #050507;
-  --bg-secondary: #0a0a0f;
-  --bg-tertiary: #101014;
-  --bg-glass: rgba(10, 10, 15, 0.82);
-  --bg-glass-hover: rgba(20, 20, 26, 0.88);
-  --bg-glass-light: rgba(30, 30, 38, 0.5);
-  --bg-overlay: rgba(0, 0, 0, 0.7);
+  --bg-primary: #000000;
+  --bg-secondary: #000000;
+  --bg-tertiary: #000000;
+  --bg-glass: rgba(0, 0, 0, 0.95);
+  --bg-glass-hover: rgba(10, 10, 10, 0.98);
+  --bg-glass-light: rgba(20, 20, 20, 0.6);
+  --bg-overlay: rgba(0, 0, 0, 0.85);
 
   /* ── Glass Levels Opacity ───────────────────────────────── */
   --glass-opacity-subtle: 0.75;

@@ -610,9 +610,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       const updatedAgents = state.agents.map(a => {
         if (term.agentId && a.id === term.agentId) {
           const remainingTerms = a.terminalSessionIds.filter(id => id !== sessionId);
+          const hasAliveTerms = state.terminals.some(t => 
+            remainingTerms.includes(t.id) && t.status !== 'disconnected'
+          );
           return {
             ...a,
-            status: (remainingTerms.length === 0 ? 'idle' : 'running') as AgentStatus,
+            status: (remainingTerms.length === 0 || !hasAliveTerms ? 'idle' : 'running') as AgentStatus,
             terminalSessionIds: remainingTerms,
             lastActive: new Date().toISOString()
           };
