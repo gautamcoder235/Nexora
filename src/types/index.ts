@@ -177,6 +177,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     toggleTaskCenter: 'Ctrl+J',
     toggleAddAgent: 'Ctrl+N',
     openSettings: 'Ctrl+,',
+    toggleBrowser: 'Ctrl+Shift+B',
   },
   
   restoreTabsOnStartup: true,

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Terminal as TerminalIcon, X, Grid, AlignJustify, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+import { Terminal as TerminalIcon, X, LayoutGrid, Columns2, Rows2, ClipboardList, RefreshCw, RotateCcw, Minimize2, Maximize2 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -350,53 +350,53 @@ export const TerminalWorkspace: React.FC = () => {
             title="Refresh All Terminals"
             className="p-1 rounded transition-colors border mr-1 cursor-pointer bg-transparent border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
           >
-            <RotateCcw size={13} />
+            <RefreshCw size={13} />
           </button>
           
           <button
             onClick={() => setTaskCenterVisible(!isTaskCenterVisible)}
-            title={isTaskCenterVisible ? "Maximize Terminal View (Hide Task Board)" : "Show Task Board"}
-            className={`p-1 rounded transition-colors border mr-1.5 cursor-pointer ${
-              !isTaskCenterVisible 
+            title={isTaskCenterVisible ? "Hide Task Board" : "Show Task Board"}
+            className={`p-1 rounded transition-all border mr-1.5 cursor-pointer ${
+              isTaskCenterVisible 
                 ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' 
-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350 hover:bg-white/5'
             }`}
           >
-            {isTaskCenterVisible ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+            <ClipboardList size={13} />
           </button>
 
           <button
             onClick={() => changeLayoutType('grid')}
             title="Grid Layout"
-            className={`p-1 rounded transition-colors border cursor-pointer ${
+            className={`p-1 rounded transition-all border cursor-pointer ${
               layout.type === 'grid' 
-                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
+                ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' 
+                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
             }`}
           >
-            <Grid size={13} />
+            <LayoutGrid size={13} />
           </button>
           <button
             onClick={() => changeLayoutType('vertical')}
             title="Vertical splits"
-            className={`p-1 rounded transition-colors border cursor-pointer ${
+            className={`p-1 rounded transition-all border cursor-pointer ${
               layout.type === 'vertical' 
-                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+                ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' 
+                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350 hover:bg-white/5'
             }`}
           >
-            <AlignJustify size={13} className="rotate-90" />
+            <Columns2 size={13} />
           </button>
           <button
             onClick={() => changeLayoutType('horizontal')}
             title="Horizontal splits"
-            className={`p-1 rounded transition-colors border cursor-pointer ${
+            className={`p-1 rounded transition-all border cursor-pointer ${
               layout.type === 'horizontal' 
-                ? 'bg-zinc-800/40 text-accent-primary border-zinc-700/50' 
-                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350'
+                ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' 
+                : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-350 hover:bg-white/5'
             }`}
           >
-            <AlignJustify size={13} />
+            <Rows2 size={13} />
           </button>
         </div>
       </div>

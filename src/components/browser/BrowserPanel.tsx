@@ -95,7 +95,7 @@ export const BrowserPanel: React.FC = () => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-[10px] font-semibold tracking-wide border-t border-x cursor-pointer transition-all max-w-[120px] truncate ${
                   isActive
-                    ? "bg-[#08080a] border-border-glass text-[#f59e0b] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                    ? "bg-[#08080a] border-border-glass text-purple-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
                     : "bg-transparent border-transparent text-zinc-500 hover:text-zinc-350 hover:bg-white/5"
                 }`}
               >

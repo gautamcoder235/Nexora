@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { FolderPlus, FolderOpen, Plus, Layout, Layers, Trash2, Settings, Box, Zap, Globe } from "lucide-react";
+import { FolderPlus, FolderOpen, Plus, Trash2, Settings, Box, Zap, Globe, Bot, ClipboardList } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { useSwarmStore } from "../stores/swarmStore";
 import { useBrowserStore } from "../stores/browserStore";
@@ -90,8 +90,9 @@ export const ActivityBar: React.FC = () => {
       
       {/* Top Zone: Branding & Workspace */}
       <div className="flex flex-col items-center gap-4 w-full relative" ref={wsMenuRef}>
-        <div className="w-8 h-8 rounded-lg bg-accent-primary/10 border border-accent-primary/20 flex items-center justify-center text-accent-primary font-bold text-xs shadow-inner mb-2 cursor-default">
-          MV
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-650/20 to-fuchsia-600/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-black text-sm shadow-[0_0_15px_rgba(168,85,247,0.15)] mb-2 cursor-default relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+          <span>MV</span>
         </div>
 
         {/* Workspace Switcher Button */}
@@ -190,52 +191,61 @@ export const ActivityBar: React.FC = () => {
           <>
             <button
               onClick={() => setShowNewProjModal(true)}
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-all relative group"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-all hover:scale-105 relative group"
               title="Add Project"
             >
               <FolderPlus size={20} />
-              <div className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-md bg-zinc-800 border border-zinc-700/30 flex items-center justify-center text-[8px] font-bold text-zinc-300">
+              <div className="absolute -top-0.5 -right-0.5 px-1 min-w-4 h-4 rounded-full bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-[8px] font-bold text-purple-300">
                 {activeProjects.length}
               </div>
             </button>
 
             <button
               onClick={() => setSidebarVisible(!isSidebarVisible)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
                 isSidebarVisible
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
               }`}
               title={isSidebarVisible ? "Hide Agent Sidebar" : "Show Agent Sidebar"}
             >
-              <Layout size={20} />
+              {isSidebarVisible && (
+                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+              )}
+              <Bot size={20} />
             </button>
 
             <button
               onClick={() => setTaskCenterVisible(!isTaskCenterVisible)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
                 isTaskCenterVisible
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
               }`}
               title={isTaskCenterVisible ? "Hide Task Board" : "Show Task Board"}
             >
-              <Layers size={20} />
+              {isTaskCenterVisible && (
+                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+              )}
+              <ClipboardList size={20} />
             </button>
 
             {/* Swarm Control Center Toggle */}
             <button
               onClick={() => setSwarmPanelVisible(!isSwarmPanelVisible)}
-              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
                 isSwarmPanelVisible
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
               }`}
               title={isSwarmPanelVisible ? "Hide Swarm Panel" : "Show Swarm Control Center"}
             >
+              {isSwarmPanelVisible && (
+                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+              )}
               <Zap size={20} />
               {runningCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-accent-primary text-[8px] font-bold text-black flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-accent-primary text-[8px] font-bold text-black flex items-center justify-center animate-pulse">
                   {runningCount}
                 </span>
               )}
@@ -244,13 +254,16 @@ export const ActivityBar: React.FC = () => {
             {/* Web Browser Panel Toggle */}
             <button
               onClick={() => useBrowserStore.getState().toggleBrowserPanel()}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
                 useBrowserStore((s) => s.isBrowserPanelVisible)
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
               }`}
               title={useBrowserStore((s) => s.isBrowserPanelVisible) ? "Hide Web Browser" : "Show Web Browser"}
             >
+              {useBrowserStore((s) => s.isBrowserPanelVisible) && (
+                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+              )}
               <Globe size={20} />
             </button>
           </>

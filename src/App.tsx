@@ -316,7 +316,7 @@ function App() {
       } else if (checkShortcut(shortcuts.toggleAddAgent)) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('toggle-add-agent'));
-      } else if (checkShortcut((shortcuts as any).toggleBrowser || 'Ctrl+Shift+B')) {
+      } else if (checkShortcut(shortcuts.toggleBrowser || 'Ctrl+Shift+B')) {
         e.preventDefault();
         useBrowserStore.getState().toggleBrowserPanel();
       }

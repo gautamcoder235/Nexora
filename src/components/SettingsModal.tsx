@@ -480,10 +480,15 @@ export const SettingsModal: React.FC = () => {
                     value={localSettings.shortcuts?.toggleAddAgent || ''}
                     onChange={(val) => updateLocal('shortcuts', { ...localSettings.shortcuts, toggleAddAgent: val })}
                   />
-                  <ShortcutEditor 
+                   <ShortcutEditor 
                     label="Open Settings" 
                     value={localSettings.shortcuts?.openSettings || ''}
                     onChange={(val) => updateLocal('shortcuts', { ...localSettings.shortcuts, openSettings: val })}
+                  />
+                  <ShortcutEditor 
+                    label="Toggle Web Browser" 
+                    value={localSettings.shortcuts?.toggleBrowser || ''}
+                    onChange={(val) => updateLocal('shortcuts', { ...localSettings.shortcuts, toggleBrowser: val })}
                   />
                   
                   <div className="pt-4 mt-4 text-[10px] text-zinc-500 italic">

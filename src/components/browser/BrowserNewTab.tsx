@@ -76,8 +76,9 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
       <div className="w-full max-w-lg space-y-8 text-center">
         {/* Brand/Header */}
         <div className="space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-zinc-800/20 border border-zinc-700/30 flex items-center justify-center text-[#f59e0b] font-bold text-lg mx-auto shadow-inner">
-            MV
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-650/20 to-fuchsia-600/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-black text-sm mx-auto shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+            <span>MV</span>
           </div>
           <h2 className="text-lg font-bold tracking-tight text-zinc-200 font-sans">
             BridgeSpace Browser
@@ -94,12 +95,12 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search Google or enter web address..."
-            className="w-full h-10 px-4 pl-10 pr-12 rounded-xl bg-black/60 border border-border-glass focus:border-border-glass-hover focus:outline-none text-xs text-zinc-200 transition-all placeholder-zinc-650 shadow-inner"
+            className="w-full h-10 px-4 pl-10 pr-12 rounded-xl bg-black/60 border border-border-glass focus:border-purple-500/50 focus:outline-none text-xs text-zinc-200 transition-all placeholder-zinc-650 shadow-inner"
           />
-          <Search size={14} className="text-zinc-650 absolute left-3.5 top-1/2 -translate-y-1/2 group-focus-within:text-[#f59e0b] transition-colors" />
+          <Search size={14} className="text-zinc-650 absolute left-3.5 top-1/2 -translate-y-1/2 group-focus-within:text-purple-400 transition-colors" />
           <button
             type="submit"
-            className="absolute right-2 top-1/2 -translate-y-1/2 h-7 px-3 bg-zinc-800/40 hover:bg-zinc-800/70 border border-border-glass hover:border-border-glass-hover rounded-lg text-[10px] font-bold text-zinc-400 transition-all"
+            className="absolute right-2 top-1/2 -translate-y-1/2 h-7 px-3 bg-gradient-to-r from-purple-650 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-500 rounded-lg text-[10px] font-bold text-white transition-all shadow-[0_0_10px_rgba(168,85,247,0.2)] hover:shadow-[0_0_15px_rgba(168,85,247,0.4)] cursor-pointer"
           >
             Search
           </button>
@@ -115,13 +116,13 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
               <button
                 key={link.title}
                 onClick={() => onNavigate(link.url)}
-                className="flex items-start gap-3 p-3 rounded-xl bg-black/30 hover:bg-white/5 border border-border-glass hover:border-border-glass-hover text-left transition-all group cursor-pointer"
+                className="flex items-start gap-3 p-3 rounded-xl bg-black/30 hover:bg-purple-500/5 border border-border-glass hover:border-purple-500/30 text-left transition-all group cursor-pointer"
               >
                 <div className="p-1.5 rounded-lg bg-zinc-950 border border-border-glass/40 group-hover:border-border-glass-hover transition-colors flex-shrink-0">
                   {link.icon}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[11px] font-semibold text-zinc-300 group-hover:text-[#f59e0b] transition-colors truncate">
+                  <div className="text-[11px] font-semibold text-zinc-300 group-hover:text-purple-400 transition-colors truncate">
                     {link.title}
                   </div>
                   <div className="text-[9px] text-zinc-500 truncate mt-0.5">

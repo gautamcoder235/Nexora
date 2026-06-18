@@ -3,19 +3,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { 
   Copy, 
   Clipboard, 
-  Sidebar, 
-  Layout, 
   Terminal, 
   X, 
   Maximize2, 
   Minimize2, 
-  Grid, 
-  AlignJustify,
   ChevronRight,
   Cpu,
-  HardDrive
+  HardDrive,
+  Globe,
+  Bot,
+  ClipboardList,
+  LayoutGrid,
+  Columns2,
+  Rows2
 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
+import { useBrowserStore } from "../stores/browserStore";
 
 export const ContextMenu: React.FC = () => {
   const [visible, setVisible] = useState(false);
@@ -35,8 +38,16 @@ export const ContextMenu: React.FC = () => {
     killTerminal,
     layout,
     changeLayoutType,
-    terminals
+    terminals,
+    settings
   } = useOrchestratorStore();
+
+  const isBrowserPanelVisible = useBrowserStore((s) => s.isBrowserPanelVisible);
+
+  const shortcuts = settings?.shortcuts || {};
+  const sidebarShortcut = shortcuts.toggleSidebar || 'Ctrl+B';
+  const taskCenterShortcut = shortcuts.toggleTaskCenter || 'Ctrl+J';
+  const browserShortcut = shortcuts.toggleBrowser || 'Ctrl+Shift+B';
 
   // Performance simulated states from global stats
   const [mockCpu, setMockCpu] = useState(2);
@@ -87,7 +98,7 @@ export const ContextMenu: React.FC = () => {
       let x = e.clientX;
       let y = e.clientY;
 
-      // Make sure menu doesn't go offscreen (width is ~200px, height is ~350px)
+      // Make sure menu doesn't go offscreen (width is ~220px, height is ~350px)
       const menuWidth = 220;
       const menuHeight = terminalFrame ? 390 : 250;
 
@@ -173,6 +184,11 @@ export const ContextMenu: React.FC = () => {
     setVisible(false);
   };
 
+  const handleToggleBrowserPanel = () => {
+    useBrowserStore.getState().toggleBrowserPanel();
+    setVisible(false);
+  };
+
   const handleLayoutChange = (type: "grid" | "vertical" | "horizontal") => {
     changeLayoutType(type);
     setVisible(false);
@@ -186,44 +202,44 @@ export const ContextMenu: React.FC = () => {
     >
       {terminalSessionId && (
         <>
-          <div className="px-3 py-1 text-[10px] text-zinc-500 font-mono tracking-wider uppercase border-b border-[#232329]/40 pb-1 mb-1 truncate flex items-center gap-1.5">
+          <div className="px-3 py-1.5 text-[10px] text-zinc-500 font-mono tracking-wider uppercase border-b border-[#232329]/40 pb-1.5 mb-1 truncate flex items-center gap-1.5">
             <Terminal size={10} className="text-zinc-500" />
             <span>Terminal: {terminalSessionId}</span>
           </div>
           
           <button
             onClick={handleCopy}
-            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-purple-500/10 hover:text-purple-400 text-left transition-colors cursor-pointer"
+            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
-              <Copy size={13} className="text-zinc-400" />
+              <Copy size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
               <span>Copy Selection</span>
             </div>
-            <span className="text-[9px] text-zinc-500 font-mono">Ctrl+C</span>
+            <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">Ctrl+C</span>
           </button>
 
           <button
             onClick={handlePaste}
-            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-purple-500/10 hover:text-purple-400 text-left transition-colors cursor-pointer"
+            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
-              <Clipboard size={13} className="text-zinc-400" />
+              <Clipboard size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
               <span>Paste to Shell</span>
             </div>
-            <span className="text-[9px] text-zinc-500 font-mono">Ctrl+V</span>
+            <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">Ctrl+V</span>
           </button>
 
-          <div className="h-[1px] bg-[#232329]/60 my-1.5" />
+          <div className="h-[1px] bg-[#232329]/60 my-1 mx-1.5" />
 
           <button
             onClick={handleToggleTerminalFocus}
-            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-purple-500/10 hover:text-purple-400 text-left transition-colors cursor-pointer"
+            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
               {terminalIsFocused ? (
-                <Minimize2 size={13} className="text-zinc-400" />
+                <Minimize2 size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
               ) : (
-                <Maximize2 size={13} className="text-zinc-400" />
+                <Maximize2 size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
               )}
               <span>{terminalIsFocused ? "Exit Focus Mode" : "Focus Session"}</span>
             </div>
@@ -232,39 +248,50 @@ export const ContextMenu: React.FC = () => {
 
           <button
             onClick={handleKillTerminal}
-            className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-rose-500/10 hover:text-rose-400 text-left transition-colors cursor-pointer"
+            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-rose-500/10 hover:text-rose-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
-              <X size={13} className="text-rose-500/70" />
+              <X size={13} className="text-rose-500/70 group-hover:text-rose-400 transition-colors" />
               <span>Kill Session</span>
             </div>
           </button>
 
-          <div className="h-[1px] bg-[#232329]/60 my-1.5" />
+          <div className="h-[1px] bg-[#232329]/60 my-1 mx-1.5" />
         </>
       )}
 
       {/* Global Actions */}
-      <div className="h-[1px] bg-[#232329]/60 my-1.5" />
-
       <button
         onClick={handleToggleSidebar}
-        className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-purple-500/10 hover:text-purple-400 text-left transition-colors cursor-pointer"
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <Sidebar size={13} className="text-zinc-400" />
+          <Bot size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
           <span>{isSidebarVisible ? "Collapse Sidebar" : "Expand Sidebar"}</span>
         </div>
+        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{sidebarShortcut}</span>
       </button>
 
       <button
         onClick={handleToggleTaskCenter}
-        className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-purple-500/10 hover:text-purple-400 text-left transition-colors cursor-pointer"
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <Layout size={13} className="text-zinc-400" />
+          <ClipboardList size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
           <span>{isTaskCenterVisible ? "Hide Task Center" : "Show Task Center"}</span>
         </div>
+        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{taskCenterShortcut}</span>
+      </button>
+
+      <button
+        onClick={handleToggleBrowserPanel}
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+      >
+        <div className="flex items-center gap-2">
+          <Globe size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+          <span>{isBrowserPanelVisible ? "Hide Web Browser" : "Show Web Browser"}</span>
+        </div>
+        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{browserShortcut}</span>
       </button>
 
       {/* Change Layout with submenus */}
@@ -274,87 +301,91 @@ export const ContextMenu: React.FC = () => {
         onMouseLeave={() => setShowSubmenu(false)}
       >
         <button
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-purple-500/10 hover:text-purple-400 text-left transition-colors cursor-pointer"
+          className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
         >
           <div className="flex items-center gap-2">
-            <Grid size={13} className="text-zinc-400" />
+            <LayoutGrid size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
             <span>Multiplexer Layout</span>
           </div>
-          <ChevronRight size={12} className="text-zinc-500" />
+          <ChevronRight size={12} className="text-zinc-500 group-hover:text-purple-400 transition-colors" />
         </button>
 
         {showSubmenu && (
           <div 
             ref={submenuRef}
-            className="absolute top-0 left-full ml-0.5 w-44 bg-[#0e0e11]/95 backdrop-blur-md border border-[#232329] rounded-lg shadow-2xl py-1 text-zinc-300 text-xs select-none"
+            className="absolute top-0 left-full ml-1 w-44 bg-[#0e0e11]/95 backdrop-blur-md border border-[#232329] rounded-lg shadow-2xl py-1 text-zinc-300 text-xs select-none animate-in fade-in zoom-in-95 duration-100 ease-out"
           >
             <button
               onClick={() => handleLayoutChange("grid")}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors cursor-pointer ${
+              className={`w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md text-left transition-all duration-100 cursor-pointer flex items-center gap-2 group ${
                 layout.type === "grid" 
                   ? "bg-purple-500/10 text-purple-400 font-medium" 
                   : "hover:bg-purple-500/10 hover:text-purple-400"
               }`}
             >
-              <Grid size={12} />
+              <LayoutGrid size={12} className={layout.type === "grid" ? "text-purple-400" : "text-zinc-400 group-hover:text-purple-400"} />
               <span>Grid Layout</span>
             </button>
             <button
               onClick={() => handleLayoutChange("vertical")}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors cursor-pointer ${
+              className={`w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md text-left transition-all duration-100 cursor-pointer flex items-center gap-2 group ${
                 layout.type === "vertical" 
                   ? "bg-purple-500/10 text-purple-400 font-medium" 
                   : "hover:bg-purple-500/10 hover:text-purple-400"
               }`}
             >
-              <AlignJustify size={12} className="rotate-90" />
+              <Columns2 size={12} className={layout.type === "vertical" ? "text-purple-400" : "text-zinc-400 group-hover:text-purple-400"} />
               <span>Vertical Splits</span>
             </button>
             <button
               onClick={() => handleLayoutChange("horizontal")}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors cursor-pointer ${
+              className={`w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md text-left transition-all duration-100 cursor-pointer flex items-center gap-2 group ${
                 layout.type === "horizontal" 
                   ? "bg-purple-500/10 text-purple-400 font-medium" 
                   : "hover:bg-purple-500/10 hover:text-purple-400"
               }`}
             >
-              <AlignJustify size={12} />
+              <Rows2 size={12} className={layout.type === "horizontal" ? "text-purple-400" : "text-zinc-400 group-hover:text-purple-400"} />
               <span>Horizontal Splits</span>
             </button>
           </div>
         )}
       </div>
 
-      <div className="h-[1px] bg-[#232329]/60 my-1.5" />
+      <div className="h-[1px] bg-[#232329]/60 my-1.5 mx-1.5" />
 
       {/* Simulated Stats Section (Advanced Telemetry UI visual element) */}
-      <div className="px-3 py-1.5 font-mono text-[9px] text-zinc-500 space-y-1">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1">
-            <Cpu size={10} className="text-purple-500/70" />
-            CPU LOAD
-          </span>
-          <span className="text-zinc-400">{mockCpu}%</span>
-        </div>
-        <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
-          <div 
-            className="bg-purple-500 h-full transition-all duration-500" 
-            style={{ width: `${mockCpu}%` }}
-          />
+      <div className="bg-black/30 border border-[#232329]/30 rounded-md p-2 mx-1.5 mb-1.5 font-mono text-[9px] text-zinc-550 space-y-1.5">
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-zinc-500">
+            <span className="flex items-center gap-1.5">
+              <Cpu size={10} className="text-purple-500/80 animate-pulse" />
+              CPU LOAD
+            </span>
+            <span className="text-purple-400 font-semibold">{mockCpu}%</span>
+          </div>
+          <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-purple-500 to-fuchsia-500 h-full transition-all duration-500 ease-out" 
+              style={{ width: `${mockCpu}%` }}
+            />
+          </div>
         </div>
         
-        <div className="flex items-center justify-between pt-1">
-          <span className="flex items-center gap-1">
-            <HardDrive size={10} className="text-purple-500/70" />
-            RAM USAGE
-          </span>
-          <span className="text-zinc-400">{mockRam} GB</span>
-        </div>
-        <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
-          <div 
-            className="bg-purple-500 h-full transition-all duration-500" 
-            style={{ width: `${(mockRam / 8) * 100}%` }}
-          />
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-zinc-500">
+            <span className="flex items-center gap-1.5">
+              <HardDrive size={10} className="text-purple-500/80" />
+              RAM USAGE
+            </span>
+            <span className="text-purple-400 font-semibold">{mockRam} GB</span>
+          </div>
+          <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-purple-500 to-fuchsia-500 h-full transition-all duration-500 ease-out" 
+              style={{ width: `${(mockRam / 8) * 100}%` }}
+            />
+          </div>
         </div>
       </div>
     </div>
