@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { FolderPlus, FolderOpen, Plus, Trash2, Settings, Box, Zap, Globe, Bot, ClipboardList, LogOut, Edit2 } from "lucide-react";
+import { FolderPlus, FolderOpen, Plus, Trash2, Settings, Box, Zap, Globe, Bot, ClipboardList, LogOut, Edit2, GitPullRequest } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { useSwarmStore } from "../stores/swarmStore";
 import { useBrowserStore } from "../stores/browserStore";
+import { useChangesetStore } from "../stores/changesetStore";
 import { invoke } from "@tauri-apps/api/core";
 
 export const ActivityBar: React.FC = () => {
@@ -17,6 +18,7 @@ export const ActivityBar: React.FC = () => {
     addProject,
     deleteProject,
     renameProject,
+    renameWorkspace,
     isSidebarVisible,
     isTaskCenterVisible,
     setSidebarVisible,
@@ -40,6 +42,10 @@ export const ActivityBar: React.FC = () => {
   const [showRenameProjModal, setShowRenameProjModal] = useState(false);
   const [renameProjId, setRenameProjId] = useState<string | null>(null);
   const [renameProjName, setRenameProjName] = useState("");
+
+  const [showRenameWsModal, setShowRenameWsModal] = useState(false);
+  const [renameWsId, setRenameWsId] = useState<string | null>(null);
+  const [renameWsName, setRenameWsName] = useState("");
 
   const wsMenuRef = useRef<HTMLDivElement>(null);
   const wsPopoverRef = useRef<HTMLDivElement>(null);
@@ -112,6 +118,18 @@ export const ActivityBar: React.FC = () => {
     }
   };
 
+  const handleRenameWs = async () => {
+    if (!renameWsName.trim() || !renameWsId) return;
+    try {
+      await renameWorkspace(renameWsId, renameWsName);
+      setRenameWsId(null);
+      setRenameWsName("");
+      setShowRenameWsModal(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
 
   return (
@@ -172,26 +190,39 @@ export const ActivityBar: React.FC = () => {
                       setShowWsMenu(false);
                     }}
                   >
-                    <span className="text-xs truncate max-w-[180px] font-medium">{ws.name}</span>
-                    {ws.id === activeWorkspaceId && (
+                    <span className="text-xs truncate max-w-[150px] font-medium" title={ws.name}>{ws.name}</span>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenameWsId(ws.id);
+                          setRenameWsName(ws.name);
+                          setShowRenameWsModal(true);
+                          setShowWsMenu(false);
+                        }}
+                        className="p-1 text-zinc-400 hover:text-amber-500 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                        title="Rename Workspace"
+                      >
+                        <Edit2 size={11} />
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           showConfirmDialog(
-                            "Delete Current Workspace",
+                            "Delete Workspace",
                             `Are you sure you want to delete workspace "${ws.name}"? This will close all active terminal sessions.`,
                             () => {
-                              deleteWorkspace(activeWorkspaceId);
+                              deleteWorkspace(ws.id);
                               setShowWsMenu(false);
                             }
                           );
                         }}
-                        className="opacity-0 group-hover:opacity-100 glass-button glass-button--danger glass-button--sm p-1"
+                        className="p-1 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
                         title="Delete Workspace"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={11} />
                       </button>
-                    )}
+                    </div>
                   </div>
                 ))
               )}
@@ -313,6 +344,22 @@ export const ActivityBar: React.FC = () => {
                 <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
               )}
               <Globe size={20} />
+            </button>
+
+            {/* Agent Review Center Toggle */}
+            <button
+              onClick={() => useChangesetStore.getState().setReviewCenterOpen(!useChangesetStore.getState().isReviewCenterOpen)}
+              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
+                useChangesetStore((s) => s.isReviewCenterOpen)
+                  ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
+                  : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
+              }`}
+              title={useChangesetStore((s) => s.isReviewCenterOpen) ? "Hide Review Center" : "Show Agent Review Center"}
+            >
+              {useChangesetStore((s) => s.isReviewCenterOpen) && (
+                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+              )}
+              <GitPullRequest size={20} />
             </button>
           </>
         )}
@@ -517,6 +564,48 @@ export const ActivityBar: React.FC = () => {
               <button
                 onClick={handleRenameProj}
                 disabled={!renameProjName.trim()}
+                className="glass-button glass-button--accent font-semibold text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Rename Workspace Modal */}
+      {showRenameWsModal && createPortal(
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
+          <div className="glass-modal p-6 w-96 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+              <Edit2 size={16} className="text-amber-500" />
+              Rename Workspace Session
+            </h3>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-mono text-zinc-500 uppercase">New Workspace Name</label>
+              <input
+                type="text"
+                value={renameWsName}
+                onChange={(e) => setRenameWsName(e.target.value)}
+                placeholder="e.g. My Workspace"
+                className="glass-input"
+              />
+            </div>
+            <div className="flex gap-2.5 justify-end pt-2">
+              <button
+                onClick={() => {
+                  setShowRenameWsModal(false);
+                  setRenameWsId(null);
+                  setRenameWsName("");
+                }}
+                className="glass-button glass-button--ghost text-zinc-400 text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRenameWs}
+                disabled={!renameWsName.trim()}
                 className="glass-button glass-button--accent font-semibold text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
               >
                 Save Changes

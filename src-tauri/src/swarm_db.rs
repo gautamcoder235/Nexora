@@ -27,6 +27,7 @@ pub fn init_db(app_handle: &AppHandle) -> Result<(), String> {
 
     run_migrations(&conn).map_err(|e| format!("Migration failed: {}", e))?;
     seed_default_agents(&conn).map_err(|e| format!("Seeding failed: {}", e))?;
+    seed_mock_changeset(&conn).map_err(|e| format!("Seeding mock changeset failed: {}", e))?;
     
     app_handle.manage(DbState(Mutex::new(Some(conn))));
     Ok(())
@@ -149,7 +150,6 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             FOREIGN KEY(agent_id) REFERENCES agents(id),
             PRIMARY KEY (agent_id, capability)
         );
-        );
         ",
         // Version 3: Agent Processes tracking & State Machine
         "
@@ -257,6 +257,60 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         "
         CREATE INDEX IF NOT EXISTS idx_validation_runs_execution ON validation_runs(execution_id);
         CREATE INDEX IF NOT EXISTS idx_validation_steps_run ON validation_steps(validation_run_id);
+        ",
+        // Version 8: Changesets & Agent Review Center
+        "
+        CREATE TABLE IF NOT EXISTS changesets (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL,
+            origin_agent_id TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            applied_at DATETIME,
+            explanation TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS changeset_files (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            old_content TEXT NOT NULL,
+            new_content TEXT NOT NULL,
+            patch TEXT NOT NULL,
+            change_source TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            FOREIGN KEY(changeset_id) REFERENCES changesets(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS review_comments (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL,
+            path TEXT,
+            line_number INTEGER,
+            agent_name TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(changeset_id) REFERENCES changesets(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS review_decisions (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL,
+            user_action TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            details TEXT,
+            FOREIGN KEY(changeset_id) REFERENCES changesets(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS changeset_snapshots (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            content_backup TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(changeset_id) REFERENCES changesets(id) ON DELETE CASCADE
+        );
         "
     ];
 
@@ -475,5 +529,310 @@ pub fn insert_execution_draft(conn: &Connection, id: &str, repo_name: &str, repo
 
 pub fn delete_execution_draft(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM execution_drafts WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+// -- Changeset Database Actions -----------------------------------------------
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbChangeset {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub origin_agent_id: String,
+    pub created_at: String,
+    pub applied_at: Option<String>,
+    pub explanation: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbChangesetFile {
+    pub id: String,
+    pub changeset_id: String,
+    pub path: String,
+    pub old_content: String,
+    pub new_content: String,
+    pub patch: String,
+    pub change_source: String,
+    pub status: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbReviewComment {
+    pub id: String,
+    pub changeset_id: String,
+    pub path: Option<String>,
+    pub line_number: Option<i32>,
+    pub agent_name: String,
+    pub comment: String,
+    pub severity: String,
+    pub created_at: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DbChangesetSnapshot {
+    pub id: String,
+    pub changeset_id: String,
+    pub file_path: String,
+    pub content_backup: String,
+    pub timestamp: String,
+}
+
+pub fn insert_changeset(
+    conn: &Connection,
+    id: &str,
+    title: &str,
+    status: &str,
+    origin_agent_id: &str,
+    explanation: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO changesets (id, title, status, origin_agent_id, explanation) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![id, title, status, origin_agent_id, explanation],
+    )?;
+    Ok(())
+}
+
+pub fn update_changeset_status(conn: &Connection, id: &str, status: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE changesets SET status = ?1, applied_at = CASE WHEN ?1 = 'applied' THEN CURRENT_TIMESTAMP ELSE applied_at END WHERE id = ?2",
+        rusqlite::params![status, id],
+    )?;
+    Ok(())
+}
+
+pub fn insert_changeset_file(
+    conn: &Connection,
+    id: &str,
+    changeset_id: &str,
+    path: &str,
+    old_content: &str,
+    new_content: &str,
+    patch: &str,
+    change_source: &str,
+    status: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO changeset_files (id, changeset_id, path, old_content, new_content, patch, change_source, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![id, changeset_id, path, old_content, new_content, patch, change_source, status],
+    )?;
+    Ok(())
+}
+
+pub fn update_changeset_file_status(
+    conn: &Connection,
+    changeset_id: &str,
+    file_path: &str,
+    status: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE changeset_files SET status = ?1 WHERE changeset_id = ?2 AND path = ?3",
+        rusqlite::params![status, changeset_id, file_path],
+    )?;
+    Ok(())
+}
+
+pub fn insert_review_comment(
+    conn: &Connection,
+    id: &str,
+    changeset_id: &str,
+    path: Option<&str>,
+    line_number: Option<i32>,
+    agent_name: &str,
+    comment: &str,
+    severity: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO review_comments (id, changeset_id, path, line_number, agent_name, comment, severity) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, changeset_id, path, line_number, agent_name, comment, severity],
+    )?;
+    Ok(())
+}
+
+pub fn insert_review_decision(
+    conn: &Connection,
+    id: &str,
+    changeset_id: &str,
+    user_action: &str,
+    details: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO review_decisions (id, changeset_id, user_action, details) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![id, changeset_id, user_action, details],
+    )?;
+    Ok(())
+}
+
+pub fn insert_changeset_snapshot(
+    conn: &Connection,
+    id: &str,
+    changeset_id: &str,
+    file_path: &str,
+    content_backup: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO changeset_snapshots (id, changeset_id, file_path, content_backup) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![id, changeset_id, file_path, content_backup],
+    )?;
+    Ok(())
+}
+
+pub fn get_changesets(conn: &Connection) -> Result<Vec<DbChangeset>> {
+    let mut stmt = conn.prepare("SELECT id, title, status, origin_agent_id, created_at, applied_at, explanation FROM changesets ORDER BY created_at DESC")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(DbChangeset {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            status: row.get(2)?,
+            origin_agent_id: row.get(3)?,
+            created_at: row.get(4)?,
+            applied_at: row.get(5)?,
+            explanation: row.get(6)?,
+        })
+    })?;
+    
+    let mut results = Vec::new();
+    for r in rows {
+        results.push(r?);
+    }
+    Ok(results)
+}
+
+pub fn get_changeset_files(conn: &Connection, changeset_id: &str) -> Result<Vec<DbChangesetFile>> {
+    let mut stmt = conn.prepare("SELECT id, changeset_id, path, old_content, new_content, patch, change_source, status FROM changeset_files WHERE changeset_id = ?1")?;
+    let rows = stmt.query_map([changeset_id], |row| {
+        Ok(DbChangesetFile {
+            id: row.get(0)?,
+            changeset_id: row.get(1)?,
+            path: row.get(2)?,
+            old_content: row.get(3)?,
+            new_content: row.get(4)?,
+            patch: row.get(5)?,
+            change_source: row.get(6)?,
+            status: row.get(7)?,
+        })
+    })?;
+    
+    let mut results = Vec::new();
+    for r in rows {
+        results.push(r?);
+    }
+    Ok(results)
+}
+
+pub fn get_changeset_comments(conn: &Connection, changeset_id: &str) -> Result<Vec<DbReviewComment>> {
+    let mut stmt = conn.prepare("SELECT id, changeset_id, path, line_number, agent_name, comment, severity, created_at FROM review_comments WHERE changeset_id = ?1 ORDER BY created_at ASC")?;
+    let rows = stmt.query_map([changeset_id], |row| {
+        Ok(DbReviewComment {
+            id: row.get(0)?,
+            changeset_id: row.get(1)?,
+            path: row.get(2)?,
+            line_number: row.get(3)?,
+            agent_name: row.get(4)?,
+            comment: row.get(5)?,
+            severity: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    })?;
+    
+    let mut results = Vec::new();
+    for r in rows {
+        results.push(r?);
+    }
+    Ok(results)
+}
+
+pub fn get_changeset_snapshots(conn: &Connection, changeset_id: &str) -> Result<Vec<DbChangesetSnapshot>> {
+    let mut stmt = conn.prepare("SELECT id, changeset_id, file_path, content_backup, timestamp FROM changeset_snapshots WHERE changeset_id = ?1")?;
+    let rows = stmt.query_map([changeset_id], |row| {
+        Ok(DbChangesetSnapshot {
+            id: row.get(0)?,
+            changeset_id: row.get(1)?,
+            file_path: row.get(2)?,
+            content_backup: row.get(3)?,
+            timestamp: row.get(4)?,
+        })
+    })?;
+    
+    let mut results = Vec::new();
+    for r in rows {
+        results.push(r?);
+    }
+    Ok(results)
+}
+
+pub fn seed_mock_changeset(conn: &Connection) -> Result<()> {
+    // Check if we already have changesets
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM changesets", [], |row| row.get(0))?;
+    if count > 0 {
+        return Ok(());
+    }
+
+    insert_changeset(
+        conn,
+        "cset-mock-auth",
+        "Implement User Authentication Hook",
+        "pending",
+        "builder-agent",
+        Some("This changeset adds a custom useAuth hook and mock login logic."),
+    )?;
+
+    insert_changeset_file(
+        conn,
+        "cfile-1",
+        "cset-mock-auth",
+        "src/hooks/useAuth.ts",
+        "",
+        "import { useState } from 'react';\nexport function useAuth() {\n  const [user, setUser] = useState<string | null>(null);\n  const login = (u: string) => setUser(u);\n  const logout = () => setUser(null);\n  return { user, login, logout };\n}",
+        "@@ -0,0 +1,8 @@\n+import { useState } from 'react';\n+export function useAuth() {\n+  const [user, setUser] = useState<string | null>(null);\n+  const login = (u: string) => setUser(u);\n+  const logout = () => setUser(null);\n+  return { user, login, logout };\n+}",
+        "Builder Agent",
+        "pending",
+    )?;
+
+    insert_changeset_file(
+        conn,
+        "cfile-2",
+        "cset-mock-auth",
+        "src/App.tsx",
+        "import React from 'react';\nexport default function App() {\n  return <div>Welcome</div>;\n}",
+        "import React from 'react';\nimport { useAuth } from './hooks/useAuth';\nexport default function App() {\n  const { user } = useAuth();\n  return <div>Welcome {user || 'Guest'}</div>;\n}",
+        "@@ -1,4 +1,5 @@\n import React from 'react';\n+import { useAuth } from './hooks/useAuth';\n export default function App() {\n-  return <div>Welcome</div>;\n+  const { user } = useAuth();\n+  return <div>Welcome {user || 'Guest'}</div>;\n }",
+        "Builder Agent",
+        "pending",
+    )?;
+
+    insert_review_comment(
+        conn,
+        "ccmt-1",
+        "cset-mock-auth",
+        None,
+        None,
+        "Tester Agent",
+        "Linter Warning: 'useAuth' should be imported only once.",
+        "WARNING",
+    )?;
+
+    insert_review_comment(
+        conn,
+        "ccmt-2",
+        "cset-mock-auth",
+        Some("src/hooks/useAuth.ts"),
+        Some(2),
+        "Reviewer Agent",
+        "Potential security leak: state is not persistent across refreshes.",
+        "ERROR",
+    )?;
+
+    insert_review_comment(
+        conn,
+        "ccmt-3",
+        "cset-mock-auth",
+        None,
+        None,
+        "Architect Agent",
+        "Matches auth architecture guidelines in doc RFC-11.",
+        "INFO",
+    )?;
+
     Ok(())
 }

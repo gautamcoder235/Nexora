@@ -15,10 +15,12 @@ import {
   ClipboardList,
   LayoutGrid,
   Columns2,
-  Rows2
+  Rows2,
+  GitPullRequest
 } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { useBrowserStore } from "../stores/browserStore";
+import { useChangesetStore } from "../stores/changesetStore";
 
 export const ContextMenu: React.FC = () => {
   const [visible, setVisible] = useState(false);
@@ -43,11 +45,13 @@ export const ContextMenu: React.FC = () => {
   } = useOrchestratorStore();
 
   const isBrowserPanelVisible = useBrowserStore((s) => s.isBrowserPanelVisible);
+  const isReviewCenterOpen = useChangesetStore((s) => s.isReviewCenterOpen);
 
   const shortcuts = settings?.shortcuts || {};
   const sidebarShortcut = shortcuts.toggleSidebar || 'Ctrl+B';
   const taskCenterShortcut = shortcuts.toggleTaskCenter || 'Ctrl+J';
   const browserShortcut = shortcuts.toggleBrowser || 'Ctrl+Shift+B';
+  const reviewCenterShortcut = shortcuts.toggleReviewCenter || 'Ctrl+Shift+R';
 
   // Performance simulated states from global stats
   const [mockCpu, setMockCpu] = useState(2);
@@ -189,6 +193,11 @@ export const ContextMenu: React.FC = () => {
     setVisible(false);
   };
 
+  const handleToggleReviewCenter = () => {
+    useChangesetStore.getState().setReviewCenterOpen(!isReviewCenterOpen);
+    setVisible(false);
+  };
+
   const handleLayoutChange = (type: "grid" | "vertical" | "horizontal") => {
     changeLayoutType(type);
     setVisible(false);
@@ -292,6 +301,17 @@ export const ContextMenu: React.FC = () => {
           <span>{isBrowserPanelVisible ? "Hide Web Browser" : "Show Web Browser"}</span>
         </div>
         <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{browserShortcut}</span>
+      </button>
+
+      <button
+        onClick={handleToggleReviewCenter}
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+      >
+        <div className="flex items-center gap-2">
+          <GitPullRequest size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+          <span>{isReviewCenterOpen ? "Hide Review Center" : "Show Review Center"}</span>
+        </div>
+        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{reviewCenterShortcut}</span>
       </button>
 
       {/* Change Layout with submenus */}

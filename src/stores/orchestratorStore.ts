@@ -69,6 +69,7 @@ interface OrchestratorState {
   addProject: (name: string, path: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   renameProject: (projectId: string, newName: string) => Promise<void>;
+  renameWorkspace: (workspaceId: string, newName: string) => Promise<void>;
   createAgent: (profile: Omit<AgentProfile, "id" | "status" | "runtimeSeconds" | "lastActive" | "terminalSessionIds">) => Promise<void>;
   deleteAgent: (agentId: string) => Promise<void>;
   
@@ -450,6 +451,20 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     }));
 
     get().logActivity('workspace', 'info', `Renamed Project "${project.name}" to "${newName}"`, projectId);
+    get().saveSnapshot();
+  },
+
+  renameWorkspace: async (workspaceId, newName) => {
+    if (!newName.trim()) return;
+
+    const workspace = get().workspaces.find(w => w.id === workspaceId);
+    if (!workspace) return;
+
+    set((state) => ({
+      workspaces: state.workspaces.map(w => w.id === workspaceId ? { ...w, name: newName } : w)
+    }));
+
+    get().logActivity('workspace', 'info', `Renamed Workspace "${workspace.name}" to "${newName}"`, '', undefined);
     get().saveSnapshot();
   },
 

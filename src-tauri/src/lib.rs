@@ -14,6 +14,7 @@ pub mod swarm_validation;
 pub mod swarm_queries;
 pub mod swarm_events;
 pub mod swarm_merge;
+pub mod swarm_changeset;
 use portable_pty::{PtySystem, NativePtySystem, PtySize, CommandBuilder, Child, MasterPty};
 use sysinfo::System;
 use std::time::{Instant, Duration};
@@ -495,6 +496,63 @@ fn check_cli_tool(command: String) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct FileNode {
+    pub name: String,
+    pub path: String, // Absolute path
+    pub is_dir: bool,
+    pub size: Option<u64>,
+}
+
+#[tauri::command]
+fn list_directory(dir_path: String) -> Result<Vec<FileNode>, String> {
+    let path = std::path::Path::new(&dir_path);
+    if !path.exists() {
+        return Err("Directory does not exist".to_string());
+    }
+    if !path.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+
+    let mut entries = Vec::new();
+    let read_dir = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+
+    for entry in read_dir {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let entry_path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        // 🚀 CRITICAL IGNORE RULE: Filter system/dependency dirs for maximum performance
+        if file_name == ".git" || file_name == "node_modules" || file_name == "target" || file_name == "dist" || file_name == "build" {
+            continue;
+        }
+
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        let is_dir = metadata.is_dir();
+        let size = if is_dir { None } else { Some(metadata.len()) };
+
+        entries.push(FileNode {
+            name: file_name,
+            path: entry_path.to_string_lossy().to_string(),
+            is_dir,
+            size,
+        });
+    }
+
+    // Sort: directories first, then files alphabetically (case-insensitive)
+    entries.sort_by(|a, b| {
+        if a.is_dir && !b.is_dir {
+            std::cmp::Ordering::Less
+        } else if !a.is_dir && b.is_dir {
+            std::cmp::Ordering::Greater
+        } else {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        }
+    });
+
+    Ok(entries)
+}
+
 #[tauri::command]
 fn read_project_file(path: String) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| e.to_string())
@@ -537,6 +595,7 @@ pub fn run() {
             // Initialize Swarm SQLite Database
             if let Err(e) = swarm_db::init_db(app.handle()) {
                 eprintln!("Failed to initialize swarm db: {}", e);
+                app.handle().manage(swarm_db::DbState(std::sync::Mutex::new(None)));
             }
 
             // Start Stalled Agent Watchdog
@@ -556,6 +615,7 @@ pub fn run() {
             check_cli_tool,
             read_project_file,
             write_project_file,
+            list_directory,
             set_terminal_visibility,
             get_terminal_metrics,
             get_system_metrics,
@@ -587,7 +647,16 @@ pub fn run() {
             swarm_queries::save_execution_draft,
             swarm_queries::list_execution_drafts,
             swarm_queries::discard_execution_draft,
-            swarm_merge::apply_merge_candidate
+            swarm_merge::apply_merge_candidate,
+            swarm_changeset::create_changeset_draft,
+            swarm_changeset::add_file_to_changeset,
+            swarm_changeset::add_review_comment,
+            swarm_changeset::update_file_status,
+            swarm_changeset::get_changeset_details,
+            swarm_changeset::get_all_changesets,
+            swarm_changeset::apply_changeset_transaction,
+            swarm_changeset::rollback_changeset,
+            swarm_changeset::validate_changeset_shadow
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose } from "lucide-react";
+import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2 } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentGrid } from "./components/AgentGrid";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
@@ -7,9 +7,11 @@ import { ActivityFeed } from "./components/ActivityFeed";
 import { TaskCenter } from "./components/TaskCenter";
 import { ProjectMemory } from "./components/ProjectMemory";
 import { SwarmView } from "./components/SwarmView/SwarmView";
+import { AgentReviewCenter } from "./components/ExecutionReview/AgentReviewCenter";
 import { useOrchestratorStore } from "./stores/orchestratorStore";
 import { useSwarmStore } from "./stores/swarmStore";
 import { useBrowserStore } from "./stores/browserStore";
+import { useChangesetStore } from "./stores/changesetStore";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { AnalyticsService } from "./services/analytics";
 import { invoke } from "@tauri-apps/api/core";
@@ -62,20 +64,46 @@ function App() {
   const setSidebarWidth = useOrchestratorStore(s => s.setSidebarWidth);
   const setTopPanelHeight = useOrchestratorStore(s => s.setTopPanelHeight);
 
+  const { 
+    isReviewCenterOpen, 
+    setReviewCenterOpen, 
+    isReviewPanelPinned, 
+    reviewPanelWidth, 
+    setReviewPanelWidth,
+    toggleReviewPanelPinned
+  } = useChangesetStore();
+
   // Enforce Max 8 Terminals Docking Rule
   useEffect(() => {
     if (terminals.length > 8) {
       if (isAgentPanelPinned) setAgentPanelPinned(false);
       if (isTaskPanelPinned) setTaskPanelPinned(false);
+      if (isReviewPanelPinned) toggleReviewPanelPinned();
     }
-  }, [terminals.length, isAgentPanelPinned, isTaskPanelPinned, setAgentPanelPinned, setTaskPanelPinned]);
+  }, [terminals.length, isAgentPanelPinned, isTaskPanelPinned, setAgentPanelPinned, setTaskPanelPinned, isReviewPanelPinned, toggleReviewPanelPinned]);
 
   const [initName, setInitName] = useState("");
+  const [showRenameWsModal, setShowRenameWsModal] = useState(false);
+  const [renameWsId, setRenameWsId] = useState<string | null>(null);
+  const [renameWsName, setRenameWsName] = useState("");
+
+  const handleRenameWs = async () => {
+    if (!renameWsName.trim() || !renameWsId) return;
+    try {
+      await useOrchestratorStore.getState().renameWorkspace(renameWsId, renameWsName);
+      setRenameWsId(null);
+      setRenameWsName("");
+      setShowRenameWsModal(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const [isActivityFeedExpanded, setIsActivityFeedExpanded] = useState(false);
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const [isHeightDragging, setIsHeightDragging] = useState(false);
   const [isSwarmDragging, setIsSwarmDragging] = useState(false);
   const [isBrowserDragging, setIsBrowserDragging] = useState(false);
+  const [isReviewDragging, setIsReviewDragging] = useState(false);
 
   const { isSwarmPanelVisible, swarmPanelHeight, setSwarmPanelHeight } = useSwarmStore();
   const { isBrowserPanelVisible, isBrowserPanelPinned, browserPanelWidth, setBrowserPanelWidth, toggleBrowserPanel, toggleBrowserPanelPinned } = useBrowserStore();
@@ -116,6 +144,7 @@ function App() {
   };
 
   const resizeRef = useRef({ startY: 0, startHeight: 0, lastHeight: 0, lastWidth: 0 });
+  const reviewResizeRef = useRef({ lastWidth: 0 });
   const appRef = useRef<HTMLDivElement>(null);
 
   const startHeightResize = (e: React.MouseEvent) => {
@@ -246,7 +275,7 @@ function App() {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
         const leftBoundary = 56 + (isSidebarVisible ? sidebarWidth : 0) + 300;
-        const rightBoundary = window.innerWidth - 300;
+        const rightBoundary = window.innerWidth - (isReviewCenterOpen && isReviewPanelPinned ? reviewPanelWidth : 0) - 300;
         const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
         const newWidth = window.innerWidth - currentX - 8;
 
@@ -272,7 +301,54 @@ function App() {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isBrowserDragging, isSidebarVisible, sidebarWidth, setBrowserPanelWidth]);
+  }, [isBrowserDragging, isSidebarVisible, sidebarWidth, setBrowserPanelWidth, isReviewCenterOpen, isReviewPanelPinned, reviewPanelWidth]);
+
+  const startReviewResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsReviewDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isReviewDragging) return;
+
+    let frameId: number;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        // Left boundary respects the Activity Bar, dynamic sidebar, and browser width (if pinned)
+        const leftBoundary = 
+          56 + 
+          (isSidebarVisible ? sidebarWidth : 0) + 
+          (isBrowserPanelVisible && isBrowserPanelPinned ? browserPanelWidth : 0) + 
+          300;
+        
+        const rightBoundary = window.innerWidth - 300;
+        const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
+        const newWidth = window.innerWidth - currentX - 8;
+
+        if (appRef.current) {
+          appRef.current.style.setProperty('--review-panel-width', `${newWidth}px`);
+        }
+        reviewResizeRef.current.lastWidth = newWidth;
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      if (reviewResizeRef.current.lastWidth) setReviewPanelWidth(reviewResizeRef.current.lastWidth);
+      setIsReviewDragging(false);
+      useOrchestratorStore.getState().saveSnapshot();
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isReviewDragging, isSidebarVisible, sidebarWidth, isBrowserPanelVisible, isBrowserPanelPinned, browserPanelWidth, setReviewPanelWidth]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -319,6 +395,10 @@ function App() {
       } else if (checkShortcut(shortcuts.toggleBrowser || 'Ctrl+Shift+B')) {
         e.preventDefault();
         useBrowserStore.getState().toggleBrowserPanel();
+      } else if (checkShortcut(shortcuts.toggleReviewCenter || 'Ctrl+Shift+R')) {
+        e.preventDefault();
+        const isOpen = useChangesetStore.getState().isReviewCenterOpen;
+        useChangesetStore.getState().setReviewCenterOpen(!isOpen);
       }
     };
 
@@ -480,9 +560,10 @@ function App() {
       style={{ 
         '--sidebar-width': `${sidebarWidth}px`, 
         '--top-panel-height': `${topPanelHeight}px`,
-        '--browser-panel-width': `${browserPanelWidth}px`
+        '--browser-panel-width': `${browserPanelWidth}px`,
+        '--review-panel-width': `${reviewPanelWidth}px`
       } as React.CSSProperties}
-      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-black ${(isSidebarDragging || isHeightDragging || isSwarmDragging || isBrowserDragging) ? "is-dragging" : ""}`}
+      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-black ${(isSidebarDragging || isHeightDragging || isSwarmDragging || isBrowserDragging || isReviewDragging) ? "is-dragging" : ""}`}
     >
       <ActivityBar />
 
@@ -783,6 +864,14 @@ function App() {
               />
             )}
 
+            {/* Backdrop overlay for unpinned review center panel */}
+            {isReviewCenterOpen && !isReviewPanelPinned && (
+              <div 
+                className="absolute inset-0 z-20 bg-black/20 cursor-default"
+                onClick={() => setReviewCenterOpen(false)}
+              />
+            )}
+
             {isBrowserPanelVisible && isBrowserPanelPinned && (
               <>
                 {/* Resizable Divider Handle (only when pinned) */}
@@ -835,6 +924,68 @@ function App() {
                   style={{ width: 'var(--browser-panel-width)' }}
                 >
                   <BrowserPanel />
+                </div>
+              </>
+            )}
+
+            {/* Agent Review Center Panel (Pinned) */}
+            {isReviewCenterOpen && isReviewPanelPinned && activeWs && (
+              <>
+                {/* Resizable Divider Handle */}
+                <div
+                  onMouseDown={startReviewResize}
+                  onDoubleClick={() => setReviewCenterOpen(false)}
+                  className="w-1.5 hover:w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none z-10"
+                  title="Drag to resize review panel, Double-click to collapse"
+                >
+                  <div className="w-[1px] h-full bg-border-glass group-hover:bg-[#f59e0b]/50 group-active:bg-[#f59e0b] transition-colors duration-150" />
+                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                  </div>
+                </div>
+
+                <div
+                  className={`flex-shrink-0 h-full overflow-hidden glass-panel ${
+                    isReviewDragging ? '' : 'transition-[width] duration-300 ease-out'
+                  }`}
+                  style={{ width: 'var(--review-panel-width)' }}
+                >
+                  <AgentReviewCenter
+                    repoPath={projects.find(p => p.id === selectedProjectId)?.path || activeWs.rootPath}
+                    onClose={() => setReviewCenterOpen(false)}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Agent Review Center Panel (Unpinned/Popup) */}
+            {isReviewCenterOpen && !isReviewPanelPinned && activeWs && (
+              <>
+                {/* Floating Resizer Handle */}
+                <div
+                  onMouseDown={startReviewResize}
+                  className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-45"
+                  style={{ right: 'var(--review-panel-width)' }}
+                >
+                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                  </div>
+                </div>
+
+                <div
+                  className={`!absolute right-0 top-0 bottom-0 z-30 overflow-hidden glass-panel shadow-2xl bg-[#08080a] backdrop-blur-xl border border-border-glass rounded-lg ${
+                    isReviewDragging ? '' : 'transition-[width] duration-300 ease-out'
+                  }`}
+                  style={{ width: 'var(--review-panel-width)' }}
+                >
+                  <AgentReviewCenter
+                    repoPath={projects.find(p => p.id === selectedProjectId)?.path || activeWs.rootPath}
+                    onClose={() => setReviewCenterOpen(false)}
+                  />
                 </div>
               </>
             )}

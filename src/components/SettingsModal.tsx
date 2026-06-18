@@ -490,6 +490,11 @@ export const SettingsModal: React.FC = () => {
                     value={localSettings.shortcuts?.toggleBrowser || ''}
                     onChange={(val) => updateLocal('shortcuts', { ...localSettings.shortcuts, toggleBrowser: val })}
                   />
+                  <ShortcutEditor 
+                    label="Toggle Agent Review Center" 
+                    value={localSettings.shortcuts?.toggleReviewCenter || ''}
+                    onChange={(val) => updateLocal('shortcuts', { ...localSettings.shortcuts, toggleReviewCenter: val })}
+                  />
                   
                   <div className="pt-4 mt-4 text-[10px] text-zinc-500 italic">
                     Note: On macOS, use <kbd className="px-1 bg-[#0f0f15] rounded border border-[#232329]">Cmd (⌘)</kbd> instead of Ctrl.

@@ -197,6 +197,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     toggleAddAgent: 'Ctrl+N',
     openSettings: 'Ctrl+,',
     toggleBrowser: 'Ctrl+Shift+B',
+    toggleReviewCenter: 'Ctrl+Shift+R',
   },
   
   restoreTabsOnStartup: true,
@@ -219,3 +220,4 @@ export interface ActivityLog {
 }
 
 export * from "./browser";
+export * from "./changeset";
