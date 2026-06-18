@@ -12,6 +12,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { DEFAULT_APP_SETTINGS } from '../../types';
 import { TerminalBufferManager } from '../../services/TerminalBufferManager';
 import { terminalMetricsCollector } from '../../services/TerminalMetrics';
 import '@xterm/xterm/css/xterm.css';
@@ -169,10 +170,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
     // Initialize interactive xterm.js instance
     const term = new Terminal({
-      cursorBlink: settings.cursorBlink,
-      cursorStyle: settings.cursorStyle as any,
-      fontSize: settings.fontSize,
-      fontFamily: settings.fontFamily,
+      cursorBlink: settings.appearance?.terminal?.cursorBlink ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorBlink,
+      cursorStyle: (settings.appearance?.terminal?.cursorStyle ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorStyle) as any,
+      fontSize: settings.appearance?.typography?.terminalFontSize ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontSize,
+      fontFamily: settings.appearance?.typography?.terminalFontFamily ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontFamily,
       theme: {
         background: '#000000',
         foreground: '#e2e8f0',
@@ -215,7 +216,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
     // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
     // MUST be called AFTER term.open() according to xterm.js spec!
-    if (settings.hardwareAcceleration && isWebGL2Supported()) {
+    const useGpu = settings?.appearance?.terminal?.hardwareAcceleration ?? settings?.hardwareAcceleration ?? true;
+    if (useGpu && isWebGL2Supported()) {
       try {
         const webglAddon = new WebglAddon();
         
@@ -312,7 +314,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       return true;
     });
 
-    if (settings.copyOnSelect) {
+    const doCopy = settings?.appearance?.terminal?.copyOnSelect ?? settings?.copyOnSelect ?? true;
+    if (doCopy) {
       term.onSelectionChange(() => {
         const selection = term.getSelection();
         if (selection) {
@@ -488,12 +491,22 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   useEffect(() => {
     if (termRef.current) {
       const term = termRef.current;
-      if (term.options.fontSize !== settings.fontSize) term.options.fontSize = settings.fontSize;
-      if (term.options.fontFamily !== settings.fontFamily) term.options.fontFamily = settings.fontFamily;
-      if (term.options.cursorBlink !== settings.cursorBlink) term.options.cursorBlink = settings.cursorBlink;
-      if (term.options.cursorStyle !== settings.cursorStyle) term.options.cursorStyle = settings.cursorStyle as any;
+      const tFs = settings.appearance?.typography?.terminalFontSize ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontSize;
+      const tFf = settings.appearance?.typography?.terminalFontFamily ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontFamily;
+      const tCb = settings.appearance?.terminal?.cursorBlink ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorBlink;
+      const tCs = settings.appearance?.terminal?.cursorStyle ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorStyle;
+
+      if (term.options.fontSize !== tFs) term.options.fontSize = tFs;
+      if (term.options.fontFamily !== tFf) term.options.fontFamily = tFf;
+      if (term.options.cursorBlink !== tCb) term.options.cursorBlink = tCb;
+      if (term.options.cursorStyle !== tCs) term.options.cursorStyle = tCs as any;
     }
-  }, [settings.fontSize, settings.fontFamily, settings.cursorBlink, settings.cursorStyle]);
+  }, [
+    settings.appearance?.typography?.terminalFontSize,
+    settings.appearance?.typography?.terminalFontFamily,
+    settings.appearance?.terminal?.cursorBlink,
+    settings.appearance?.terminal?.cursorStyle
+  ]);
 
   // Fit layout once transitions complete has been removed as ResizeObserver natively handles it.
 

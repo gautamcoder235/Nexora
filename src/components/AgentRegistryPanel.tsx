@@ -82,7 +82,7 @@ export const AgentRegistryPanel: React.FC = () => {
                 Command: <code className="text-zinc-300 bg-black/30 px-1 py-0.5 rounded">{agent.command}</code>
               </div>
               <div className="flex flex-wrap gap-1 mt-2.5">
-                {agent.capabilities.map(cap => (
+                {(agent.capabilities || []).map(cap => (
                   <span key={cap} className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[9px] text-zinc-400 uppercase tracking-wide">
                     {cap}
                   </span>

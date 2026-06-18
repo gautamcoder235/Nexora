@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   FilePlus, Save, Trash2, FileText, MapPin, Eye, Edit3,
-  ChevronRight, Check, Copy, Download
+  ChevronRight, Check, Copy
 } from 'lucide-react';
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { invoke } from "@tauri-apps/api/core";
 import { EventBus } from "../core/events";
+import Editor from '@monaco-editor/react';
 
 interface MemoryFile {
   id: string;
@@ -42,7 +43,6 @@ const INITIAL_FILES: MemoryFile[] = [
 function renderMarkdown(text: string): string {
   if (!text) return '';
 
-  // Strip HTML comments (like metadata tags) before escaping
   let html = text.replace(/<!--[\s\S]*?-->/g, '');
 
   html = html
@@ -82,16 +82,6 @@ function MarkdownPreview({ content }: { content: string }) {
   );
 }
 
-function LineNumbers({ lines, scrollRef }: { lines: number, scrollRef?: React.Ref<HTMLDivElement> }) {
-  return (
-    <div ref={scrollRef} className="select-none text-right pr-3 pt-6 pb-6 text-[#2a2a38] font-mono text-[12px] leading-[26px] shrink-0 w-10 border-r border-[#1a1a22] overflow-hidden">
-      {Array.from({ length: lines }, (_, i) => (
-        <div key={i} className="h-[26px] flex items-center justify-end">{i + 1}</div>
-      ))}
-    </div>
-  );
-}
-
 interface ProjectMemoryProps {
   selectedProjectId: string;
   setSelectedProjectId: (id: string) => void;
@@ -123,7 +113,6 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
   const [addError, setAddError] = useState('');
   const [addingFile, setAddingFile] = useState(false);
   const [copied, setCopied] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load actual files on mount
   useEffect(() => {
@@ -229,60 +218,37 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
     return unsub;
   }, [project, activeId, files]);
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const el = e.currentTarget;
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const newVal = el.value.substring(0, start) + '  ' + el.value.substring(end);
-      updateContent(newVal);
-      requestAnimationFrame(() => {
-        el.selectionStart = el.selectionEnd = start + 2;
-      });
-    }
-  }
-
-  const lineNumbersRef = useRef<HTMLDivElement>(null);
-  
-  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
-    if (lineNumbersRef.current) {
-      lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
-    }
-  };
-
   if (!activeWorkspaceId) return null;
 
   return (
     <div className="flex h-full overflow-hidden">
       {/* File List Sidebar */}
-      {/* Changed w-44 to w-64 as requested */}
-      <aside className="w-64 shrink-0 flex flex-col border-r border-[#1e1e28] bg-[#0a0a0c] overflow-hidden">
-        <div className="flex items-center justify-between px-2.5 h-[46px] shrink-0 border-b border-[#1e1e28]">
-          <span className="text-[9px] font-bold tracking-widest text-[#444458]">FILES</span>
+      <aside className="w-64 shrink-0 flex flex-col border-r border-zinc-800 bg-[#0c0c0e] overflow-hidden">
+        <div className="flex items-center justify-between px-3 h-11 shrink-0 border-b border-zinc-800">
+          <span className="text-[10px] font-bold tracking-wider text-zinc-500">FILES</span>
           <button
             onClick={() => setAddingFile(true)}
             title="New file"
-            className="p-1 rounded text-[#444458] hover:text-[#f59e0b] hover:bg-[#1a1a22] transition-colors"
+            className="p-1 rounded text-zinc-500 hover:text-amber-500 hover:bg-white/5 transition-colors cursor-pointer"
           >
-            <FilePlus size={11} />
+            <FilePlus size={12} />
           </button>
         </div>
 
         {/* New File Input */}
         {addingFile && (
-          <div className="px-2 py-1.5 border-b border-[#1e1e28] bg-[#0d0d10] fade-in">
+          <div className="px-2.5 py-2.5 border-b border-zinc-800 bg-[#0c0c0e]/60 fade-in">
             <input
               autoFocus
               value={newFileName}
               onChange={e => { setNewFileName(e.target.value); setAddError(''); }}
               onKeyDown={e => { if (e.key === 'Enter') addFile(); if (e.key === 'Escape') { setAddingFile(false); setAddError(''); } }}
               placeholder="filename.md"
-              className={`w-full bg-[#111116] border rounded px-2 py-1 text-[11px] text-[#e2e2ea] placeholder-[#333344] outline-none font-mono ${addError ? 'border-red-500/50' : 'border-[#f59e0b]/40'}`}
+              className={`w-full bg-[#121215] border rounded px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-650 outline-none font-mono ${addError ? 'border-red-500/50' : 'border-amber-500/40'}`}
             />
-            <div className="flex gap-1 mt-1">
-              <button onClick={addFile} className="flex-1 py-0.5 rounded bg-[#f59e0b]/15 text-[#f59e0b] text-[10px] hover:bg-[#f59e0b]/25 transition-colors">Create</button>
-              <button onClick={() => { setAddingFile(false); setAddError(''); }} className="flex-1 py-0.5 rounded bg-[#1a1a22] text-[#555568] text-[10px] hover:text-[#e2e2ea] transition-colors">Cancel</button>
+            <div className="flex gap-1.5 mt-2">
+              <button onClick={addFile} className="flex-1 py-1 rounded bg-amber-500/15 text-amber-500 text-[10px] font-bold hover:bg-amber-500/25 transition-colors cursor-pointer">Create</button>
+              <button onClick={() => { setAddingFile(false); setAddError(''); }} className="flex-1 py-1 rounded bg-[#1a1a22] text-zinc-500 text-[10px] hover:text-zinc-200 transition-colors cursor-pointer">Cancel</button>
             </div>
             {addError && (
               <div className="mt-1.5 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-medium truncate text-center fade-in">
@@ -298,52 +264,52 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
             <button
               key={file.id}
               onClick={() => setActiveId(file.id)}
-              className={`group w-full text-left px-3 py-3 transition-all outline-none border-l-2 ${
+              className={`group w-full text-left px-3 py-2.5 transition-all outline-none border-l-2 ${
                 activeId === file.id
-                  ? 'border-[#f59e0b] bg-[#f59e0b]/06'
-                  : 'border-transparent hover:bg-[#111116] hover:border-[#2a2a38]'
+                  ? 'border-amber-500 bg-amber-500/10'
+                  : 'border-transparent hover:bg-zinc-900/40 hover:border-zinc-800'
               }`}
             >
               <div className="flex items-center gap-1.5 mb-1">
-                <FileText size={13} className={activeId === file.id ? 'text-[#f59e0b]' : 'text-[#555568]'} />
-                <span className={`text-[13px] font-mono font-bold truncate ${activeId === file.id ? 'text-[#f59e0b]' : 'text-[#ccccdd]'}`}>
+                <FileText size={13} className={activeId === file.id ? 'text-amber-500' : 'text-zinc-500'} />
+                <span className={`text-[13px] font-mono font-bold truncate ${activeId === file.id ? 'text-amber-500' : 'text-zinc-300'}`}>
                   {file.name}
                 </span>
                 {file.dirty && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b] shrink-0 ml-auto" title="Unsaved changes" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 ml-auto" title="Unsaved changes" />
                 )}
               </div>
-              <p className={`text-[11px] leading-relaxed truncate ${activeId === file.id ? 'text-[#888899]' : 'text-[#555568]'}`}>
+              <p className={`text-[11px] leading-relaxed truncate ${activeId === file.id ? 'text-zinc-400' : 'text-zinc-500'}`}>
                 {file.description}
               </p>
               {activeId === file.id && (
-                <p className="text-[10px] text-[#444458] mt-1">{file.lastSaved}</p>
+                <p className="text-[10px] text-zinc-650 mt-1">{file.lastSaved}</p>
               )}
             </button>
           ))}
         </div>
 
         {/* Location */}
-        <div className="px-2.5 py-2.5 border-t border-[#1e1e28] bg-[#080809]">
-          <p className="text-[9px] font-bold tracking-widest text-[#333344] mb-1">LOCATION:</p>
-          <p className="text-[9px] font-mono text-[#444458] leading-relaxed break-all">
+        <div className="px-3 py-2.5 border-t border-zinc-800 bg-[#08080a]">
+          <p className="text-[9px] font-bold tracking-widest text-zinc-600 mb-1">LOCATION</p>
+          <p className="text-[10px] font-mono text-zinc-500 leading-relaxed break-all">
             {project ? `${project.path}\\${activeFile.name}` : activeFile.name}
           </p>
         </div>
       </aside>
 
       {/* Editor Area */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-[#080809]">
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-[#08080a]">
         {/* Editor Toolbar */}
-        <div className="flex items-center gap-1 px-3 h-[46px] border-b border-[#1e1e28] bg-[#0a0a0c] shrink-0">
+        <div className="flex items-center gap-1 px-3 h-11 border-b border-zinc-800 bg-[#0c0c0e]/60 shrink-0">
           {/* Tabs */}
-          <div className="flex items-center gap-0.5 bg-[#0d0d10] rounded-md border border-[#1e1e28] p-0.5">
+          <div className="flex bg-[#121215] border border-border-glass rounded p-0.5 h-7 items-center">
             <button
               onClick={() => setMode('write')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-medium transition-colors ${
+              className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center gap-1.5 font-medium ${
                 mode === 'write'
-                  ? 'bg-[#f59e0b]/15 text-[#f59e0b]'
-                  : 'text-[#555568] hover:text-[#e2e2ea]'
+                  ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
+                  : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
               }`}
             >
               <Edit3 size={11} />
@@ -351,10 +317,10 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
             </button>
             <button
               onClick={() => setMode('preview')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-medium transition-colors ${
+              className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center gap-1.5 font-medium ${
                 mode === 'preview'
-                  ? 'bg-[#60a5fa]/15 text-[#60a5fa]'
-                  : 'text-[#555568] hover:text-[#e2e2ea]'
+                  ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
+                  : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
               }`}
             >
               <Eye size={11} />
@@ -365,87 +331,134 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
           <div className="flex-1" />
 
           {/* File info */}
-          <span className="text-[10px] font-mono text-[#333344] hidden sm:block">
+          <span className="text-[10px] font-mono text-zinc-500 hidden sm:block">
             {lineCount} lines · {activeFile.content.length} chars
           </span>
 
-          <div className="w-px h-4 bg-[#1e1e28] mx-1" />
+          <div className="w-px h-4 bg-zinc-850 mx-1" />
 
           {/* Actions */}
           <button
             onClick={copyContent}
             title="Copy content"
-            className="flex items-center gap-1 px-2 py-1 rounded text-[#555568] hover:text-[#e2e2ea] hover:bg-[#1a1a22] text-[11px] transition-colors"
+            className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
           >
-            {copied ? <Check size={11} className="text-[#22c55e]" /> : <Copy size={11} />}
+            {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
           </button>
-
-
 
           <button
             onClick={() => deleteFile(activeFile.id)}
             title="Delete file"
-            className="flex items-center gap-1 px-2 py-1 rounded text-[#555568] hover:text-[#ef4444] hover:bg-[#1a1a22] text-[11px] transition-colors disabled:opacity-30"
+            className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-rose-455 hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-30"
             disabled={files.length <= 1}
           >
             <Trash2 size={11} />
           </button>
 
-          <div className="w-px h-4 bg-[#1e1e28] mx-1" />
+          <div className="w-px h-4 bg-zinc-850 mx-1" />
 
           <button
             onClick={handleSaveFile}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 h-7 flex items-center justify-center rounded text-[11px] font-bold transition-all cursor-pointer ${
               saved
                 ? 'bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30'
                 : activeFile.dirty
-                ? 'bg-[#f59e0b] text-black hover:bg-[#d97706]'
-                : 'bg-[#1a1a22] text-[#555568] border border-[#1e1e28] hover:text-[#e2e2ea]'
+                ? 'bg-amber-500 text-black hover:bg-amber-600'
+                : 'bg-[#1a1a22] text-zinc-550 border border-zinc-800 hover:text-zinc-300'
             }`}
           >
             {saved ? <Check size={11} /> : <Save size={11} />}
             {saved ? 'Saved!' : 'Save Memory'}
           </button>
-
-
         </div>
 
         {/* Content Area */}
         {mode === 'write' ? (
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            <LineNumbers lines={lineCount} scrollRef={lineNumbersRef} />
-            <div className="flex-1 overflow-auto">
-              <textarea
-                ref={textareaRef}
-                value={activeFile.content}
-                onChange={e => updateContent(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onScroll={handleScroll}
-                spellCheck={false}
-                wrap="off"
-                className="w-full h-full m-0 bg-transparent text-[#ccccdd] font-mono text-[12px] leading-[26px] px-6 py-6 outline-none resize-none caret-[#f59e0b] selection:bg-[#f59e0b]/20 whitespace-pre"
-              />
-            </div>
+          <div className="flex-grow flex flex-1 min-h-0 overflow-hidden bg-[#08080a]">
+            <Editor
+              height="100%"
+              language="markdown"
+              value={activeFile.content}
+              onChange={(val) => updateContent(val || '')}
+              theme="vscode-dark"
+              beforeMount={(monaco) => {
+                monaco.editor.defineTheme('vscode-dark', {
+                  base: 'vs-dark',
+                  inherit: true,
+                  rules: [
+                    { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+                    { token: 'keyword', foreground: 'C586C0' },
+                    { token: 'string', foreground: 'CE9178' },
+                    { token: 'number', foreground: 'B5CEA8' },
+                    { token: 'regexp', foreground: 'D16969' },
+                    { token: 'type', foreground: '4EC9B0' },
+                    { token: 'class', foreground: '4EC9B0' },
+                    { token: 'function', foreground: 'DCDCAA' },
+                    { token: 'variable', foreground: '9CDCFE' },
+                    { token: 'tag', foreground: '569CD6' },
+                    { token: 'tag.id', foreground: '9CDCFE' },
+                    { token: 'tag.class', foreground: '9CDCFE' },
+                    { token: 'attribute.name', foreground: '9CDCFE' },
+                    { token: 'attribute.value', foreground: 'CE9178' }
+                  ],
+                  colors: {
+                    'editor.background': '#08080a',
+                    'editor.foreground': '#D4D4D4',
+                    'editorCursor.foreground': '#AEAFAD',
+                    'editor.lineHighlightBackground': '#141416',
+                    'editorLineNumber.foreground': '#858585',
+                    'editorLineNumber.activeForeground': '#C6C6C6',
+                    'editor.selectionBackground': '#264F78',
+                    'minimap.background': '#08080a',
+                    'editorIndentGuide.background': '#2c2c2e',
+                    'editorIndentGuide.background1': '#2c2c2e',
+                    'editorIndentGuide.activeBackground': '#4e4e50',
+                    'editorIndentGuide.activeBackground1': '#4e4e50'
+                  }
+                });
+              }}
+              options={{
+                readOnly: false,
+                minimap: { enabled: true },
+                fontSize: 13,
+                fontFamily: 'Consolas, "Courier New", monospace',
+                lineNumbers: 'on',
+                folding: true,
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                renderIndentGuides: true,
+                guides: {
+                  indentation: true
+                },
+                scrollbar: {
+                  vertical: 'visible',
+                  horizontal: 'visible',
+                  useShadows: false,
+                  verticalScrollbarSize: 10,
+                  horizontalScrollbarSize: 10
+                }
+              }}
+            />
           </div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-hidden fade-in">
+          <div className="flex-grow flex-1 min-h-0 overflow-hidden fade-in bg-[#08080a]">
             <MarkdownPreview content={activeFile.content} />
           </div>
         )}
 
         {/* Status bar */}
-        <div className="flex items-center justify-between px-3 py-1 border-t border-[#1a1a22] bg-[#080809] shrink-0">
+        <div className="flex items-center justify-between px-3 py-1 border-t border-zinc-800 bg-[#08080a] shrink-0 h-6">
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 text-[10px] font-mono text-[#f59e0b]">
+            <span className="flex items-center gap-1 text-[10px] font-mono text-amber-500">
               <ChevronRight size={9} />
               {activeFile.name}
             </span>
             {activeFile.dirty && (
-              <span className="text-[10px] text-[#555568]">● unsaved changes</span>
+              <span className="text-[10px] text-zinc-500">● unsaved changes</span>
             )}
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-mono text-[#333344]">Markdown</span>
+            <span className="text-[10px] font-mono text-zinc-600">Markdown</span>
             <span className="text-[10px] font-mono text-[#333344]">UTF-8</span>
             <span className="flex items-center gap-1 text-[10px] font-mono text-[#333344]">
               <MapPin size={8} />
@@ -456,19 +469,19 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
       </div>
 
       <style>{`
-        .markdown-preview h1.md-h1 { font-size: 1.5rem; font-weight: 700; color: #e2e2ea; margin: 1.5rem 0 0.75rem; border-bottom: 1px solid #1e1e28; padding-bottom: 0.5rem; }
+        .markdown-preview h1.md-h1 { font-size: 1.5rem; font-weight: 700; color: #e2e2ea; margin: 1.5rem 0 0.75rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.5rem; }
         .markdown-preview h2.md-h2 { font-size: 1.1rem; font-weight: 600; color: #ccccdd; margin: 1.25rem 0 0.5rem; }
         .markdown-preview h3.md-h3 { font-size: 0.95rem; font-weight: 600; color: #aaaacc; margin: 1rem 0 0.4rem; }
         .markdown-preview strong.md-bold { color: #f59e0b; font-weight: 600; }
         .markdown-preview em.md-em { color: #888899; font-style: italic; }
-        .markdown-preview code.md-code { background: #1a1a22; border: 1px solid #2a2a38; color: #22c55e; font-family: 'JetBrains Mono', monospace; font-size: 0.8em; padding: 0.1em 0.4em; border-radius: 3px; }
-        .markdown-preview .md-codeblock { background: #080809; border: 1px solid #1e1e28; border-radius: 6px; margin: 0.75rem 0; overflow: hidden; }
-        .markdown-preview .md-codeblock .md-lang { display: block; background: #0d0d10; padding: 0.25rem 0.75rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; color: #f59e0b; border-bottom: 1px solid #1a1a22; }
+        .markdown-preview code.md-code { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); color: #22c55e; font-family: 'JetBrains Mono', monospace; font-size: 0.8em; padding: 0.1em 0.4em; border-radius: 3px; }
+        .markdown-preview .md-codeblock { background: #08080a; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; margin: 0.75rem 0; overflow: hidden; }
+        .markdown-preview .md-codeblock .md-lang { display: block; background: #0c0c0e; padding: 0.25rem 0.75rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; color: #f59e0b; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
         .markdown-preview .md-codeblock pre { margin: 0; padding: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #22c55e; line-height: 1.6; white-space: pre; overflow-x: auto; }
         .markdown-preview .md-li { padding: 0.15rem 0; display: flex; gap: 0.5rem; }
         .markdown-preview .md-bullet { color: #f59e0b; font-size: 0.8em; margin-top: 0.2em; }
-        .markdown-preview .md-blockquote { border-left: 2px solid #f59e0b; padding: 0.25rem 0.75rem; color: #888899; background: #0d0d10; margin: 0.5rem 0; }
-        .markdown-preview .md-hr { border: none; border-top: 1px solid #1e1e28; margin: 1.25rem 0; }
+        .markdown-preview .md-blockquote { border-left: 2px solid #f59e0b; padding: 0.25rem 0.75rem; color: #888899; background: #0c0c0e; margin: 0.5rem 0; }
+        .markdown-preview .md-hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 1.25rem 0; }
         .markdown-preview .md-check { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
         .markdown-preview .md-checkbox { font-family: 'JetBrains Mono', monospace; font-size: 0.8em; color: #555568; }
         .markdown-preview .md-check.done { color: #22c55e; }

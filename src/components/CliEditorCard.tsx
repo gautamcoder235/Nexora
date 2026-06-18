@@ -70,7 +70,7 @@ export const CliEditorCard: React.FC<CliEditorCardProps> = ({
           <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-wide">Agent Profile Name</label>
           <input 
             type="text" 
-            value={cli.name}
+            value={cli.name || ''}
             onChange={(e) => onUpdate('name', e.target.value)}
             className="glass-input"
             placeholder="e.g. My Linter"
@@ -82,7 +82,7 @@ export const CliEditorCard: React.FC<CliEditorCardProps> = ({
           <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-wide">Command / Executable</label>
           <input 
             type="text" 
-            value={cli.cliCommand}
+            value={cli.cliCommand || ''}
             onChange={(e) => onUpdate('cliCommand', e.target.value)}
             className="glass-input font-mono"
             placeholder="e.g. npx"
@@ -92,7 +92,7 @@ export const CliEditorCard: React.FC<CliEditorCardProps> = ({
           <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-wide">Arguments (space separated)</label>
           <input 
             type="text" 
-            value={cli.defaultArgs.join(' ')}
+            value={(cli.defaultArgs || []).join(' ')}
             onChange={(e) => onUpdate('defaultArgs', e.target.value.split(' ').filter(Boolean))}
             className="glass-input font-mono"
             placeholder="e.g. eslint --fix ."
@@ -107,7 +107,7 @@ export const CliEditorCard: React.FC<CliEditorCardProps> = ({
             <label key={cap} className="flex items-center gap-1.5 text-zinc-400 cursor-pointer hover:text-zinc-200">
               <input
                 type="checkbox"
-                checked={(caps as any)[cap]}
+                checked={!!(caps as any)[cap]}
                 onChange={(e) => onUpdate('capabilities', { ...caps, [cap]: e.target.checked })}
                 className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
               />

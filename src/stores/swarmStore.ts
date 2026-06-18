@@ -35,7 +35,7 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
   drafts: [],
   selectedExecutionId: null,
   isSwarmPanelVisible: false,
-  swarmPanelHeight: 360,
+  swarmPanelHeight: 500,
   filterStatus: "all",
   isLaunchPanelOpen: false,
   isLoading: false,

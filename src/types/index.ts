@@ -3,6 +3,7 @@ export interface Workspace {
   name: string;
   rootPath: string; // Base directory on machine
   projectIds: string[];
+  lastOpened?: number; // timestamp in ms
 }
 
 export interface Project {
@@ -57,6 +58,7 @@ export interface AgentProfile {
   runtimeSeconds: number;
   lastActive: string; // ISO Timestamp
   startedAt?: number; // timestamp when running started
+  tokensUsed?: number; // accumulated simulated token usage
   role?: string;
   startupInstructions?: string[];
   behavioralRules?: string[];
@@ -135,14 +137,100 @@ export interface CustomCLI {
   checkCmd?: string;
 }
 
-export interface AppSettings {
-  fontSize: number;
+export interface ThemeSettings {
+  theme: string; // OLED | Midnight | Slate | Graphite | Light
+  accentColor: string; // e.g. amber, blue, emerald, red, violet, custom
+  customAccentColor?: string; // hex color if accentColor === 'custom'
+  mode: 'dark' | 'light' | 'system';
+  density: 'compact' | 'comfortable' | 'spacious';
+  transparency: number; // 0 to 100
+  backgroundBlur: 'low' | 'medium' | 'high';
+  animationLevel: 'none' | 'reduced' | 'normal' | 'enhanced';
+  cornerRadius: 'sharp' | 'small' | 'medium' | 'large';
+}
+
+export interface TypographySettings {
   fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  fontWeight: string;
+  codeFontFamily: string;
+  codeFontSize: number;
+  terminalFontFamily: string;
+  terminalFontSize: number;
+  letterSpacing?: string;
+}
+
+export interface WorkspaceAppearanceSettings {
+  showGitBranch?: boolean;
+  showMinimap?: boolean;
+  sidebarPosition?: 'left' | 'right';
+  paneSpacing?: number;
+  showActivityBar?: boolean;
+  showStatusBar?: boolean;
+}
+
+export interface TerminalAppearanceSettings {
   cursorStyle: 'block' | 'bar' | 'underline';
   cursorBlink: boolean;
-  copyOnSelect: boolean;
   hardwareAcceleration: boolean;
   terminalScrollbackLimit: number;
+  copyOnSelect: boolean;
+  bellStyle?: 'none' | 'sound' | 'visual';
+}
+
+export interface AgentAppearanceSettings {
+  avatarStyle?: 'initials' | 'icon' | 'identicon';
+  showAgentStatusBadge?: boolean;
+  animateAgentTransitions?: boolean;
+  compactCards?: boolean;
+}
+
+export interface AccessibilitySettings {
+  screenReaderMode?: boolean;
+  highContrastMode?: boolean;
+  reducedMotion?: boolean;
+  increaseContrast?: boolean;
+  accessibleTermBell?: boolean;
+}
+
+export interface WorkspaceLayoutSettings {
+  layoutMode?: 'grid' | 'vertical' | 'horizontal' | 'flexible';
+  sidebarWidth?: number;
+  topPanelHeight?: number;
+  bottomPanelHeight?: number;
+  showTerminalTitleBar?: boolean;
+}
+
+export interface AdvancedAppearanceSettings {
+  customCss?: string;
+  gpuRendering?: boolean;
+  enableShaders?: boolean;
+  developerMode?: boolean;
+}
+
+export interface AppearanceSettings {
+  theme: ThemeSettings;
+  typography: TypographySettings;
+  workspace: WorkspaceAppearanceSettings;
+  terminal: TerminalAppearanceSettings;
+  agent: AgentAppearanceSettings;
+  accessibility: AccessibilitySettings;
+  layout: WorkspaceLayoutSettings;
+  advanced: AdvancedAppearanceSettings;
+}
+
+export interface SemanticStatusTokens {
+  agentStatusIdle: string;
+  agentStatusWorking: string;
+  agentStatusPaused: string;
+  agentStatusError: string;
+  agentStatusSuccess: string;
+}
+
+export interface AppSettings {
+  version: number;
+  appearance: AppearanceSettings;
 
   defaultShell: string;
   shellArgs: string[];
@@ -156,6 +244,15 @@ export interface AppSettings {
   confirmBeforeClosing: boolean;
   // 0 = never suspend background workspace PTYs; any positive value = minutes of inactivity before suspension
   backgroundWorkspaceSuspendMinutes: number;
+
+  // Legacy fields preserved for seamless migration and back-compat
+  fontSize?: number;
+  fontFamily?: string;
+  cursorStyle?: 'block' | 'bar' | 'underline';
+  cursorBlink?: boolean;
+  copyOnSelect?: boolean;
+  hardwareAcceleration?: boolean;
+  terminalScrollbackLimit?: number;
 }
 
 const isWindows = typeof window !== 'undefined' && (
@@ -177,13 +274,72 @@ export const getDefaultCustomCLIs = (): CustomCLI[] => [
 ];
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  fontSize: 12,
-  fontFamily: 'courier-new, courier, monospace',
-  cursorStyle: 'block',
-  cursorBlink: true,
-  copyOnSelect: true,
-  hardwareAcceleration: true,
-  terminalScrollbackLimit: 50000,
+  version: 2,
+  appearance: {
+    theme: {
+      theme: 'Midnight',
+      accentColor: 'amber',
+      mode: 'dark',
+      density: 'comfortable',
+      transparency: 90,
+      backgroundBlur: 'medium',
+      animationLevel: 'normal',
+      cornerRadius: 'medium'
+    },
+    typography: {
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      fontSize: 13,
+      lineHeight: 1.5,
+      fontWeight: '400',
+      codeFontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      codeFontSize: 12,
+      terminalFontFamily: "courier-new, courier, monospace",
+      terminalFontSize: 12,
+      letterSpacing: '0'
+    },
+    workspace: {
+      showGitBranch: true,
+      showMinimap: false,
+      sidebarPosition: 'left',
+      paneSpacing: 8,
+      showActivityBar: true,
+      showStatusBar: true
+    },
+    terminal: {
+      cursorStyle: 'block',
+      cursorBlink: true,
+      hardwareAcceleration: true,
+      terminalScrollbackLimit: 50000,
+      copyOnSelect: true,
+      bellStyle: 'none'
+    },
+    agent: {
+      avatarStyle: 'initials',
+      showAgentStatusBadge: true,
+      animateAgentTransitions: true,
+      compactCards: false
+    },
+    accessibility: {
+      screenReaderMode: false,
+      highContrastMode: false,
+      reducedMotion: false,
+      increaseContrast: false,
+      accessibleTermBell: false
+    },
+    layout: {
+      layoutMode: 'grid',
+      sidebarWidth: 490,
+      topPanelHeight: 320,
+      bottomPanelHeight: 240,
+      showTerminalTitleBar: true
+    },
+    advanced: {
+      customCss: '',
+      gpuRendering: true,
+      enableShaders: false,
+      developerMode: false
+    }
+  },
   
   defaultShell: 'auto', // 'auto' means backend resolves default (e.g. bash on unix, cmd on win)
   shellArgs: [],
@@ -202,7 +358,16 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   
   restoreTabsOnStartup: true,
   confirmBeforeClosing: true,
-  backgroundWorkspaceSuspendMinutes: 0, // 0 = never auto-suspend background workspace terminals
+  backgroundWorkspaceSuspendMinutes: 0,
+
+  // Legacy defaults for back-compat safety
+  fontSize: 12,
+  fontFamily: 'courier-new, courier, monospace',
+  cursorStyle: 'block',
+  cursorBlink: true,
+  copyOnSelect: true,
+  hardwareAcceleration: true,
+  terminalScrollbackLimit: 50000,
 };
 
 export type ActivityLogSource = 'agent' | 'terminal' | 'workspace' | 'system';

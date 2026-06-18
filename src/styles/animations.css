@@ -382,6 +382,19 @@
   transition: opacity var(--transition-fast);
 }
 
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) translateX(0px);
+  }
+  50% {
+    transform: translateY(-12px) translateX(8px);
+  }
+}
+
+.animate-float {
+  animation: float 10s ease-in-out infinite;
+}
+
 /* ============================================================
  * Reduced Motion — Accessibility
  * ============================================================ */

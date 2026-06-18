@@ -1,5 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
+import { DEFAULT_APP_SETTINGS } from '../types';
 
 export interface Chunk {
   sequenceId: number;
@@ -32,6 +33,9 @@ export class TerminalBufferManager {
 
   private isListening = false;
 
+  private pendingTokens = new Map<string, number>();
+  private commitTimeout: any = null;
+
   private constructor() {}
 
   public static getInstance(): TerminalBufferManager {
@@ -55,11 +59,11 @@ export class TerminalBufferManager {
     );
 
     // Initialize limit from store
-    this.maxBufferBytes = useOrchestratorStore.getState().settings.terminalScrollbackLimit * 150;
+    this.maxBufferBytes = (useOrchestratorStore.getState().settings?.appearance?.terminal?.terminalScrollbackLimit || DEFAULT_APP_SETTINGS.appearance.terminal.terminalScrollbackLimit) * 150;
 
     // Listen to settings changes dynamically
     useOrchestratorStore.subscribe((state) => {
-      const newLimitBytes = state.settings.terminalScrollbackLimit * 150; // Approx 150 bytes per line with ANSI
+      const newLimitBytes = (state.settings?.appearance?.terminal?.terminalScrollbackLimit || DEFAULT_APP_SETTINGS.appearance.terminal.terminalScrollbackLimit) * 150; // Approx 150 bytes per line with ANSI
       if (this.maxBufferBytes !== newLimitBytes) {
         this.maxBufferBytes = newLimitBytes;
         // Trim existing buffers to new limit immediately
@@ -87,6 +91,16 @@ export class TerminalBufferManager {
     buffer.totalBytes += new Blob([data]).size;
 
     this.trimBuffer(buffer);
+
+    // Accumulate stdout tokens (approx 4 characters per token)
+    const estimatedTokens = Math.ceil(data.length / 4);
+    this.pendingTokens.set(sessionId, (this.pendingTokens.get(sessionId) || 0) + estimatedTokens);
+
+    if (!this.commitTimeout) {
+      this.commitTimeout = setTimeout(() => {
+        this.commitPendingTokens();
+      }, 1000);
+    }
 
     const visibility = this.visibilities.get(sessionId) || 'Visible';
 
@@ -203,5 +217,26 @@ export class TerminalBufferManager {
     };
 
     this.replayAnimFrameIds.set(sessionId, requestAnimationFrame(replayBatch));
+  }
+
+  private commitPendingTokens() {
+    this.commitTimeout = null;
+    if (this.pendingTokens.size === 0) return;
+
+    const store = useOrchestratorStore.getState();
+    const updates: Record<string, number> = {};
+
+    this.pendingTokens.forEach((tokens, sessionId) => {
+      const term = store.terminals.find(t => t.id === sessionId);
+      if (term && term.agentId) {
+        updates[term.agentId] = (updates[term.agentId] || 0) + tokens;
+      }
+    });
+
+    this.pendingTokens.clear();
+
+    if (Object.keys(updates).length > 0) {
+      store.incrementAgentTokens(updates);
+    }
   }
 }

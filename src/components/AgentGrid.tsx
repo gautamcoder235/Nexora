@@ -19,6 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
+import { useChangesetStore } from "../stores/changesetStore";
 import { AgentProfile, Project } from "../types";
 import { PluginRegistry } from "../plugins";
 import { CliSpawnerPanel } from "./CliSpawnerPanel";
@@ -47,6 +48,7 @@ interface SortableAgentCardProps {
   onDuplicate: () => void;
   onRestart: () => void;
   onOpenLogs: () => void;
+  onInspect: () => void;
 }
 
 const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
@@ -67,15 +69,14 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
   onEdit,
   onDuplicate,
   onRestart,
-  onOpenLogs
+  onOpenLogs,
+  onInspect
 }) => {
-  const startRender = performance.now();
-  const renderCountRef = useRef(0);
-  renderCountRef.current++;
-
-  useEffect(() => {
-    // Removed profile logging
-  });
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ x: number; y: number } | null>(null);
+  const [isEditingProject, setIsEditingProject] = useState(false);
+  const [runtimeSeconds, setRuntimeSeconds] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const {
     attributes,
@@ -93,11 +94,6 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
   });
 
   const isHighlighted = dragOverId === agent.id && !isDragging;
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState<{ x: number; y: number } | null>(null);
-  const [isEditingProject, setIsEditingProject] = useState(false);
-  const [runtimeSeconds, setRuntimeSeconds] = useState(0);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isRunning && agent.startedAt) {
@@ -130,10 +126,6 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showDropdown]);
-
-  // Pseudo CPU/RAM metrics when running to make layout feel alive
-  const pseudoCpu = isRunning ? ((agent.id.charCodeAt(0) + (agent.id.charCodeAt(1) || 0)) % 5) + 3.2 : 0;
-  const pseudoMem = isRunning ? ((agent.id.charCodeAt(2) + (agent.id.charCodeAt(3) || 0)) % 30) + 48 : 0;
 
   const formatLastActiveHours = (isoString: string) => {
     if (!isoString) return "Never";
@@ -194,313 +186,291 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
     <div ref={setNodeRef} style={style} className="h-full relative">
       <div
         onClick={() => {
-          if (isRunning) {
-            EventBus.publish("terminal:highlight", { agentId: agent.id });
-          }
+          onInspect();
         }}
-        className={`glass-card p-3 flex flex-col justify-between gap-3 transition-all duration-250 relative min-h-[195px] h-full overflow-visible select-none ${
+        className={`glass-card p-3 flex flex-col justify-between gap-3 transition-all duration-250 relative min-h-[195px] h-full overflow-visible select-none cursor-pointer ${
           isRunning ? "glass-card--active" : ""
         } ${isHighlighted ? "border-accent-primary shadow-[var(--shadow-glow)]" : ""} ${
           isDragging ? "shadow-2xl border-accent-primary/40 opacity-80 scale-[0.97]" : "scale-100"
         }`}
       >
-      {/* 1. TOP HEADER ZONE */}
-      <div className="flex items-start gap-1.5 flex-shrink-0 min-w-0">
-        <div
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-zinc-550 hover:text-accent-primary p-0.5 rounded transition-colors flex-shrink-0 touch-none mt-[1.5px]"
-          title="Drag to reorder"
-        >
-          <GripVertical size={11} />
-        </div>
-        <div className="flex flex-col min-w-0 flex-1 gap-0.5">
-          <span className="text-[13px] font-bold text-zinc-100 truncate block leading-snug" title={agent.name}>
-            {agent.name}
-          </span>
-          <span className="text-[9.5px] text-zinc-500 truncate block font-sans">
-            {agent.role || agent.groupId || "AI Coding Assistant"}
-          </span>
-        </div>
-      </div>
-
-      {/* 2. CAPABILITIES */}
-      <div className="flex flex-wrap gap-1">
-        {agent.capabilities.coding && (
-          <span className="glass-badge text-[8.5px]">
-            ⌨️ Coding
-          </span>
-        )}
-        {agent.capabilities.review && (
-          <span className="glass-badge text-[8.5px]">
-            🔍 Review
-          </span>
-        )}
-        {agent.capabilities.planning && (
-          <span className="glass-badge glass-badge--accent text-[8.5px]">
-            🧠 Planning
-          </span>
-        )}
-        {agent.capabilities.testing && (
-          <span className="glass-badge text-[8.5px]">
-            🧪 Testing
-          </span>
-        )}
-      </div>
-
-      {/* 3. METRICS ROW */}
-      <div className="grid grid-cols-3 gap-1 text-center bg-black/20 border border-border-glass rounded-md p-1.5 flex-shrink-0 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tasks</span>
-          <span className="text-[11px] font-semibold text-zinc-200 truncate">{tasksCount}</span>
-        </div>
-        <div className="flex flex-col gap-0.5 border-x border-border-glass min-w-0">
-          <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tokens</span>
-          <span className="text-[11px] font-semibold text-zinc-200 truncate">
-            {isRunning ? "12K" : "84K"}
-          </span>
-        </div>
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Activity</span>
-          <span className="text-[11px] font-semibold text-zinc-200 truncate">
-            {isRunning ? formatRuntime(runtimeSeconds) : formatLastActiveHours(agent.lastActive)}
-          </span>
-        </div>
-      </div>
-
-      {/* 4. FOOTER ZONE */}
-      <div className="flex flex-col gap-2.5 flex-shrink-0">
-        <div className="flex items-center justify-between text-[10px] select-none gap-2">
-          {isEditingProject ? (
-            <div className="flex flex-col min-w-0 flex-1">
-              <select
-                value={agent.projectId || ""}
-                onChange={(e) => {
-                  onProjectChange(agent.id, e.target.value);
-                  setIsEditingProject(false);
-                }}
-                onBlur={() => setIsEditingProject(false)}
-                onClick={(e) => e.stopPropagation()}
-                autoFocus
-                className="glass-input text-[9.5px] text-zinc-200 font-semibold font-mono rounded !pl-1.5 !pr-6 !py-0.5 outline-none cursor-pointer max-w-[120px] truncate"
-              >
-                <option value="" className="bg-[#0c0c0e]">Unassigned</option>
-                {activeProjects.map(p => (
-                  <option key={p.id} value={p.id} className="bg-[#0c0c0e]">{p.name}</option>
-                ))}
-              </select>
-              <span className="text-[8.5px] text-zinc-500 font-sans mt-0.5">
-                Select Project
-              </span>
-            </div>
-          ) : (
-            <div 
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsEditingProject(true);
-              }}
-              className="flex flex-col cursor-pointer group/proj min-w-0 flex-1"
-              title="Click to edit project assignment"
-            >
-              <span className="text-[11px] font-semibold text-zinc-200 group-hover/proj:text-accent-primary transition-colors truncate block">
-                {proj ? proj.name : "Unassigned"}
-              </span>
-              <span className="text-[9px] text-zinc-500 font-sans">
-                Current Project
-              </span>
-            </div>
-          )}
-
-          {/* Moved Status Pill here next to project details */}
-          {renderStatusIndicator(agent.status)}
-        </div>
-
-        {/* Card Footer Actions */}
-        <div className="mt-4 pt-3 border-t border-border-glass flex flex-col gap-2 relative">
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            {/* Main Action Button */}
-            <div className="flex-1 min-w-0">
-              {isRunning ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStop(agent);
-                  }}
-                  className="glass-button glass-button--danger w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
-                >
-                  <Square size={10} className="fill-current shrink-0" />
-                  <span className="truncate">Stop</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStart(agent);
-                  }}
-                  className="glass-button glass-button--accent w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
-                >
-                  <Play size={10} className="fill-current shrink-0" />
-                  <span className="truncate">Launch</span>
-                </button>
-              )}
-            </div>
-
-            {/* Quick Actions Menu Trigger */}
-            <div>
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  
-                  if (showDropdown) {
-                    setShowDropdown(false);
-                    return;
-                  }
-
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const popupWidth = 160;
-                  const popupHeight = 180;
-                  
-                  // Position to the right of the button by default
-                  let xPos = rect.right + 8;
-                  // If it goes off the right edge, position to the left instead
-                  if (xPos + popupWidth > window.innerWidth) {
-                    xPos = rect.left - popupWidth - 8;
-                  }
-
-                  // Align top of popup with top of button by default
-                  let yPos = rect.top;
-                  // If it goes off the bottom edge, shift it up
-                  if (yPos + popupHeight > window.innerHeight) {
-                    yPos = window.innerHeight - popupHeight - 12; // 12px padding from bottom
-                  }
-
-                  setDropdownPos({ x: xPos, y: yPos });
-                  setShowDropdown(true);
-                }}
-                className={`p-2 rounded border border-border-glass h-[34px] w-[34px] flex items-center justify-center transition-colors cursor-pointer ${showDropdown ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 text-zinc-400 hover:text-zinc-200'}`}
-                title="More Actions"
-              >
-                <MoreVertical size={12} />
-              </button>
-            </div>
+        {/* TOP HEADER ZONE */}
+        <div className="flex items-start gap-1.5 flex-shrink-0 min-w-0">
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-zinc-550 hover:text-accent-primary p-0.5 rounded transition-colors flex-shrink-0 touch-none mt-[1.5px]"
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to reorder"
+          >
+            <GripVertical size={11} />
           </div>
-            
-          {showDropdown && dropdownPos && createPortal(
-            <>
-              {/* Invisible backdrop to catch clicks outside */}
+          <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+            <span className="text-[13px] font-bold text-zinc-100 truncate block leading-snug" title={agent.name}>
+              {agent.name}
+            </span>
+            <span className="text-[9.5px] text-zinc-500 truncate block font-sans">
+              {agent.role || agent.groupId || "AI Coding Assistant"}
+            </span>
+          </div>
+        </div>
+
+        {/* CAPABILITIES */}
+        <div className="flex flex-wrap gap-1">
+          {agent.capabilities.coding && (
+            <span className="glass-badge text-[8.5px]">
+              ⌨️ Coding
+            </span>
+          )}
+          {agent.capabilities.review && (
+            <span className="glass-badge text-[8.5px]">
+              🔍 Review
+            </span>
+          )}
+          {agent.capabilities.planning && (
+            <span className="glass-badge glass-badge--accent text-[8.5px]">
+              🧠 Planning
+            </span>
+          )}
+          {agent.capabilities.testing && (
+            <span className="glass-badge text-[8.5px]">
+              🧪 Testing
+            </span>
+          )}
+        </div>
+
+        {/* METRICS ROW */}
+        <div className="grid grid-cols-3 gap-1 text-center bg-black/20 border border-border-glass rounded-md p-1.5 flex-shrink-0 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tasks</span>
+            <span className="text-[11px] font-semibold text-zinc-200 truncate">{tasksCount}</span>
+          </div>
+          <div className="flex flex-col gap-0.5 border-x border-border-glass min-w-0">
+            <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tokens</span>
+            <span className="text-[11px] font-semibold text-zinc-200 truncate">
+              {isRunning ? "12K" : "84K"}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Activity</span>
+            <span className="text-[11px] font-semibold text-zinc-200 truncate">
+              {isRunning ? formatRuntime(runtimeSeconds) : formatLastActiveHours(agent.lastActive)}
+            </span>
+          </div>
+        </div>
+
+        {/* FOOTER ZONE */}
+        <div className="flex flex-col gap-2.5 flex-shrink-0">
+          <div className="flex items-center justify-between text-[10px] select-none gap-2">
+            {isEditingProject ? (
+              <div className="flex flex-col min-w-0 flex-1">
+                <select
+                  value={agent.projectId || ""}
+                  onChange={(e) => {
+                    onProjectChange(agent.id, e.target.value);
+                    setIsEditingProject(false);
+                  }}
+                  onBlur={() => setIsEditingProject(false)}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                  className="glass-input text-[9.5px] text-zinc-200 font-semibold font-mono rounded !pl-1.5 !pr-6 !py-0.5 outline-none cursor-pointer max-w-[120px] truncate"
+                >
+                  <option value="" className="bg-[#0c0c0e]">Unassigned</option>
+                  {activeProjects.map(p => (
+                    <option key={p.id} value={p.id} className="bg-[#0c0c0e]">{p.name}</option>
+                  ))}
+                </select>
+                <span className="text-[8.5px] text-zinc-500 font-sans mt-0.5">
+                  Select Project
+                </span>
+              </div>
+            ) : (
               <div 
-                className="fixed inset-0 z-[9998]" 
-                onPointerDown={(e) => { 
-                  e.stopPropagation(); 
-                  setShowDropdown(false); 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditingProject(true);
                 }}
-              />
-              <div 
-                ref={dropdownRef}
-                className="fixed bg-[#18181b] shadow-[0_0_24px_rgba(0,0,0,0.8)] p-1.5 text-[10px] animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-0.5 border border-border-glass/60 rounded-md z-[9999]"
-                style={{
-                  top: dropdownPos.y,
-                  left: dropdownPos.x,
-                  width: '160px'
-                }}
-                onClick={(e) => e.stopPropagation()}
+                className="flex flex-col cursor-pointer group/proj min-w-0 flex-1"
+                title="Click to edit project assignment"
               >
+                <span className="text-[11px] font-semibold text-zinc-200 group-hover/proj:text-accent-primary transition-colors truncate block">
+                  {proj ? proj.name : "Unassigned"}
+                </span>
+                <span className="text-[9px] text-zinc-500 font-sans">
+                  Current Project
+                </span>
+              </div>
+            )}
+
+            {renderStatusIndicator(agent.status)}
+          </div>
+
+          {/* Card Footer Actions */}
+          <div className="pt-3 border-t border-border-glass flex gap-2 relative" onClick={(e) => e.stopPropagation()}>
+            <div className="flex-grow flex items-center justify-between gap-2 min-w-0">
+              <div className="flex-1 min-w-0">
+                {isRunning ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStop(agent);
+                    }}
+                    className="glass-button glass-button--danger w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
+                  >
+                    <Square size={10} className="fill-current shrink-0" />
+                    <span className="truncate">Stop</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStart(agent);
+                    }}
+                    className="glass-button glass-button--accent w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
+                  >
+                    <Play size={10} className="fill-current shrink-0" />
+                    <span className="truncate">Launch</span>
+                  </button>
+                )}
+              </div>
+
+              <div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowDropdown(false);
-                    onEdit();
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    
+                    if (showDropdown) {
+                      setShowDropdown(false);
+                      return;
+                    }
+
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const popupWidth = 160;
+                    const popupHeight = 180;
+                    
+                    let xPos = rect.right + 8;
+                    if (xPos + popupWidth > window.innerWidth) {
+                      xPos = rect.left - popupWidth - 8;
+                    }
+
+                    let yPos = rect.top;
+                    if (yPos + popupHeight > window.innerHeight) {
+                      yPos = window.innerHeight - popupHeight - 12;
+                    }
+
+                    setDropdownPos({ x: xPos, y: yPos });
+                    setShowDropdown(true);
                   }}
-                  className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
+                  className={`p-2 rounded border border-border-glass h-[34px] w-[34px] flex items-center justify-center transition-colors cursor-pointer ${showDropdown ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 text-zinc-400 hover:text-zinc-200'}`}
+                  title="More Actions"
                 >
-                  <Edit2 size={10} className="text-zinc-400" />
-                  <span>Edit Profile</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDropdown(false);
-                    onDuplicate();
-                  }}
-                  className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <Copy size={10} className="text-zinc-400" />
-                  <span>Duplicate Profile</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDropdown(false);
-                    onRestart();
-                  }}
-                  className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <RotateCcw size={10} className="text-zinc-400" />
-                  <span>Restart Agent</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDropdown(false);
-                    onOpenLogs();
-                  }}
-                  className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <FileText size={10} className="text-zinc-400" />
-                  <span>Open Logs</span>
-                </button>
-                <div className="h-px bg-border-glass/40 my-0.5" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDropdown(false);
-                    onDelete(agent.id);
-                  }}
-                  className="w-full text-left px-2 py-1.5 hover:bg-rose-500/10 rounded text-rose-400 flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <Trash2 size={10} />
-                  <span>Delete Agent</span>
+                  <MoreVertical size={12} />
                 </button>
               </div>
-            </>,
-            document.body
-          )}
+            </div>
+              
+            {showDropdown && dropdownPos && createPortal(
+              <>
+                <div 
+                  className="fixed inset-0 z-[9998]" 
+                  onPointerDown={(e) => { 
+                    e.stopPropagation(); 
+                    setShowDropdown(false); 
+                  }}
+                />
+                <div 
+                  ref={dropdownRef}
+                  className="fixed bg-[#18181b] shadow-[0_0_24px_rgba(0,0,0,0.8)] p-1.5 text-[10px] animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-0.5 border border-border-glass/60 rounded-md z-[9999]"
+                  style={{
+                    top: dropdownPos.y,
+                    left: dropdownPos.x,
+                    width: '160px'
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      onEdit();
+                    }}
+                    className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Edit2 size={10} className="text-zinc-400" />
+                    <span>Edit Profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      onDuplicate();
+                    }}
+                    className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Copy size={10} className="text-zinc-400" />
+                    <span>Duplicate Profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      onRestart();
+                    }}
+                    className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <RotateCcw size={10} className="text-zinc-400" />
+                    <span>Restart Agent</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      onInspect();
+                    }}
+                    className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Bot size={10} className="text-zinc-400" />
+                    <span>Inspect Agent</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      onOpenLogs();
+                    }}
+                    className="w-full text-left px-2 py-1.5 hover:bg-white/10 rounded text-zinc-300 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <FileText size={10} className="text-zinc-400" />
+                    <span>Open Logs</span>
+                  </button>
+                  <div className="h-px bg-border-glass/40 my-0.5" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      onDelete(agent.id);
+                    }}
+                    className="w-full text-left px-2 py-1.5 hover:bg-rose-500/10 rounded text-rose-400 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Trash2 size={10} />
+                    <span>Delete Agent</span>
+                  </button>
+                </div>
+              </>,
+              document.body
+            )}
+          </div>
         </div>
       </div>
     </div>
-    </div>
-  );
-}, (prev, next) => {
-  return (
-    prev.agent.id === next.agent.id &&
-    prev.agent.status === next.agent.status &&
-    prev.agent.projectId === next.agent.projectId &&
-    prev.agent.name === next.agent.name &&
-    prev.isRunning === next.isRunning &&
-    prev.pluginId === next.pluginId &&
-    prev.isInstalled === next.isInstalled &&
-    prev.dragOverId === next.dragOverId &&
-    prev.tasksCount === next.tasksCount &&
-    prev.agent.terminalSessionIds.length === next.agent.terminalSessionIds.length
   );
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AgentGrid – Main Container
-// ─────────────────────────────────────────────────────────────────────────────
 export const AgentGrid: React.FC = () => {
-  const startRender = performance.now();
-  const renderCountRef = useRef(0);
-  renderCountRef.current++;
-
-  useEffect(() => {
-    // Removed profile logging
-  });
-
   const activeWorkspaceId = useOrchestratorStore((s) => s.activeWorkspaceId);
   const projects = useOrchestratorStore(useShallow((s) => s.projects));
   const agents = useOrchestratorStore(useShallow((s) => s.agents));
@@ -510,35 +480,24 @@ export const AgentGrid: React.FC = () => {
   const createAgent = useOrchestratorStore((s) => s.createAgent);
   const spawnTerminal = useOrchestratorStore((s) => s.spawnTerminal);
   const killTerminal = useOrchestratorStore((s) => s.killTerminal);
-  const cliInstalledStatuses = useOrchestratorStore(
-    (s) => s.cliInstalledStatuses
-  );
+  const cliInstalledStatuses = useOrchestratorStore((s) => s.cliInstalledStatuses);
   const checkAgentCli = useOrchestratorStore((s) => s.checkAgentCli);
   const showAlertDialog = useOrchestratorStore((s) => s.showAlertDialog);
 
+  const setSelectedAgentIdForInspector = useChangesetStore((s) => s.setSelectedAgentIdForInspector);
+  const setAgentInspectorOpen = useChangesetStore((s) => s.setAgentInspectorOpen);
+
   const [selectedProjectFilter, setSelectedProjectFilter] = useState("");
   const [selectedInstallGuide, setSelectedInstallGuide] = useState<string | null>(null);
-
-  // dnd-kit drag-over tracking for highlight effect
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  // ── dnd-kit sensors ──
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const activeProjects = projects.filter(
-    (p: Project) => p.workspaceId === activeWorkspaceId
-  );
+  const activeProjects = projects.filter((p: Project) => p.workspaceId === activeWorkspaceId);
 
-  // Run CLI installation checks on load
   useEffect(() => {
     if (activeWorkspaceId) {
       const plugins = PluginRegistry.getAll();
@@ -548,7 +507,6 @@ export const AgentGrid: React.FC = () => {
     }
   }, [activeWorkspaceId, checkAgentCli]);
 
-  // ── dnd-kit handlers ──
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setDragOverId(null);
@@ -567,13 +525,9 @@ export const AgentGrid: React.FC = () => {
   const handleStartAgent = useCallback((agent: AgentProfile) => {
     const projectId = agent.projectId;
     if (!projectId) {
-      showAlertDialog(
-        "Project Required",
-        "Please assign a project to this agent first before launching."
-      );
+      showAlertDialog("Project Required", "Please assign a project to this agent first before launching.");
       return;
     }
-    // Yield to the main thread to allow the launch button animation to paint
     setTimeout(async () => {
       await spawnTerminal(projectId, agent.id);
     }, 0);
@@ -582,8 +536,6 @@ export const AgentGrid: React.FC = () => {
   const handleStopAgent = useCallback((agent: AgentProfile) => {
     if (agent.terminalSessionIds.length > 0) {
       const terminals = [...agent.terminalSessionIds];
-      // Yield to the main thread to allow the button click animation and hover states to paint,
-      // eliminating the 1,024ms INP lockup before the heavy terminal teardown begins.
       setTimeout(async () => {
         for (const termId of terminals) {
           await killTerminal(termId);
@@ -635,10 +587,13 @@ export const AgentGrid: React.FC = () => {
     }
   }, [showAlertDialog]);
 
+  const handleInspectAgent = useCallback((agent: AgentProfile) => {
+    setSelectedAgentIdForInspector(agent.id);
+    setAgentInspectorOpen(true);
+  }, [setSelectedAgentIdForInspector, setAgentInspectorOpen]);
+
   const formatRuntime = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
-      .toString()
-      .padStart(2, "0");
+    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
     const s = (seconds % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
@@ -669,12 +624,10 @@ export const AgentGrid: React.FC = () => {
     );
   }
 
-  // Filter agents array if selectedProjectFilter is set
   const filteredAgents = selectedProjectFilter
     ? agents.filter((a) => a.projectId === selectedProjectFilter)
     : agents;
 
-  // Swarm metrics counts
   const runningAgentsCount = agents.filter((a) => a.status === "running").length;
   const idleAgentsCount = agents.filter((a) => a.status === "idle").length;
   const failedAgentsCount = agents.filter((a) => a.status === "error").length;
@@ -682,25 +635,23 @@ export const AgentGrid: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full space-y-2 overflow-hidden pb-1">
-      {/* CLI Spawner Panel at the top of the left panel */}
       <CliSpawnerPanel />
 
-      {/* Swarm Summary Bar */}
       <div className="flex items-center justify-between px-2.5 py-1.5 glass-panel bg-bg-secondary/40 select-none flex-shrink-0 text-[10px] font-mono border-border-glass/40">
         <div className="flex items-center gap-1.5">
           <span className="relative flex h-1.5 w-1.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
           </span>
-          <span className="text-zinc-350 font-bold">{runningAgentsCount} <span className="text-zinc-550 font-sans font-normal lowercase">running</span></span>
+          <span className="text-zinc-350 font-bold">{runningAgentsCount} <span className="text-zinc-555 font-sans font-normal lowercase">running</span></span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-zinc-500"></span>
-          <span className="text-zinc-350 font-bold">{idleAgentsCount} <span className="text-zinc-550 font-sans font-normal lowercase">idle</span></span>
+          <span className="text-zinc-350 font-bold">{idleAgentsCount} <span className="text-zinc-555 font-sans font-normal lowercase">idle</span></span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
-          <span className="text-zinc-350 font-bold">{failedAgentsCount} <span className="text-zinc-550 font-sans font-normal lowercase">failed</span></span>
+          <span className="text-zinc-350 font-bold">{failedAgentsCount} <span className="text-zinc-555 font-sans font-normal lowercase">failed</span></span>
         </div>
         <div className="h-3 w-px bg-border-glass/40"></div>
         <div className="text-zinc-350 font-bold">
@@ -708,7 +659,6 @@ export const AgentGrid: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters and Sub-header */}
       <div className="flex items-center justify-between py-0.5 flex-shrink-0">
         <h3 className="text-[10px] uppercase font-bold tracking-wide text-zinc-500 font-mono select-none">
           Profiles Grid
@@ -729,7 +679,6 @@ export const AgentGrid: React.FC = () => {
         </div>
       </div>
 
-      {/* Agents List – dnd-kit Sortable */}
       {filteredAgents.length === 0 ? (
         <div className="text-zinc-500 text-xs font-mono py-12 text-center border border-border-glass border-dashed rounded-lg bg-bg-secondary/20 flex-grow flex flex-col justify-center items-center gap-2">
           <span>No CLI agent profiles found.</span>
@@ -739,21 +688,14 @@ export const AgentGrid: React.FC = () => {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragOver={(event) =>
-            setDragOverId(event.over ? String(event.over.id) : null)
-          }
+          onDragOver={(event) => setDragOverId(event.over ? String(event.over.id) : null)}
           onDragEnd={handleDragEnd}
           onDragCancel={() => setDragOverId(null)}
         >
-          <SortableContext
-            items={filteredAgents.map((a) => a.id)}
-            strategy={rectSortingStrategy}
-          >
+          <SortableContext items={filteredAgents.map((a) => a.id)} strategy={rectSortingStrategy}>
             <div className="flex-grow flex-1 overflow-y-auto min-h-0 pr-1 border border-border-glass rounded-lg bg-bg-primary/20 p-1.5 grid grid-cols-2 gap-2 auto-rows-max">
               {filteredAgents.map((agent: AgentProfile) => {
-                const proj = activeProjects.find(
-                  (p: Project) => p.id === agent.projectId
-                );
+                const proj = activeProjects.find((p: Project) => p.id === agent.projectId);
                 const isRunning = agent.status === "running";
                 const pluginId = resolvePluginId(agent);
                 const isInstalled = cliInstalledStatuses[pluginId] !== false;
@@ -780,6 +722,7 @@ export const AgentGrid: React.FC = () => {
                     onDuplicate={() => handleDuplicateAgent(agent)}
                     onRestart={() => handleRestartAgent(agent)}
                     onOpenLogs={() => handleOpenLogsAgent(agent)}
+                    onInspect={() => handleInspectAgent(agent)}
                   />
                 );
               })}
@@ -788,7 +731,6 @@ export const AgentGrid: React.FC = () => {
         </DndContext>
       )}
 
-      {/* CLI Installation Guide Popup Modal */}
       {selectedInstallGuide &&
         (() => {
           const plugin = PluginRegistry.get(selectedInstallGuide);
@@ -798,64 +740,18 @@ export const AgentGrid: React.FC = () => {
                 <div className="border-b border-border-glass pb-2 flex justify-between items-center">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
                     <AlertCircle size={14} />
-                    CLI Setup Instructions
+                    CLI Missing: {plugin?.name || selectedInstallGuide}
                   </h3>
-                  <span className="text-[10px] text-zinc-500 font-bold bg-white/5 border border-border-glass px-1.5 rounded uppercase">
-                    {selectedInstallGuide}
-                  </span>
+                  <button onClick={() => setSelectedInstallGuide(null)} className="text-zinc-500 hover:text-zinc-300">✕</button>
                 </div>
-
-                <div className="space-y-3 text-[11px] leading-relaxed">
-                  <p className="text-zinc-400">
-                    {plugin?.installHelp.instructions}
-                  </p>
-                  {plugin?.installHelp.command && (
-                    <div className="space-y-1">
-                      <span className="text-[9px] text-zinc-500 uppercase font-bold">
-                        Copy Setup Command:
-                      </span>
-                      <div className="flex items-center justify-between bg-black/40 px-2.5 py-1.5 rounded border border-zinc-805 select-text">
-                        <code className="text-zinc-305 font-mono text-[10px]">
-                          {plugin.installHelp.command}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(
-                              plugin.installHelp.command
-                            );
-                            showAlertDialog(
-                              "Clipboard Copy",
-                              "Setup command copied to clipboard!"
-                            );
-                          }}
-                          className="text-[9px] text-amber-400 hover:text-amber-300 transition-colors uppercase font-bold cursor-pointer"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {plugin?.installHelp.url && (
-                    <a
-                      href={plugin.installHelp.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-block text-[10px] text-amber-400 hover:underline font-bold"
-                    >
-                      Official Setup Documentation &rarr;
-                    </a>
-                  )}
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  The binary <code className="text-amber-500">{plugin?.cliCommand}</code> was not detected on your system PATH. Please run the install command below to configure it:
+                </p>
+                <div className="bg-black/40 border border-border-glass/40 rounded p-2.5 text-[10px] text-zinc-350 break-all select-text font-mono relative group">
+                  {plugin?.installHelp?.command || "npm install -g @claudecode/cli"}
                 </div>
-
-                <div className="flex justify-end pt-2 border-t border-border-glass">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInstallGuide(null)}
-                    className="glass-button text-[10px] py-1 px-4 rounded transition-colors font-bold uppercase cursor-pointer"
-                  >
-                    Close Guide
-                  </button>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button onClick={() => setSelectedInstallGuide(null)} className="glass-button text-[10px] px-3.5 py-1.5 rounded">Dismiss</button>
                 </div>
               </div>
             </div>

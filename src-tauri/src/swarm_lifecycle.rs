@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, Emitter};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::swarm_db::{self, DbState};
 use crate::swarm_worktrees::{self};
+
+static LIFECYCLE_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Serialize, Deserialize)]
 pub struct LifecycleStartResult {
@@ -17,7 +20,8 @@ pub struct LifecycleStartResult {
 
 fn generate_id(prefix: &str) -> String {
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
-    format!("{}-{}", prefix, millis)
+    let counter = LIFECYCLE_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{}-{}", prefix, millis, counter)
 }
 
 #[tauri::command]
@@ -50,6 +54,9 @@ pub fn start_task_execution(
     // 2. Persist Execution (State: created)
     swarm_db::insert_execution(conn, &exec_id, &task_id, &agent_id, &worktree_id, "created")
         .map_err(|e| format!("DB Exec Error: {}", e))?;
+
+    // Prune execution events/logs older than 7 days
+    let _ = swarm_db::prune_old_events_and_logs(conn);
 
     // Drop lock before state transitions to allow event emitting
     drop(conn_guard);
@@ -159,6 +166,9 @@ pub fn finish_task_execution(
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
     swarm_db::mark_worktree_deleted(conn, &worktree_id)
         .map_err(|e| format!("DB Worktree Error: {}", e))?;
+
+    // Prune execution events/logs older than 7 days
+    let _ = swarm_db::prune_old_events_and_logs(conn);
 
     Ok(true)
 }
@@ -477,3 +487,192 @@ pub async fn debug_simulate_agent_completion(
     Ok(true)
 }
 
+
+#[tauri::command]
+pub async fn pause_execution(
+    app_handle: tauri::AppHandle,
+    execution_id: String,
+) -> Result<(), String> {
+    let db_state: tauri::State<'_, DbState> = app_handle.state();
+    let (proc_id_opt, pid_opt): (Option<String>, Option<u32>) = {
+        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+
+        conn.query_row(
+            "SELECT id, pid FROM agent_processes WHERE execution_id = ?1 AND status = 'running' LIMIT 1",
+            rusqlite::params![execution_id],
+            |row| Ok((row.get(0)?, row.get::<_, Option<u32>>(1)?))
+        ).unwrap_or((None, None))
+    };
+
+    if let Some(proc_id) = proc_id_opt {
+        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+        swarm_db::update_agent_process_status(conn, &proc_id, "paused", None)
+            .map_err(|e| format!("Failed to update agent process status: {}", e))?;
+    }
+
+    if let Some(pid) = pid_opt {
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGSTOP);
+        }
+
+        #[cfg(windows)]
+        {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+                fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+            }
+            #[link(name = "ntdll")]
+            extern "system" {
+                fn NtSuspendProcess(hProcess: *mut std::ffi::c_void) -> i32;
+            }
+            unsafe {
+                let handle = OpenProcess(0x0800, 0, pid);
+                if !handle.is_null() {
+                    let _ = NtSuspendProcess(handle);
+                    let _ = CloseHandle(handle);
+                }
+            }
+        }
+    }
+
+    crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "paused", Some("Execution paused by user"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn resume_execution(
+    app_handle: tauri::AppHandle,
+    execution_id: String,
+) -> Result<(), String> {
+    let db_state: tauri::State<'_, DbState> = app_handle.state();
+    let (proc_id_opt, pid_opt): (Option<String>, Option<u32>) = {
+        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+
+        conn.query_row(
+            "SELECT id, pid FROM agent_processes WHERE execution_id = ?1 AND status = 'paused' LIMIT 1",
+            rusqlite::params![execution_id],
+            |row| Ok((row.get(0)?, row.get::<_, Option<u32>>(1)?))
+        ).unwrap_or((None, None))
+    };
+
+    if let Some(proc_id) = proc_id_opt {
+        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+        swarm_db::update_agent_process_status(conn, &proc_id, "running", None)
+            .map_err(|e| format!("Failed to update agent process status: {}", e))?;
+    }
+
+    if let Some(pid) = pid_opt {
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGCONT);
+        }
+
+        #[cfg(windows)]
+        {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+                fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+            }
+            #[link(name = "ntdll")]
+            extern "system" {
+                fn NtResumeProcess(hProcess: *mut std::ffi::c_void) -> i32;
+            }
+            unsafe {
+                let handle = OpenProcess(0x0800, 0, pid);
+                if !handle.is_null() {
+                    let _ = NtResumeProcess(handle);
+                    let _ = CloseHandle(handle);
+                }
+            }
+        }
+    }
+
+    crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "running", Some("Execution resumed by user"))?;
+    Ok(())
+}
+
+pub fn start_lock_watchdog(app_handle: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+            let expired_locks = {
+                let db_state = match app_handle.try_state::<DbState>() {
+                    Some(state) => state,
+                    None => continue,
+                };
+                
+                let conn_guard = match db_state.0.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => continue,
+                };
+                
+                let conn = match conn_guard.as_ref() {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+
+                let mut stmt = match conn.prepare("SELECT file_path, agent_id, expires_at FROM resource_locks WHERE expires_at < ?1") {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+
+                let rows = match stmt.query_map([now], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+                }) {
+                    Ok(r) => r,
+                    Err(_) => continue,
+                };
+
+                let mut list = Vec::new();
+                for r in rows {
+                    if let Ok(item) = r {
+                        list.push(item);
+                    }
+                }
+
+                if !list.is_empty() {
+                    let _ = conn.execute("DELETE FROM resource_locks WHERE expires_at < ?1", [now]);
+                }
+
+                list
+            };
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
+
+            for (file_path, agent_id, expires_at) in expired_locks {
+                #[derive(Serialize, Clone)]
+                struct LockExpirationPayload {
+                    file_path: String,
+                    agent_id: String,
+                    expired_at: i64,
+                    cleared_at: i64,
+                }
+
+                let payload = LockExpirationPayload {
+                    file_path,
+                    agent_id,
+                    expired_at: expires_at,
+                    cleared_at: now,
+                };
+
+                let _ = app_handle.emit("lock:expired", payload);
+            }
+        }
+    });
+}

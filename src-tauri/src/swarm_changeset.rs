@@ -3,15 +3,17 @@ use std::fs;
 use std::path::Path;
 use tauri::{AppHandle, Manager, State};
 use crate::swarm_db::{self, DbState};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static CHANGESET_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn generate_id(prefix: &str) -> String {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    // Append a simple counter or random value to prevent collisions in fast loops
-    let rand_val = ts % 1000;
-    format!("{}-{}-{}", prefix, ts, rand_val)
+    let counter = CHANGESET_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{}-{}", prefix, ts, counter)
 }
 
 #[tauri::command]
@@ -20,14 +22,27 @@ pub async fn create_changeset_draft(
     title: String,
     origin_agent_id: String,
     explanation: Option<String>,
+    summary: Option<String>,
+    risk_score: Option<f64>,
+    affected_symbols: Option<String>,
 ) -> Result<String, String> {
     let db_state: State<'_, DbState> = app_handle.state();
     let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let id = generate_id("cset");
-    swarm_db::insert_changeset(conn, &id, &title, "draft", &origin_agent_id, explanation.as_deref())
-        .map_err(|e| format!("Failed to insert changeset: {}", e))?;
+    swarm_db::insert_changeset(
+        conn,
+        &id,
+        &title,
+        "draft",
+        &origin_agent_id,
+        explanation.as_deref(),
+        summary.as_deref(),
+        risk_score,
+        affected_symbols.as_deref(),
+    )
+    .map_err(|e| format!("Failed to insert changeset: {}", e))?;
 
     Ok(id)
 }
@@ -122,7 +137,7 @@ pub async fn get_changeset_details(
     // Get changeset metadata
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, status, origin_agent_id, created_at, applied_at, explanation FROM changesets WHERE id = ?1",
+            "SELECT id, title, status, origin_agent_id, created_at, applied_at, explanation, summary, risk_score, affected_symbols FROM changesets WHERE id = ?1",
         )
         .map_err(|e| e.to_string())?;
 
@@ -136,6 +151,9 @@ pub async fn get_changeset_details(
                 created_at: row.get(4)?,
                 applied_at: row.get(5)?,
                 explanation: row.get(6)?,
+                summary: row.get(7)?,
+                risk_score: row.get(8)?,
+                affected_symbols: row.get(9)?,
             })
         })
         .map_err(|e| format!("Changeset not found: {}", e))?;
@@ -154,6 +172,11 @@ pub async fn get_changeset_details(
         "createdAt": cset.created_at,
         "appliedAt": cset.applied_at,
         "explanation": cset.explanation,
+        "summary": cset.summary,
+        "riskScore": cset.risk_score,
+        "affectedSymbols": cset.affected_symbols.as_ref().map(|s| {
+            serde_json::from_str::<serde_json::Value>(s).unwrap_or_else(|_| serde_json::json!(s))
+        }).unwrap_or_else(|| serde_json::json!([])),
         "files": files,
         "comments": comments
     }))
@@ -527,7 +550,8 @@ pub async fn validate_changeset_shadow(
     if let Some(cmd) = &lint_cmd {
         match exec_cmd(cmd, &shadow_dir) {
             Ok((success, output)) => {
-                lint_passed = success;
+                let lint_actual_passed = success;
+                lint_passed = lint_actual_passed;
                 validation_logs.push(json!({ "step": "Linter", "success": success, "output": output }));
                 if !success {
                     insert_tester_comment(&app_handle, &changeset_id, "Linter", &output, "WARNING")?;

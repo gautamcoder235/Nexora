@@ -25,8 +25,10 @@ export class PluginRegistry {
     // Safely fetch overrides without creating a hard top-level circular dependency
     let overrides = {};
     try {
-      const { useOrchestratorStore } = require('../stores/orchestratorStore');
-      overrides = useOrchestratorStore.getState().settings.cliOverrides?.[id] || {};
+      const useOrchestratorStore = (window as any).__useOrchestratorStore;
+      if (useOrchestratorStore) {
+        overrides = useOrchestratorStore.getState().settings.cliOverrides?.[id] || {};
+      }
     } catch (e) {
       // Store might not be initialized yet
     }

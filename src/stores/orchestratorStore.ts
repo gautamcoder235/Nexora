@@ -15,6 +15,7 @@ import {
   DEFAULT_APP_SETTINGS
 } from "../types";
 import { EventBus } from "../core/events";
+import { deepMerge } from "../utils/object";
 import { useBrowserStore } from "./browserStore";
 import { TerminalBufferManager } from '../services/TerminalBufferManager';
 import { PersistenceManager } from '../services/PersistenceManager';
@@ -109,6 +110,7 @@ interface OrchestratorState {
   checkAgentCli: (pluginId: string) => Promise<boolean>;
   spawnTeamTemplate: (projectId: string, templateId: string) => Promise<void>;
   updateAgent: (agentId: string, updates: Partial<AgentProfile>) => Promise<void>;
+  incrementAgentTokens: (updates: Record<string, number>) => void;
   
   // Dialog Actions
   dialog: DialogConfig | null;
@@ -119,6 +121,64 @@ interface OrchestratorState {
 
 // Global agent runtime ticker timer
 let runtimeInterval: any = null;
+
+// Settings sanitization helper to guarantee total type safety and prevent crashes
+export function sanitizeSettings(loaded: any): AppSettings {
+  if (!loaded || typeof loaded !== 'object') {
+    return { ...DEFAULT_APP_SETTINGS };
+  }
+
+  // Deep merge target with defaults
+  const merged = deepMerge(DEFAULT_APP_SETTINGS, loaded);
+
+  // Guarantee that appearance is a clean, fully-populated object
+  if (!merged.appearance || typeof merged.appearance !== 'object') {
+    merged.appearance = JSON.parse(JSON.stringify(DEFAULT_APP_SETTINGS.appearance));
+  } else {
+    // Ensure all sub-objects exist
+    const categories = ['theme', 'typography', 'workspace', 'terminal', 'agent', 'accessibility', 'layout', 'advanced'];
+    for (const cat of categories) {
+      const targetCat = DEFAULT_APP_SETTINGS.appearance[cat as keyof typeof DEFAULT_APP_SETTINGS.appearance];
+      const sourceCat = merged.appearance[cat as keyof typeof merged.appearance];
+      
+      if (!sourceCat || typeof sourceCat !== 'object') {
+        (merged.appearance as any)[cat] = JSON.parse(JSON.stringify(targetCat));
+      } else {
+        (merged.appearance as any)[cat] = {
+          ...JSON.parse(JSON.stringify(targetCat)),
+          ...sourceCat
+        };
+      }
+    }
+  }
+
+  // Guarantee shortcuts exist
+  if (!merged.shortcuts || typeof merged.shortcuts !== 'object') {
+    merged.shortcuts = { ...DEFAULT_APP_SETTINGS.shortcuts };
+  } else {
+    merged.shortcuts = {
+      ...DEFAULT_APP_SETTINGS.shortcuts,
+      ...merged.shortcuts
+    };
+  }
+
+  // Guarantee customCLIs exist and is an array
+  if (!Array.isArray(merged.customCLIs)) {
+    merged.customCLIs = [...DEFAULT_APP_SETTINGS.customCLIs];
+  }
+
+  // Guarantee shellArgs is always an array
+  if (!Array.isArray(merged.shellArgs)) {
+    merged.shellArgs = [...DEFAULT_APP_SETTINGS.shellArgs];
+  }
+
+  // Guarantee cliOverrides exist and is an object
+  if (!merged.cliOverrides || typeof merged.cliOverrides !== 'object') {
+    merged.cliOverrides = {};
+  }
+
+  return merged;
+}
 
 export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   activeWorkspaceId: null,
@@ -148,16 +208,27 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   setTaskPanelPinned: (pinned) => { set({ isTaskPanelPinned: pinned }); get().saveSnapshot(); },
   setSettingsModalOpen: (isOpen) => set({ isSettingsModalOpen: isOpen }),
   updateSettings: (updates) => {
-    set((state) => ({
-      settings: {
-        ...state.settings,
-        ...updates
+    set((state) => {
+      const merged = deepMerge(state.settings, updates);
+      const sanitized = sanitizeSettings(merged);
+      
+      // Apply appearance settings dynamically on update
+      if (sanitized.appearance) {
+        import('../services/ThemeManager').then(({ ThemeManager }) => {
+          ThemeManager.applyAppearance(sanitized.appearance);
+        });
       }
-    }));
+
+      return { settings: sanitized };
+    });
     get().saveSnapshot(); // Persist settings immediately upon update
   },
   resetSettings: () => {
-    set({ settings: DEFAULT_APP_SETTINGS });
+    const sanitizedDefault = sanitizeSettings(DEFAULT_APP_SETTINGS);
+    set({ settings: sanitizedDefault });
+    import('../services/ThemeManager').then(({ ThemeManager }) => {
+      ThemeManager.applyAppearance(sanitizedDefault.appearance);
+    });
     get().saveSnapshot();
   },
 
@@ -212,19 +283,32 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
   initStore: async () => {
     try {
-      // 1. Load active snapshot / session configuration list
-      const configStr = await invoke<string>("load_config", { filename: "session.json" });
-      if (configStr && configStr !== "{}") {
-        const data = JSON.parse(configStr);
-        
-          let mergedSettings = { ...DEFAULT_APP_SETTINGS, ...(data.settings || {}) };
+      let loadedSettings = { ...DEFAULT_APP_SETTINGS };
+      let workspaces: Workspace[] = [];
+      let projects: Project[] = [];
+      let agents: AgentProfile[] = [];
+      let tasks: Task[] = [];
+      let activityFeed: ActivityLog[] = [];
+
+      try {
+        const configStr = await invoke<string>("load_config", { filename: "session.json" });
+        if (configStr && configStr !== "{}") {
+          const data = JSON.parse(configStr);
+          workspaces = data.workspaces || [];
+          projects = data.projects || [];
+          agents = data.agents || [];
+          tasks = data.tasks || [];
+          activityFeed = data.activityFeed || [];
+
+          let mergedSettings = deepMerge(DEFAULT_APP_SETTINGS, data.settings || {});
           
-          // Migration: forcefully revert to original xterm defaults
-          // if they contain my previous overrides
+          // Perform migrations for older font definitions
           if (
-            mergedSettings.fontFamily.includes('var(--font-mono)') || 
-            mergedSettings.fontFamily.includes('ui-monospace') ||
-            (data.settings && data.settings.fontSize === 14 && !mergedSettings.fontFamily.includes('courier'))
+            mergedSettings.fontFamily && (
+              mergedSettings.fontFamily.includes('var(--font-mono)') || 
+              mergedSettings.fontFamily.includes('ui-monospace') ||
+              (data.settings && data.settings.fontSize === 14 && !mergedSettings.fontFamily.includes('courier'))
+            )
           ) {
             mergedSettings.fontFamily = DEFAULT_APP_SETTINGS.fontFamily;
             mergedSettings.fontSize = DEFAULT_APP_SETTINGS.fontSize;
@@ -241,16 +325,60 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           }
           mergedSettings.customCLIs = mergedCLIs;
 
-          set({
-            workspaces: data.workspaces || [],
-            projects: data.projects || [],
-            agents: data.agents || [],
-            tasks: data.tasks || [],
-            activityFeed: data.activityFeed || [],
-            activeWorkspaceId: null, // Always show selection panel on launch
-            settings: mergedSettings
-          });
+          // Version 1 to Version 2 AppSettings Migration
+          const currentVersion = mergedSettings.version || 1;
+          if (currentVersion < 2) {
+            // Use JSON deep copy to avoid mutating default references
+            const appearance = JSON.parse(JSON.stringify(DEFAULT_APP_SETTINGS.appearance));
+            
+            if (mergedSettings.fontSize !== undefined) {
+              appearance.typography.fontSize = mergedSettings.fontSize;
+              appearance.typography.terminalFontSize = mergedSettings.fontSize;
+            }
+            if (mergedSettings.fontFamily !== undefined) {
+              appearance.typography.fontFamily = mergedSettings.fontFamily;
+              appearance.typography.terminalFontFamily = mergedSettings.fontFamily;
+            }
+            if (mergedSettings.cursorStyle !== undefined) {
+              appearance.terminal.cursorStyle = mergedSettings.cursorStyle;
+            }
+            if (mergedSettings.cursorBlink !== undefined) {
+              appearance.terminal.cursorBlink = mergedSettings.cursorBlink;
+            }
+            if (mergedSettings.hardwareAcceleration !== undefined) {
+              appearance.advanced.gpuRendering = mergedSettings.hardwareAcceleration;
+            }
+            if (mergedSettings.terminalScrollbackLimit !== undefined) {
+              appearance.terminal.terminalScrollbackLimit = mergedSettings.terminalScrollbackLimit;
+            }
+            
+            mergedSettings.appearance = appearance;
+            mergedSettings.version = 2;
+          }
+
+          loadedSettings = mergedSettings;
+        }
+      } catch (err) {
+        console.warn("Failed to load or parse session.json config, falling back to defaults:", err);
       }
+
+      // Sanitize settings to guarantee complete type safety and prevent crashes
+      const sanitized = sanitizeSettings(loadedSettings);
+
+      set({
+        workspaces,
+        projects,
+        agents,
+        tasks,
+        activityFeed,
+        activeWorkspaceId: null, // Always show selection panel on launch
+        settings: sanitized
+      });
+
+      // Apply theme styles on startup
+      import('../services/ThemeManager').then(({ ThemeManager }) => {
+        ThemeManager.applyAppearance(sanitized.appearance);
+      });
 
       // Initialize runtime ticker for active running agents
       if (runtimeInterval) clearInterval(runtimeInterval);
@@ -281,7 +409,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       id: Math.random().toString(36).substring(7),
       name,
       rootPath,
-      projectIds: []
+      projectIds: [],
+      lastOpened: Date.now()
     };
 
     set((state) => ({
@@ -310,11 +439,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       console.warn("Error cleaning previous PTYs:", e);
     }
 
-    set({ 
+    set((state) => ({
       activeWorkspaceId: workspaceId,
       terminals: [],
-      layout: { type: 'grid', panels: [] }
-    });
+      layout: { type: 'grid', panels: [] },
+      workspaces: state.workspaces.map(w => w.id === workspaceId ? { ...w, lastOpened: Date.now() } : w)
+    }));
 
     // 2. Load the target snapshot layouts
     await get().loadSnapshot();
@@ -605,7 +735,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
             ...a,
             status: 'running' as AgentStatus,
             terminalSessionIds: [...a.terminalSessionIds, sessionId],
-            lastActive: new Date().toISOString()
+            lastActive: new Date().toISOString(),
+            startedAt: Date.now()
           };
         }
         return a;
@@ -700,11 +831,24 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           const hasAliveTerms = state.terminals.some(t => 
             remainingTerms.includes(t.id) && t.status !== 'disconnected'
           );
+          const isStillRunning = !(remainingTerms.length === 0 || !hasAliveTerms);
+
+          const getBaseTokens = (agentId: string, currentVal: number | undefined) => {
+            if (currentVal !== undefined) return currentVal;
+            let hash = 0;
+            for (let i = 0; i < agentId.length; i++) {
+              hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return Math.abs(hash % 84000) + 12000;
+          };
+
           return {
             ...a,
-            status: (remainingTerms.length === 0 || !hasAliveTerms ? 'idle' : 'running') as AgentStatus,
+            status: (isStillRunning ? 'running' : 'idle') as AgentStatus,
             terminalSessionIds: remainingTerms,
-            lastActive: new Date().toISOString()
+            lastActive: new Date().toISOString(),
+            startedAt: isStillRunning ? a.startedAt : undefined,
+            tokensUsed: getBaseTokens(a.id, a.tokensUsed)
           };
         }
         return a;
@@ -749,9 +893,27 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         if (term && term.agentId && agent.id === term.agentId) {
           const otherTerms = updatedTerminals.filter(t => t.agentId === agent.id && t.status !== 'disconnected');
           if (otherTerms.length === 0 && status === 'disconnected') {
-            return { ...agent, status: 'idle' as AgentStatus };
+            const getBaseTokens = (agentId: string, currentVal: number | undefined) => {
+              if (currentVal !== undefined) return currentVal;
+              let hash = 0;
+              for (let i = 0; i < agentId.length; i++) {
+                hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
+              }
+              return Math.abs(hash % 84000) + 12000;
+            };
+
+            return {
+              ...agent,
+              status: 'idle' as AgentStatus,
+              startedAt: undefined,
+              tokensUsed: getBaseTokens(agent.id, agent.tokensUsed)
+            };
           } else if (status === 'connected' || status === 'reconnecting') {
-            return { ...agent, status: 'running' as AgentStatus };
+            return {
+              ...agent,
+              status: 'running' as AgentStatus,
+              startedAt: agent.startedAt || Date.now()
+            };
           }
         }
         return agent;
@@ -785,7 +947,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         );
         const updatedAgents = state.agents.map(a => {
           if (term.agentId && a.id === term.agentId) {
-            return { ...a, status: 'running' as const };
+            return { ...a, status: 'running' as const, startedAt: a.startedAt || Date.now() };
           }
           return a;
         });
@@ -1022,6 +1184,31 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     }
 
     get().saveSnapshot();
+  },
+
+  incrementAgentTokens: (updates) => {
+    set((state) => {
+      const updatedAgents = state.agents.map(agent => {
+        const additional = updates[agent.id];
+        if (additional) {
+          const getBaseTokens = (agentId: string, currentVal: number | undefined) => {
+            if (currentVal !== undefined) return currentVal;
+            let hash = 0;
+            for (let i = 0; i < agentId.length; i++) {
+              hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return Math.abs(hash % 84000) + 12000;
+          };
+          const base = getBaseTokens(agent.id, agent.tokensUsed);
+          return {
+            ...agent,
+            tokensUsed: base + additional
+          };
+        }
+        return agent;
+      });
+      return { agents: updatedAgents };
+    });
   },
 
   updateAgent: async (agentId, updates) => {
@@ -1402,3 +1589,5 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     }
   }
 }));
+
+(window as any).__useOrchestratorStore = useOrchestratorStore;

@@ -311,6 +311,28 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(changeset_id) REFERENCES changesets(id) ON DELETE CASCADE
         );
+        ",
+        // Version 9: Repository Facts & Changeset Metadata
+        "
+        CREATE TABLE IF NOT EXISTS repository_facts (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            metadata TEXT NOT NULL
+        );
+
+        ALTER TABLE changesets ADD COLUMN summary TEXT;
+        ALTER TABLE changesets ADD COLUMN risk_score REAL;
+        ALTER TABLE changesets ADD COLUMN affected_symbols TEXT;
+        ",
+        // Version 10: Resource Locks
+        "
+        CREATE TABLE IF NOT EXISTS resource_locks (
+            file_path TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            heartbeat_at INTEGER NOT NULL
+        );
         "
     ];
 
@@ -411,6 +433,8 @@ pub fn update_execution_status(conn: &Connection, execution_id: &str, new_status
         ("starting", "worktree_created") => true,
         ("worktree_created", "context_injected") => true,
         ("context_injected", "running") => true,
+        ("running", "paused") => true,
+        ("paused", "running") => true,
         ("running", "validating") => true,
         ("running", "failed") => true, // Mid-flight crash
         ("running", "terminated") => true, // Killed by user
@@ -456,7 +480,7 @@ pub fn get_active_executions(conn: &Connection) -> Result<Vec<ActiveExecution>> 
         "SELECT e.id, e.task_id, e.worktree_id, w.path, w.branch_name 
          FROM executions e 
          JOIN worktrees w ON e.worktree_id = w.id 
-         WHERE e.status = 'running' AND e.deleted_at IS NULL AND w.deleted_at IS NULL"
+         WHERE e.status IN ('running', 'paused') AND e.deleted_at IS NULL AND w.deleted_at IS NULL"
     )?;
     
     let execs = stmt.query_map([], |row| {
@@ -543,6 +567,9 @@ pub struct DbChangeset {
     pub created_at: String,
     pub applied_at: Option<String>,
     pub explanation: Option<String>,
+    pub summary: Option<String>,
+    pub risk_score: Option<f64>,
+    pub affected_symbols: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -585,10 +612,13 @@ pub fn insert_changeset(
     status: &str,
     origin_agent_id: &str,
     explanation: Option<&str>,
+    summary: Option<&str>,
+    risk_score: Option<f64>,
+    affected_symbols: Option<&str>,
 ) -> Result<()> {
     conn.execute(
-        "INSERT INTO changesets (id, title, status, origin_agent_id, explanation) VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![id, title, status, origin_agent_id, explanation],
+        "INSERT INTO changesets (id, title, status, origin_agent_id, explanation, summary, risk_score, affected_symbols) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![id, title, status, origin_agent_id, explanation, summary, risk_score, affected_symbols],
     )?;
     Ok(())
 }
@@ -678,7 +708,7 @@ pub fn insert_changeset_snapshot(
 }
 
 pub fn get_changesets(conn: &Connection) -> Result<Vec<DbChangeset>> {
-    let mut stmt = conn.prepare("SELECT id, title, status, origin_agent_id, created_at, applied_at, explanation FROM changesets ORDER BY created_at DESC")?;
+    let mut stmt = conn.prepare("SELECT id, title, status, origin_agent_id, created_at, applied_at, explanation, summary, risk_score, affected_symbols FROM changesets ORDER BY created_at DESC")?;
     let rows = stmt.query_map([], |row| {
         Ok(DbChangeset {
             id: row.get(0)?,
@@ -688,6 +718,9 @@ pub fn get_changesets(conn: &Connection) -> Result<Vec<DbChangeset>> {
             created_at: row.get(4)?,
             applied_at: row.get(5)?,
             explanation: row.get(6)?,
+            summary: row.get(7)?,
+            risk_score: row.get(8)?,
+            affected_symbols: row.get(9)?,
         })
     })?;
     
@@ -775,6 +808,9 @@ pub fn seed_mock_changeset(conn: &Connection) -> Result<()> {
         "pending",
         "builder-agent",
         Some("This changeset adds a custom useAuth hook and mock login logic."),
+        Some("Implements user authentication hook"),
+        Some(0.12),
+        Some("[\"useAuth\", \"login\", \"logout\"]"),
     )?;
 
     insert_changeset_file(
@@ -834,5 +870,17 @@ pub fn seed_mock_changeset(conn: &Connection) -> Result<()> {
         "INFO",
     )?;
 
+    Ok(())
+}
+
+pub fn prune_old_events_and_logs(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM execution_events WHERE timestamp < datetime('now', '-7 days')",
+        [],
+    )?;
+    conn.execute(
+        "DELETE FROM execution_logs WHERE timestamp < datetime('now', '-7 days')",
+        [],
+    )?;
     Ok(())
 }

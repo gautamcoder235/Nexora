@@ -10,11 +10,17 @@ interface ChangesetState {
   isReviewCenterOpen: boolean;
   isReviewPanelPinned: boolean;
   reviewPanelWidth: number;
+  selectedAgentIdForInspector: string | null;
+  isAgentInspectorOpen: boolean;
+  activeReviewTab: 'changeset' | 'workspace' | 'worktree_explorer';
 
   // Actions
   setReviewCenterOpen: (open: boolean) => void;
   toggleReviewPanelPinned: () => void;
   setReviewPanelWidth: (width: number) => void;
+  setSelectedAgentIdForInspector: (agentId: string | null) => void;
+  setAgentInspectorOpen: (open: boolean) => void;
+  setActiveReviewTab: (tab: 'changeset' | 'workspace' | 'worktree_explorer') => void;
   loadChangesets: () => Promise<void>;
   selectChangeset: (changesetId: string) => Promise<void>;
   createDraftChangeset: (title: string, agentId: string, explanation?: string) => Promise<string>;
@@ -48,10 +54,16 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
   isReviewCenterOpen: false,
   isReviewPanelPinned: false,
   reviewPanelWidth: 640,
+  selectedAgentIdForInspector: null,
+  isAgentInspectorOpen: false,
+  activeReviewTab: 'changeset',
 
   setReviewCenterOpen: (open: boolean) => set({ isReviewCenterOpen: open }),
   toggleReviewPanelPinned: () => set((state) => ({ isReviewPanelPinned: !state.isReviewPanelPinned })),
   setReviewPanelWidth: (width: number) => set({ reviewPanelWidth: width }),
+  setSelectedAgentIdForInspector: (agentId: string | null) => set({ selectedAgentIdForInspector: agentId }),
+  setAgentInspectorOpen: (open: boolean) => set({ isAgentInspectorOpen: open }),
+  setActiveReviewTab: (tab) => set({ activeReviewTab: tab }),
 
   loadChangesets: async () => {
     console.log('loadChangesets: Starting loadChangesets...');

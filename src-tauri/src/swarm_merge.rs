@@ -10,6 +10,15 @@ use tokio::sync::Mutex;
 use lazy_static::lazy_static;
 use crate::swarm_db::{self, DbState};
 use crate::swarm_events::transition_execution_state;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static MERGE_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn gen_unique_id(prefix: &str) -> String {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let counter = MERGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{}-{}", prefix, ms, counter)
+}
 
 lazy_static! {
     static ref GLOBAL_MERGE_LOCK: Mutex<()> = Mutex::new(());
@@ -38,7 +47,7 @@ pub async fn apply_merge_candidate(
         let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
         swarm_db::insert_execution_event(
             conn_guard.as_ref().unwrap(),
-            &format!("evt-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
+            &gen_unique_id("evt"),
             &execution_id,
             "merge_started",
             None
@@ -179,6 +188,31 @@ pub async fn apply_merge_candidate(
         fail_merge_step!(&format!("Gate C Failed: Dry run rejected the patch: {}", err));
     }
 
+    // Create Transactional Snapshot before applying patch
+    let snapshot_dir = std::env::temp_dir().join(format!("nexora-merge-snapshot-{}", execution_id));
+    if snapshot_dir.exists() {
+        let _ = fs::remove_dir_all(&snapshot_dir);
+    }
+    if let Err(e) = fs::create_dir_all(&snapshot_dir) {
+        fail_merge_step!(&format!("Failed to create snapshot directory: {}", e));
+    }
+
+    // Backup modified files to snapshot
+    for file_path in &expected_files {
+        let full_path = repo_dir.join(file_path);
+        if full_path.exists() {
+            let backup_path = snapshot_dir.join(file_path);
+            if let Some(parent) = backup_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    fail_merge_step!(&format!("Failed to create backup parent directory: {}", e));
+                }
+            }
+            if let Err(e) = fs::copy(&full_path, &backup_path) {
+                fail_merge_step!(&format!("Failed to back up file {}: {}", file_path, e));
+            }
+        }
+    }
+
     // Gate D: Apply Patch
     let apply_run = Command::new("git")
         .args(["apply", &patch_file_path])
@@ -198,6 +232,8 @@ pub async fn apply_merge_candidate(
 
     if !apply_run.status.success() {
         let err = String::from_utf8_lossy(&apply_run.stderr);
+        rollback_snapshot(repo_dir, &snapshot_dir, &expected_files);
+        let _ = fs::remove_dir_all(&snapshot_dir);
         fail_merge_step!(&format!("Gate D Failed: Failed to apply patch: {}", err));
     }
 
@@ -215,9 +251,9 @@ pub async fn apply_merge_candidate(
     actual_files.sort();
 
     if expected_files != actual_files {
-        // Rollback working directory
-        let _ = Command::new("git").args(["checkout", "."]).current_dir(repo_dir).status();
-        let _ = Command::new("git").args(["clean", "-fd"]).current_dir(repo_dir).status();
+        // Rollback working directory from snapshot
+        rollback_snapshot(repo_dir, &snapshot_dir, &expected_files);
+        let _ = fs::remove_dir_all(&snapshot_dir);
 
         fail_merge_step!(&format!("Gate E Failed: File integrity mismatch. Expected: {:?}, Actual: {:?}", expected_files, actual_files));
     }
@@ -231,6 +267,8 @@ pub async fn apply_merge_candidate(
     add_cmd.current_dir(repo_dir);
 
     if !add_cmd.status().map_err(|e| e.to_string())?.success() {
+        rollback_snapshot(repo_dir, &snapshot_dir, &expected_files);
+        let _ = fs::remove_dir_all(&snapshot_dir);
         fail_merge_step!("Gate F Failed: Failed to stage files");
     }
 
@@ -242,8 +280,14 @@ pub async fn apply_merge_candidate(
         .map_err(|e| e.to_string())?;
 
     if !commit_run.status.success() {
+        rollback_snapshot(repo_dir, &snapshot_dir, &expected_files);
+        let _ = Command::new("git").arg("reset").current_dir(repo_dir).status();
+        let _ = fs::remove_dir_all(&snapshot_dir);
         fail_merge_step!("Gate F Failed: Failed to commit files");
     }
+
+    // Clean up snapshot backup directory on successful commit
+    let _ = fs::remove_dir_all(&snapshot_dir);
 
     // Success! Update state
     {
@@ -282,7 +326,7 @@ pub async fn apply_merge_candidate(
             rusqlite::params![&execution_id]
         ).ok();
 
-        swarm_db::insert_execution_event(conn, &format!("evt-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()), &execution_id, "merge_completed", None).ok();
+        swarm_db::insert_execution_event(conn, &gen_unique_id("evt"), &execution_id, "merge_completed", None).ok();
     }
 
     transition_execution_state(&app_handle, &execution_id, "completed", Some("merged"))?;
@@ -298,7 +342,7 @@ fn fail_merge(app_handle: &AppHandle, execution_id: &str, error_msg: &str, conn:
 
     swarm_db::insert_execution_event(
         conn, 
-        &format!("evt-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()), 
+        &gen_unique_id("evt"), 
         execution_id, 
         "merge_failed", 
         Some(error_msg)
@@ -314,7 +358,7 @@ fn save_merge_artifact(conn: &rusqlite::Connection, repo_dir: &Path, execution_i
     content.hash(&mut hasher);
     let checksum = format!("{:x}", hasher.finish());
 
-    let artifact_id = format!("art-{}-{}", artifact_type.replace("_", "-"), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+    let artifact_id = gen_unique_id(&format!("art-{}", artifact_type.replace("_", "-")));
     let multivibe_dir = repo_dir.join(".nexora");
     if !multivibe_dir.exists() {
         let _ = fs::create_dir_all(&multivibe_dir);
@@ -328,5 +372,29 @@ fn save_merge_artifact(conn: &rusqlite::Connection, repo_dir: &Path, execution_i
             "INSERT INTO artifacts (id, execution_id, artifact_type, file_path, size_bytes, checksum) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![&artifact_id, execution_id, artifact_type, file_path.to_string_lossy().to_string(), content.len() as i64, checksum]
         ).ok();
+    }
+}
+
+fn rollback_snapshot(repo_dir: &Path, snapshot_dir: &Path, expected_files: &[String]) {
+    // 1. Unstage any changes in git to avoid index mismatch
+    let _ = Command::new("git").arg("reset").current_dir(repo_dir).status();
+
+    // 2. Restore file contents
+    for file_path in expected_files {
+        let full_path = repo_dir.join(file_path);
+        let backup_path = snapshot_dir.join(file_path);
+
+        if backup_path.exists() {
+            // Restore backed up file
+            if let Some(parent) = full_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::copy(&backup_path, &full_path);
+        } else {
+            // Did not exist before, so delete it
+            if full_path.exists() {
+                let _ = fs::remove_file(&full_path);
+            }
+        }
     }
 }

@@ -7,6 +7,7 @@ import { getLanguageFromPath } from '../../utils/language';
 import { ChangesetFile, FileChangeStatus, CommentSeverity } from '../../types/changeset';
 import { invoke } from '@tauri-apps/api/core';
 import Editor from '@monaco-editor/react';
+import { WorkspaceExplorer } from './WorkspaceExplorer';
 
 interface FileNode {
   name: string;
@@ -102,11 +103,13 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const toggleReviewPanelPinned = useChangesetStore(s => s.toggleReviewPanelPinned);
   const terminals = useOrchestratorStore(s => s.terminals);
 
+  const activeTab = useChangesetStore(s => s.activeReviewTab);
+  const setActiveTab = useChangesetStore(s => s.setActiveReviewTab);
+
   const [selectedFile, setSelectedFile] = useState<ChangesetFile | null>(null);
   const [selectedAgentTab, setSelectedAgentTab] = useState<'files' | 'tester' | 'reviewer' | 'architect'>('files');
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'changeset' | 'workspace'>('changeset');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedFileAbsolutePath, setSelectedFileAbsolutePath] = useState<string | null>(null);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -389,6 +392,83 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     );
   }
 
+  if (activeTab === 'worktree_explorer') {
+    return (
+      <div className="flex h-full w-full bg-[#08080a] text-zinc-100 font-sans overflow-hidden relative flex-col">
+        {/* Main Header of Review Center */}
+        <div className="px-4 border-b border-zinc-800 flex justify-between items-center bg-[#0c0c0e]/60 shrink-0 h-11">
+          <h2 className="text-xs font-semibold tracking-wide uppercase text-zinc-400">Agent Review Center</h2>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                if (terminals.length <= 8) {
+                  toggleReviewPanelPinned();
+                  setTimeout(() => {
+                    useOrchestratorStore.getState().saveSnapshot();
+                  }, 0);
+                }
+              }}
+              title={
+                terminals.length > 8
+                  ? "Docking disabled (> 8 terminals)"
+                  : isReviewPanelPinned
+                  ? "Float Panel"
+                  : "Dock Panel"
+              }
+              className={`p-1 rounded transition-all cursor-pointer ${
+                terminals.length > 8
+                  ? "opacity-35 cursor-not-allowed text-zinc-500"
+                  : isReviewPanelPinned
+                  ? "bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20"
+                  : "text-zinc-500 hover:text-zinc-350 hover:bg-white/5"
+              }`}
+            >
+              {isReviewPanelPinned ? (
+                <Pin size={11} className="fill-amber-500" />
+              ) : (
+                <PinOff size={11} />
+              )}
+            </button>
+            <button 
+              onClick={onClose} 
+              title="Close Review Center"
+              className="p-1 rounded hover:bg-rose-500/10 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Selection */}
+        <div className="px-3 h-10 border-b border-zinc-800 flex items-center gap-1.5 shrink-0 bg-[#0c0c0e]/45">
+          <button
+            onClick={() => setActiveTab('changeset')}
+            className="flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent"
+          >
+            Changeset Diffs
+          </button>
+          <button
+            onClick={() => setActiveTab('workspace')}
+            className="flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent"
+          >
+            Project Files
+          </button>
+          <button
+            onClick={() => setActiveTab('worktree_explorer')}
+            className="flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer bg-amber-500/15 text-amber-550 border border-amber-500/35 font-bold"
+          >
+            Worktree Explorer
+          </button>
+        </div>
+
+        {/* Worktree Explorer Body */}
+        <div className="flex-grow min-h-0">
+          <WorkspaceExplorer repoPath={repoPath} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full w-full bg-[#08080a] text-zinc-100 font-sans overflow-hidden relative">
       
@@ -479,6 +559,12 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
             }`}
           >
             Project Files
+          </button>
+          <button
+            onClick={() => setActiveTab('worktree_explorer')}
+            className="flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent"
+          >
+            Worktree Explorer
           </button>
         </div>
 
@@ -598,7 +684,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-xs">🔍</span>
-                    <span className="text-xs font-semibold text-zinc-300">Reviewer Agent (Audit)</span>
+                    <span className="text-xs font-semibold text-zinc-350">Reviewer Agent (Audit)</span>
                   </div>
                   <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-mono">
                     {activeChangeset.comments.filter(c => c.agent_name !== 'Tester Agent' && c.agent_name !== 'Architect Agent').length} issues
@@ -953,7 +1039,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl space-y-4">
             <h3 className="text-lg font-bold text-rose-400">⚠️ Post-Apply Validation Failed</h3>
-            <p className="text-xs text-zinc-300 leading-relaxed">
+            <p className="text-xs text-zinc-350 leading-relaxed">
               The changeset was written to disk, but the validation layer detected compiler, linting, or unit test failures. How would you like to recover?
             </p>
             <div className="flex flex-col gap-2 pt-2">

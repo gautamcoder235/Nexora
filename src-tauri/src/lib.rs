@@ -587,6 +587,11 @@ fn get_system_metrics() -> SystemMetrics {
     }
 }
 
+#[tauri::command]
+fn exit_app(app_handle: AppHandle) {
+    app_handle.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -601,9 +606,13 @@ pub fn run() {
             // Start Stalled Agent Watchdog
             swarm_lifecycle::start_agent_watchdog(app.handle().clone());
 
+            // Start Resource Lock Watchdog
+            swarm_lifecycle::start_lock_watchdog(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            exit_app,
             spawn_pty,
             write_pty,
             resize_pty,
@@ -624,11 +633,17 @@ pub fn run() {
             swarm_worktrees::remove_worktree,
             swarm_worktrees::cleanup_worktrees,
             swarm_ownership::validate_ownership,
+            swarm_ownership::acquire_lock,
+            swarm_ownership::release_lock,
+            swarm_ownership::heartbeat_lock,
+            swarm_ownership::get_resource_locks,
             swarm_lifecycle::start_task_execution,
             swarm_lifecycle::finish_task_execution,
             swarm_lifecycle::recover_swarm_state,
             swarm_lifecycle::spawn_agent_session,
             swarm_lifecycle::debug_simulate_agent_completion,
+            swarm_lifecycle::pause_execution,
+            swarm_lifecycle::resume_execution,
             swarm_validation::run_validation_async,
             swarm_agents::get_all_agents,
             swarm_agents::register_agent,

@@ -8,6 +8,9 @@ use tokio::sync::Semaphore;
 use std::sync::Arc;
 
 use crate::swarm_db::DbState;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static VALIDATION_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 lazy_static::lazy_static! {
     static ref VALIDATION_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(5));
@@ -85,7 +88,8 @@ pub fn run_validation_pipeline(
     }
 
     // 2. Start Validation Run
-    let run_id = format!("vrun-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis());
+    let counter = VALIDATION_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let run_id = format!("vrun-{}-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), counter);
     conn.execute(
         "INSERT INTO validation_runs (id, execution_id, status) VALUES (?1, ?2, 'running')",
         rusqlite::params![run_id, execution_id]

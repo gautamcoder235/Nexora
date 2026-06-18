@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from "react";
-import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2 } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentGrid } from "./components/AgentGrid";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
@@ -8,6 +8,7 @@ import { TaskCenter } from "./components/TaskCenter";
 import { ProjectMemory } from "./components/ProjectMemory";
 import { SwarmView } from "./components/SwarmView/SwarmView";
 import { AgentReviewCenter } from "./components/ExecutionReview/AgentReviewCenter";
+import { AgentInspector } from "./components/AgentInspector";
 import { useOrchestratorStore } from "./stores/orchestratorStore";
 import { useSwarmStore } from "./stores/swarmStore";
 import { useBrowserStore } from "./stores/browserStore";
@@ -21,6 +22,47 @@ import { SettingsModal } from "./components/SettingsModal";
 import { EventBus } from "./core/events";
 import { DEFAULT_APP_SETTINGS } from "./types";
 import { useShallow } from 'zustand/react/shallow';
+
+// Localized error boundary for settings modal — prevents settings crash from killing entire UI
+class SettingsModalBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: '' };
+  }
+  static getDerivedStateFromError(e: Error) {
+    return { hasError: true, error: e?.toString() || 'Unknown error' };
+  }
+  componentDidCatch(e: Error, info: React.ErrorInfo) {
+    console.error('[SettingsModal crash]', e, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          zIndex: 200, padding: '32px', fontFamily: 'monospace', color: '#f4f4f5', gap: '16px'
+        }}>
+          <div style={{ color: '#ef4444', fontSize: '16px', fontWeight: 700 }}>Settings Error</div>
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '16px', maxWidth: '560px', fontSize: '11px', color: '#fca5a5', whiteSpace: 'pre-wrap' }}>
+            {this.state.error}
+          </div>
+          <button
+            onClick={() => { this.setState({ hasError: false, error: '' }); useOrchestratorStore.getState().setSettingsModalOpen(false); }}
+            style={{ padding: '8px 20px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: '6px', color: '#f59e0b', fontSize: '12px', cursor: 'pointer' }}
+          >
+            Close
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 
 function App() {
   const initStore = useOrchestratorStore(s => s.initStore);
@@ -87,6 +129,38 @@ function App() {
   const [renameWsId, setRenameWsId] = useState<string | null>(null);
   const [renameWsName, setRenameWsName] = useState("");
 
+  const workspaceInputRef = useRef<HTMLInputElement>(null);
+  const [showBrowseAllModal, setShowBrowseAllModal] = useState(false);
+  const [browseSearchQuery, setBrowseSearchQuery] = useState("");
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importJsonText, setImportJsonText] = useState("");
+
+  const formatWorkspaceTime = (timestamp: number | undefined): string => {
+    if (!timestamp) return "Today";
+    const now = new Date();
+    const date = new Date(timestamp);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffTime = today.getTime() - targetDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays > 1 && diffDays < 30) return `${diffDays} days ago`;
+    return date.toLocaleDateString();
+  };
+
+  const formatLastOpenedTime = (timestamp: number | undefined): string => {
+    if (!timestamp) return "Last opened recently";
+    const now = Date.now();
+    const diffMs = now - timestamp;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `Last opened ${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `Last opened ${diffHours}h ago`;
+    return `Last opened ${formatWorkspaceTime(timestamp).toLowerCase()}`;
+  };
+
   const handleRenameWs = async () => {
     if (!renameWsName.trim() || !renameWsId) return;
     try {
@@ -137,6 +211,31 @@ function App() {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeWorkspaceId) return;
+
+    const handleLandingKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+N -> Focus workspace name input
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        workspaceInputRef.current?.focus();
+      }
+      // Ctrl+O -> Open Browse All Modal
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        setShowBrowseAllModal(true);
+      }
+      // Ctrl+I -> Open Import Profile Modal
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        setShowImportModal(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleLandingKeyDown);
+    return () => window.removeEventListener('keydown', handleLandingKeyDown);
+  }, [activeWorkspaceId]);
 
   const startSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -425,64 +524,339 @@ function App() {
     } catch (e) {
       console.error("Failed to select folder path:", e);
     }
-  };
-
-  // If no workspace is active/defined, prompt to create a Workspace Session
+  };  // If no workspace is active/defined, prompt to create a Workspace Session
   if (!activeWorkspaceId) {
+    // Sort workspaces by lastOpened (descending)
+    const sortedWorkspaces = [...workspaces].sort((a, b) => {
+      return (b.lastOpened || 0) - (a.lastOpened || 0);
+    });
+
+    const latestWorkspace = sortedWorkspaces[0];
+    const recentWorkspaces = sortedWorkspaces.slice(1, 4); // next 3 workspaces
+
+    const handleExitApp = async () => {
+      try {
+        await invoke("exit_app");
+      } catch (e) {
+        console.warn("Tauri close command failed, falling back to window.close():", e);
+        window.close();
+      }
+    };
+
     return (
-      <div className="h-screen w-screen text-zinc-100 flex flex-col justify-center items-center font-sans p-6 select-none relative workspace-setup-bg overflow-hidden">
+      <div className="h-screen w-screen text-zinc-100 flex flex-col justify-between items-center font-sans p-8 select-none relative workspace-setup-bg overflow-hidden">
         {/* Glow ambient background circles */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-          <div className="absolute top-[-10%] left-[-10%] w-[55%] h-[55%] rounded-full bg-amber-500/5 blur-[120px] animate-pulse" style={{ animationDuration: '8s' }}></div>
-          <div className="absolute bottom-[-10%] right-[-10%] w-[55%] h-[55%] rounded-full bg-purple-500/5 blur-[120px] animate-pulse" style={{ animationDuration: '12s' }}></div>
+          <div className="absolute top-[-15%] left-[-15%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-tr from-amber-500/10 to-orange-500/10 opacity-30 blur-[130px] animate-pulse" style={{ animationDuration: '9s' }}></div>
+          <div className="absolute bottom-[-15%] right-[-15%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-br from-purple-500/10 to-indigo-500/10 opacity-30 blur-[130px] animate-pulse" style={{ animationDuration: '13s' }}></div>
+          
+          {/* Abstract Grid Overlay */}
+          <div 
+            className="absolute inset-0 opacity-[0.02]" 
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)
+              `,
+              backgroundSize: '32px 32px',
+              maskImage: 'radial-gradient(circle at center, black, transparent 85%)',
+              WebkitMaskImage: 'radial-gradient(circle at center, black, transparent 85%)',
+            }}
+          ></div>
+
+          {/* Orbiting / Floating Particles */}
+          <div className="absolute top-[25%] left-[20%] w-2.5 h-2.5 rounded-full bg-amber-400/25 blur-[1px] animate-float" style={{ animationDelay: '0s', animationDuration: '8s' }}></div>
+          <div className="absolute top-[65%] left-[15%] w-3.5 h-3.5 rounded-full bg-purple-400/20 blur-[1px] animate-float" style={{ animationDelay: '2s', animationDuration: '12s' }}></div>
+          <div className="absolute top-[35%] right-[25%] w-2 h-2 rounded-full bg-orange-400/35 blur-[1px] animate-float" style={{ animationDelay: '4s', animationDuration: '10s' }}></div>
+          <div className="absolute top-[75%] right-[20%] w-2.5 h-2.5 rounded-full bg-amber-500/20 blur-[1px] animate-float" style={{ animationDelay: '1s', animationDuration: '14s' }}></div>
         </div>
 
-        <div className="w-full max-w-md workspace-setup-card p-8 space-y-6 text-center z-10 relative">
-          {/* Logo brand */}
-          <div className="relative w-16 h-16 mx-auto flex items-center justify-center group mb-2">
-            {/* Outer glowing gradient aura */}
-            <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 opacity-25 blur-md group-hover:opacity-45 transition-opacity duration-500 animate-pulse"></div>
-            {/* Logo box */}
-            <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1c1c24] to-[#0c0c12] border border-white/15 flex items-center justify-center shadow-2xl group-hover:border-amber-500/40 transition-all duration-300">
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 font-black text-xl tracking-wider select-none font-mono">
-                NX
-              </span>
-            </div>
-          </div>
+        {/* Top Spacer / Flex item */}
+        <div className="flex-1 flex flex-col justify-center items-center w-full max-w-4xl z-10 relative">
           
-          <div className="space-y-3">
-            <h1 className="text-3xl font-black tracking-tight text-white bg-clip-text bg-gradient-to-b from-white via-zinc-100 to-zinc-400 select-none">
-              Nexora
-            </h1>
-            <div className="flex justify-center">
-              <span className="px-3 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono bg-amber-500/10 text-amber-500 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.05)] select-none">
-                AI Orchestrator
-              </span>
+          {/* Header section */}
+          <div className="text-center space-y-4 mb-12 select-none">
+            {/* Logo brand with orange glow */}
+            <div className="relative w-20 h-20 mx-auto flex items-center justify-center group mb-4">
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 opacity-25 blur-lg group-hover:opacity-45 transition-opacity duration-500 animate-pulse"></div>
+              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-[#181822] to-[#07070b] border border-white/10 flex items-center justify-center shadow-2xl group-hover:border-amber-500/40 transition-all duration-300">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 font-black text-2xl tracking-wider select-none font-mono">
+                  NX
+                </span>
+              </div>
             </div>
-            <p className="text-zinc-400 text-xs max-w-sm mx-auto leading-relaxed pt-2 select-none px-4">
-              A command-center dashboard designed to coordinate and monitor <span className="text-zinc-200 font-medium">autonomous CLI coding agents</span> across multiple project folders.
-            </p>
+
+            <div className="space-y-3">
+              <h1 className="text-5xl md:text-6xl font-black tracking-tight text-white bg-clip-text bg-gradient-to-r from-white via-zinc-200 to-amber-500 select-none filter drop-shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+                Nexora
+              </h1>
+              <div className="flex justify-center">
+                <span className="px-3.5 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono bg-amber-500/10 text-[#f59e0b] border border-amber-500/25 shadow-[0_0_15px_rgba(245,158,11,0.08)] select-none">
+                  🤖 AI Orchestrator
+                </span>
+              </div>
+              <p className="text-zinc-400 text-xs md:text-sm max-w-lg mx-auto leading-relaxed pt-2 px-4 select-none">
+                A command-center dashboard designed to coordinate and monitor <span className="text-[#f59e0b] font-semibold">autonomous CLI coding agents</span> across multiple project folders.
+              </p>
+            </div>
           </div>
 
-          <div className="space-y-4 pt-2">
-            {workspaces.length > 0 ? (
-              <div className="space-y-3">
-                <div className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider text-left pl-1">
-                  Resume Workspace Session
+          {/* Middle Layout */}
+          {workspaces.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 w-full max-w-4xl relative items-stretch">
+              
+              {/* Vertical line with OR badge */}
+              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/[0.06] -translate-x-1/2 hidden md:block"></div>
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border border-white/[0.08] bg-[#07070c] flex items-center justify-center text-[10px] text-zinc-500 font-bold uppercase font-mono hidden md:flex select-none">
+                OR
+              </div>
+
+              {/* Left Column: Resume Workspace */}
+              <div className="flex flex-col text-left">
+                <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest mb-3 pl-1">
+                  Resume Workspace
                 </div>
-                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1">
-                  {workspaces.map(ws => (
-                    <div key={ws.id} className="group/item flex items-center gap-2 w-full p-1 rounded-xl bg-white/[0.01] border border-white/[0.04] hover:bg-white/[0.04] hover:border-white/[0.08] transition-all duration-200">
+                <div 
+                  onClick={() => useOrchestratorStore.getState().selectWorkspace(latestWorkspace.id)}
+                  className="group flex items-center justify-between p-6 rounded-2xl bg-[#0b0c10]/40 border border-white/[0.04] hover:bg-[#0f1017]/85 hover:border-amber-500/30 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-amber-500/[0.02] transition-all duration-300 ease-out cursor-pointer h-[130px] select-none"
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover:bg-amber-500/20 group-hover:border-amber-500/40 transition-all duration-300 shadow-[0_0_15px_rgba(245,158,11,0.08)]">
+                      <FolderOpen size={20} className="text-[#f59e0b]" />
+                    </div>
+                    <div className="flex flex-col min-w-0 text-left">
+                      <span className="text-sm font-bold text-white group-hover:text-amber-400 transition-colors truncate">{latestWorkspace.name}</span>
+                      <span className="text-[10.5px] font-mono text-zinc-400 group-hover:text-zinc-300 truncate mt-1" title={latestWorkspace.rootPath}>{latestWorkspace.rootPath}</span>
+                      <span className="text-[10px] text-zinc-500 mt-2">{formatLastOpenedTime(latestWorkspace.lastOpened)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-white/5 bg-white/5 text-zinc-500 group-hover:border-amber-500/20 group-hover:text-amber-500 transition-all">Enter</span>
+                    <ChevronRight size={18} className="text-zinc-500 group-hover:text-amber-400 group-hover:translate-x-1 transition-all" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Create New Session */}
+              <div className="flex flex-col text-left">
+                <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest mb-3 pl-1">
+                  Create New Session
+                </div>
+                <div className="flex flex-col justify-between p-6 rounded-2xl bg-[#0b0c10]/40 border border-white/[0.04] shadow-2xl h-[130px] space-y-3">
+                  <div className="relative group/input">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-amber-500 transition-colors duration-300">
+                      <Folder size={14} />
+                    </div>
+                    <input
+                      ref={workspaceInputRef}
+                      type="text"
+                      value={initName}
+                      onChange={(e) => setInitName(e.target.value)}
+                      placeholder="Workspace name (e.g. CLI Coding Team)"
+                      className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/50 focus:bg-black/60 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none transition-all duration-300 focus:shadow-[0_0_20px_rgba(245,158,11,0.08)]"
+                    />
+                  </div>
+                  <button
+                    onClick={handleInitWorkspace}
+                    disabled={!initName.trim()}
+                    className={`w-full flex items-center justify-center gap-2 font-bold text-xs py-2.5 px-4 rounded-xl transition-all duration-300 ${
+                      initName.trim()
+                        ? "bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/10 cursor-pointer active:scale-[0.98]"
+                        : "bg-white/[0.02] border border-white/[0.04] text-zinc-650 cursor-not-allowed"
+                    }`}
+                  >
+                    <FolderOpen size={14} />
+                    Choose Workspace Directory
+                  </button>
+                </div>
+                <p className="text-[10px] text-zinc-500 text-left pl-1 mt-1.5 flex items-center gap-1.5 select-none">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse"></span>
+                  Enter workspace name, then choose a directory to initialize
+                </p>
+              </div>
+
+            </div>
+          ) : (
+            /* Empty state - only show Create Session card centered */
+            <div className="w-full max-w-md p-6 rounded-2xl bg-[#0b0c10]/40 border border-white/[0.04] shadow-2xl space-y-4">
+              <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest text-center select-none">
+                Create New Session
+              </div>
+              <div className="relative group/input">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-amber-500 transition-colors duration-300">
+                  <Folder size={14} />
+                </div>
+                <input
+                  ref={workspaceInputRef}
+                  type="text"
+                  value={initName}
+                  onChange={(e) => setInitName(e.target.value)}
+                  placeholder="Workspace name (e.g. CLI Coding Team)"
+                  className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/50 focus:bg-black/60 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none transition-all duration-300 focus:shadow-[0_0_20px_rgba(245,158,11,0.08)]"
+                />
+              </div>
+              <button
+                onClick={handleInitWorkspace}
+                disabled={!initName.trim()}
+                className={`w-full flex items-center justify-center gap-2 font-bold text-xs py-2.5 px-4 rounded-xl transition-all duration-300 ${
+                  initName.trim()
+                    ? "bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/10 cursor-pointer active:scale-[0.98]"
+                    : "bg-white/[0.02] border border-white/[0.04] text-zinc-650 cursor-not-allowed"
+                }`}
+              >
+                <FolderOpen size={14} />
+                Choose Workspace Directory
+              </button>
+              <p className="text-[10px] text-zinc-500 text-center pl-1 mt-1.5 flex items-center justify-center gap-1.5 select-none">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse"></span>
+                Enter workspace name, then choose a directory to initialize
+              </p>
+            </div>
+          )}
+
+          {/* Recent Workspaces Section */}
+          {workspaces.length > 1 && (
+            <div className="w-full max-w-4xl mt-16 text-left">
+              <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest mb-3 pl-1">
+                Recent Workspaces
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
+                
+                {/* Workspace cards */}
+                {recentWorkspaces.map(ws => (
+                  <div
+                    key={ws.id}
+                    onClick={() => useOrchestratorStore.getState().selectWorkspace(ws.id)}
+                    className="group/card flex items-center gap-3 p-3.5 rounded-xl bg-[#0b0c10]/20 border border-white/[0.03] hover:bg-[#0f1017]/85 hover:border-amber-500/20 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-amber-500/[0.01] transition-all duration-300 ease-out cursor-pointer min-w-0 min-h-[72px] active:scale-[0.985]"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover/card:bg-amber-500/20 group-hover/card:border-amber-500/30 transition-all">
+                      <Folder size={14} className="text-[#f59e0b]" />
+                    </div>
+                    <div className="flex flex-col min-w-0 text-left">
+                      <span className="text-xs font-bold text-zinc-200 group-hover/card:text-white transition-colors truncate">{ws.name}</span>
+                      <span className="text-[9.5px] font-mono text-zinc-500 truncate mt-0.5" title={ws.rootPath}>{ws.rootPath}</span>
+                      <span className="text-[9px] text-zinc-500 mt-1">{formatWorkspaceTime(ws.lastOpened)}</span>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Browse All Link Card */}
+                <div
+                  onClick={() => setShowBrowseAllModal(true)}
+                  className="group/card flex items-center justify-between p-3.5 rounded-xl bg-[#0b0c10]/10 border border-dashed border-white/10 hover:bg-[#0f1017]/60 hover:border-amber-500/30 hover:-translate-y-0.5 hover:shadow-xl transition-all duration-300 ease-out cursor-pointer min-h-[72px] active:scale-[0.985]"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 flex-shrink-0 group-hover/card:bg-amber-500/10 group-hover/card:border-amber-500/20 group-hover/card:text-amber-400 transition-all">
+                      <FolderOpen size={14} />
+                    </div>
+                    <div className="flex flex-col min-w-0 text-left">
+                      <span className="text-xs font-bold text-zinc-300 group-hover/card:text-white transition-colors">Browse All</span>
+                      <span className="text-[9.5px] text-zinc-500 mt-0.5">View all workspaces</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                    <span className="text-[8px] font-mono px-1 py-0.5 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover/card:text-amber-500 group-hover/card:border-amber-500/20 transition-all">Ctrl+O</span>
+                    <ChevronRight size={14} className="text-zinc-500 group-hover/card:text-amber-400 group-hover/card:translate-x-0.5 transition-all" />
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer Status Bar */}
+        <div className="w-full max-w-4xl flex justify-between items-center py-4 border-t border-white/[0.04] text-xs text-zinc-500 z-10 mt-6 select-none">
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => { if (workspaceInputRef.current) { workspaceInputRef.current.focus(); workspaceInputRef.current.select(); } }}
+              className="group flex items-center gap-1.5 hover:text-zinc-200 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+            >
+              <Sparkles size={13} className="text-[#f59e0b] group-hover:animate-pulse" />
+              <span>New Session</span>
+              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-amber-400 group-hover:border-amber-500/20 transition-all ml-1.5">Ctrl+N</span>
+            </button>
+            <button
+              onClick={() => {
+                setImportJsonText("");
+                setShowImportModal(true);
+              }}
+              className="group flex items-center gap-1.5 hover:text-zinc-200 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+            >
+              <Import size={13} />
+              <span>Import Profile</span>
+              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-zinc-300 group-hover:border-white/15 transition-all ml-1.5">Ctrl+I</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => useOrchestratorStore.getState().setSettingsModalOpen(true)}
+              className="group flex items-center gap-1.5 hover:text-zinc-200 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+            >
+              <Settings size={13} />
+              <span>Settings</span>
+              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-zinc-300 group-hover:border-white/15 transition-all ml-1.5">Ctrl+,</span>
+            </button>
+            <button
+              onClick={handleExitApp}
+              className="group flex items-center gap-1.5 hover:text-red-400 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+            >
+              <Power size={13} />
+              <span>Exit</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Browse All Workspaces Modal */}
+        {showBrowseAllModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[99999] flex items-center justify-center animate-in fade-in duration-200">
+            <div className="glass-modal glass-noise-base w-[480px] max-h-[80vh] p-6 flex flex-col relative animate-in zoom-in-95 duration-200">
+              {/* Close Button */}
+              <button
+                onClick={() => setShowBrowseAllModal(false)}
+                className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200 p-1 rounded-full hover:bg-zinc-800/30 transition-all cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+              
+              <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-200 border-b border-white/10 pb-3 mb-4 flex items-center gap-2 select-none">
+                <FolderOpen size={16} className="text-amber-500" />
+                Browse All Workspaces ({workspaces.length})
+              </h2>
+
+              {/* Search Input */}
+              <div className="relative mb-4">
+                <Search size={14} className="absolute left-3 top-3.5 text-zinc-500" />
+                <input
+                  type="text"
+                  value={browseSearchQuery}
+                  onChange={(e) => setBrowseSearchQuery(e.target.value)}
+                  placeholder="Search workspaces..."
+                  className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/50 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none"
+                />
+              </div>
+
+              {/* Scrollable list of all workspaces */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[200px]">
+                {workspaces
+                  .filter(ws => ws.name.toLowerCase().includes(browseSearchQuery.toLowerCase()) || ws.rootPath.toLowerCase().includes(browseSearchQuery.toLowerCase()))
+                  .map(ws => (
+                    <div key={ws.id} className="group/item flex items-center justify-between p-2 rounded-xl bg-white/[0.01] border border-white/[0.04] hover:bg-white/[0.04] hover:border-white/[0.08] transition-all">
                       <button
-                        onClick={() => useOrchestratorStore.getState().selectWorkspace(ws.id)}
+                        onClick={() => {
+                          setShowBrowseAllModal(false);
+                          useOrchestratorStore.getState().selectWorkspace(ws.id);
+                        }}
                         className="flex-1 flex items-center gap-3 px-3 py-2 text-left rounded-lg text-zinc-300 transition-colors min-w-0 bg-transparent border-0 outline-none cursor-pointer"
                       >
-                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover/item:bg-amber-500/20 group-hover/item:border-amber-500/30 transition-all">
-                          <FolderOpen size={14} />
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover/item:bg-amber-500/20 transition-all">
+                          <Folder size={14} className="text-[#f59e0b]" />
                         </div>
                         <div className="flex flex-col min-w-0">
-                          <span className="text-xs font-semibold text-zinc-200 truncate group-hover/item:text-white transition-colors">{ws.name}</span>
-                          <span className="text-[10px] font-mono text-zinc-500 truncate max-w-[220px]" title={ws.rootPath}>{ws.rootPath}</span>
+                          <span className="text-xs font-semibold text-zinc-200 group-hover/item:text-white truncate">{ws.name}</span>
+                          <span className="text-[10px] font-mono text-zinc-500 truncate mt-0.5" title={ws.rootPath}>{ws.rootPath}</span>
                         </div>
                       </button>
                       <button
@@ -503,51 +877,77 @@ function App() {
                       </button>
                     </div>
                   ))}
-                </div>
-                <div className="relative flex py-2 items-center">
-                  <div className="flex-grow border-t border-white/[0.06]"></div>
-                  <span className="flex-shrink mx-4 text-zinc-500 text-[9px] font-mono uppercase tracking-wider font-semibold">OR</span>
-                  <div className="flex-grow border-t border-white/[0.06]"></div>
-                </div>
               </div>
-            ) : null}
+            </div>
+          </div>
+        )}
 
-            <div className="space-y-3">
-              <div className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider text-left pl-1">
-                Create New Session
-              </div>
-              <div className="space-y-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={initName}
-                    onChange={(e) => setInitName(e.target.value)}
-                    placeholder="Workspace Name (e.g. CLI Coding Team)"
-                    className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/60 rounded-xl px-4 py-3 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:outline-none transition-all duration-300 focus:shadow-[0_0_15px_rgba(245,158,11,0.08)]"
-                  />
-                </div>
-                {!initName.trim() && (
-                  <p className="text-[10px] text-zinc-500 text-left px-1 mt-0.5 italic flex items-center gap-1.5">
-                    <span className="inline-block w-1 h-1 rounded-full bg-amber-500/50"></span>
-                    Enter a workspace name to select a directory
-                  </p>
-                )}
+        {/* Import Settings Profile Modal */}
+        {showImportModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[99999] flex items-center justify-center animate-in fade-in duration-200">
+            <div className="glass-modal glass-noise-base w-[460px] p-6 flex flex-col relative animate-in zoom-in-95 duration-200">
+              {/* Close Button */}
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200 p-1 rounded-full hover:bg-zinc-800/30 transition-all cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+              
+              <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-200 border-b border-white/10 pb-3 mb-3 flex items-center gap-2 select-none">
+                <Import size={16} className="text-amber-500" />
+                Import Settings Profile
+              </h2>
+              
+              <p className="text-[10px] text-zinc-400 mb-4 select-none leading-relaxed">
+                Paste a settings profile JSON configuration below. This will overwrite appearance, typography, layout, terminal, or hotkey preferences with the imported values.
+              </p>
+
+              <textarea
+                value={importJsonText}
+                onChange={(e) => setImportJsonText(e.target.value)}
+                placeholder={`{\n  "appearance": {\n    "theme": "dark-glass",\n    "accentColor": "amber"\n  }\n}`}
+                className="w-full h-40 bg-black/40 border border-white/[0.08] focus:border-amber-500/50 rounded-xl p-3 text-[11px] font-mono text-zinc-200 placeholder-zinc-600 outline-none resize-none"
+              />
+
+              <div className="flex gap-2 justify-end mt-4">
                 <button
-                  onClick={handleInitWorkspace}
-                  disabled={!initName.trim()}
-                  className={`w-full flex items-center justify-center gap-2 font-bold text-xs py-3 px-4 rounded-xl transition-all duration-300 ${
-                    initName.trim()
-                      ? "bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-black shadow-lg shadow-amber-500/10 hover:shadow-amber-500/20 cursor-pointer active:scale-[0.98]"
-                      : "bg-white/[0.04] border border-white/[0.06] text-zinc-500 cursor-not-allowed"
-                  }`}
+                  onClick={() => setShowImportModal(false)}
+                  className="bg-transparent hover:bg-[#07070b] text-zinc-400 hover:text-zinc-200 border border-border-glass hover:border-border-glass-hover font-bold text-[10px] uppercase py-2 px-4 rounded-lg transition-all cursor-pointer"
                 >
-                  <FolderOpen size={14} />
-                  Choose Workspace Directory
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    try {
+                      if (!importJsonText.trim()) throw new Error("JSON configuration cannot be empty.");
+                      const parsed = JSON.parse(importJsonText);
+                      if (typeof parsed !== 'object' || parsed === null) {
+                        throw new Error("Parsed JSON is not a valid configuration object.");
+                      }
+                      useOrchestratorStore.getState().updateSettings(parsed);
+                      setShowImportModal(false);
+                      setImportJsonText("");
+                      // Trigger alert via store
+                      useOrchestratorStore.getState().showAlertDialog("Profile Imported", "The settings profile has been successfully parsed and applied.");
+                    } catch (err: any) {
+                      alert("Import error: " + err.message);
+                    }
+                  }}
+                  className="bg-accent-primary hover:bg-accent-secondary text-black font-bold text-[10px] uppercase py-2 px-4 rounded-lg shadow transition-all cursor-pointer"
+                >
+                  Apply Profile
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Global Dialogs & Modals */}
+        <CustomDialog />
+        <SettingsModalBoundary>
+          <SettingsModal />
+        </SettingsModalBoundary>
       </div>
     );
   }
@@ -1055,7 +1455,10 @@ function App() {
       </div>
       <ContextMenu />
       <CustomDialog />
-      <SettingsModal />
+      <SettingsModalBoundary>
+        <SettingsModal />
+      </SettingsModalBoundary>
+      <AgentInspector />
     </div>
   );
 }

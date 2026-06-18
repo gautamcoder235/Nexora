@@ -304,10 +304,14 @@ pub fn read_artifact(app_handle: AppHandle, artifact_id: String) -> Result<Artif
 // ============================================================================
 
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static QUERIES_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn gen_id(prefix: &str) -> String {
     let ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
-    format!("{}-{}", prefix, ms)
+    let counter = QUERIES_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{}-{}", prefix, ms, counter)
 }
 
 // -- ExecutionSummary (rich list row) ----------------------------------------
@@ -343,7 +347,7 @@ pub fn list_executions(app_handle: AppHandle, limit: Option<i64>) -> Result<Vec<
             e.status,
             e.start_time,
             e.end_time,
-            vr.status as validation_status,
+            (SELECT status FROM validation_runs WHERE execution_id = e.id ORDER BY started_at DESC LIMIT 1) as validation_status,
             (SELECT COUNT(*) FROM validation_steps vs
              JOIN validation_runs vr2 ON vs.validation_run_id = vr2.id
              WHERE vr2.execution_id = e.id AND vs.status = 'passed') as steps_passed,
@@ -354,12 +358,10 @@ pub fn list_executions(app_handle: AppHandle, limit: Option<i64>) -> Result<Vec<
              JOIN validation_runs vr2 ON vs.validation_run_id = vr2.id
              WHERE vr2.execution_id = e.id AND vs.status = 'running'
              LIMIT 1) as current_gate,
-            CASE WHEN mc.id IS NOT NULL THEN 1 ELSE 0 END as has_merge_candidate,
-            mc.status as merge_status
+            CASE WHEN (SELECT id FROM merge_candidates WHERE execution_id = e.id LIMIT 1) IS NOT NULL THEN 1 ELSE 0 END as has_merge_candidate,
+            (SELECT status FROM merge_candidates WHERE execution_id = e.id ORDER BY rowid DESC LIMIT 1) as merge_status
         FROM executions e
         LEFT JOIN tasks t ON e.task_id = t.id
-        LEFT JOIN validation_runs vr ON vr.execution_id = e.id
-        LEFT JOIN merge_candidates mc ON mc.execution_id = e.id
         WHERE e.deleted_at IS NULL
         ORDER BY e.start_time DESC
         LIMIT ?1
