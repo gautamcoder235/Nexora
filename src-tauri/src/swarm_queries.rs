@@ -169,20 +169,16 @@ pub fn get_execution_metadata(app_handle: AppHandle, execution_id: String) -> Re
     let meta = conn.query_row(
         "SELECT 
             e.task_id, 
-            e.agent_id, 
-            p.pid, 
-            s.head_commit, 
-            s.branch, 
+            COALESCE(e.agent_id, '') as agent_id, 
+            (SELECT pid FROM agent_processes WHERE execution_id = e.id ORDER BY started_at DESC LIMIT 1) as pid, 
+            (SELECT head_commit FROM execution_snapshots WHERE execution_id = e.id ORDER BY timestamp DESC LIMIT 1) as head_commit, 
+            (SELECT branch FROM execution_snapshots WHERE execution_id = e.id ORDER BY timestamp DESC LIMIT 1) as branch, 
             e.start_time, 
             e.end_time, 
-            v.id as validation_run_id, 
+            (SELECT id FROM validation_runs WHERE execution_id = e.id ORDER BY started_at DESC LIMIT 1) as validation_run_id, 
             e.status 
          FROM executions e
-         LEFT JOIN agent_processes p ON p.execution_id = e.id
-         LEFT JOIN execution_snapshots s ON s.execution_id = e.id
-         LEFT JOIN validation_runs v ON v.execution_id = e.id
-         WHERE e.id = ?1
-         LIMIT 1",
+         WHERE e.id = ?1",
         rusqlite::params![execution_id],
         |row| {
             Ok(ExecutionMetadata {
@@ -192,7 +188,7 @@ pub fn get_execution_metadata(app_handle: AppHandle, execution_id: String) -> Re
                 pid: row.get(2)?,
                 head_commit: row.get(3)?,
                 branch: row.get(4)?,
-                started_at: row.get(5)?,
+                started_at: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
                 ended_at: row.get(6)?,
                 validation_run_id: row.get(7)?,
                 status: row.get(8)?,
@@ -545,4 +541,40 @@ pub fn discard_execution_draft(app_handle: AppHandle, draft_id: String) -> Resul
     let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
     crate::swarm_db::delete_execution_draft(conn, &draft_id).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ExecutionSnapshotInfo {
+    pub id: String,
+    pub execution_id: String,
+    pub head_commit: String,
+    pub branch: String,
+    pub timestamp: String,
+}
+
+#[tauri::command]
+pub fn list_execution_snapshots(app_handle: AppHandle, execution_id: String) -> Result<Vec<ExecutionSnapshotInfo>, String> {
+    let db_state: State<DbState> = app_handle.state();
+    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+
+    let mut stmt = conn.prepare(
+        "SELECT id, execution_id, head_commit, branch, timestamp FROM execution_snapshots WHERE execution_id = ?1 ORDER BY timestamp DESC"
+    ).map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map([execution_id], |row| {
+        Ok(ExecutionSnapshotInfo {
+            id: row.get(0)?,
+            execution_id: row.get(1)?,
+            head_commit: row.get(2)?,
+            branch: row.get(3)?,
+            timestamp: row.get(4)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        list.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(list)
 }

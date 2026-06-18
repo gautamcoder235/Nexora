@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, ChevronRight, FolderOpen, Tag, Bot, Plus, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { swarmApi } from "../../services/ExecutionEvents";
@@ -29,7 +29,7 @@ interface Props {
 }
 
 export function LaunchExecutionPanel({ onClose, agents, draft }: Props) {
-  const { loadExecutions, loadDrafts, discardDraft } = useSwarmStore();
+  const { drafts, loadExecutions, loadDrafts, discardDraft } = useSwarmStore();
   const [step, setStep] = useState<1 | 2>(1);
   const [data, setData] = useState<Step1Data>(() => {
     if (draft) {
@@ -38,11 +38,17 @@ export function LaunchExecutionPanel({ onClose, agents, draft }: Props) {
         taskTitle: draft.task_title || "",
         taskDescription: draft.task_description || "",
         agentId: draft.agent_id || "claude",
-        allowedPatterns: draft.allowed_patterns ? JSON.parse(draft.allowed_patterns) : ["src/**"],
+        allowedPatterns: Array.isArray(draft.allowed_patterns)
+          ? draft.allowed_patterns
+          : (draft.allowed_patterns ? JSON.parse(draft.allowed_patterns) : ["src/**"]),
       };
     }
     return defaultStep1;
   });
+
+  useEffect(() => {
+    loadDrafts();
+  }, []);
   const [patternInput, setPatternInput] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +138,48 @@ export function LaunchExecutionPanel({ onClose, agents, draft }: Props) {
       {/* Step 1 */}
       {step === 1 && (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Saved Drafts */}
+          {drafts.length > 0 && (
+            <div className="space-y-1.5 pb-3 border-b border-[#1b1b22]">
+              <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider block">Saved Draft Tasks</label>
+              <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                {drafts.map((d) => (
+                  <div 
+                    key={d.id} 
+                    className="flex items-center justify-between bg-[#121216] border border-[#232329] hover:border-purple-500/30 rounded p-2 text-xs font-sans transition-all"
+                  >
+                    <div 
+                      onClick={() => {
+                        setData({
+                          repoPath: d.repo_path,
+                          taskTitle: d.task_title,
+                          taskDescription: d.task_description ?? "",
+                          agentId: d.agent_id,
+                          allowedPatterns: Array.isArray(d.allowed_patterns)
+                            ? d.allowed_patterns
+                            : (d.allowed_patterns ? JSON.parse(d.allowed_patterns as any) : ["src/**"]),
+                        });
+                      }}
+                      className="flex-1 cursor-pointer min-w-0 mr-2"
+                    >
+                      <div className="font-bold text-zinc-200 truncate">{d.task_title}</div>
+                      <div className="text-[9px] text-zinc-550 truncate font-mono mt-0.5">{d.repo_path}</div>
+                    </div>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        discardDraft(d.id);
+                      }}
+                      className="text-zinc-500 hover:text-red-400 p-1 rounded transition-colors cursor-pointer shrink-0"
+                      title="Discard draft"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Repository */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">Repository Path</label>

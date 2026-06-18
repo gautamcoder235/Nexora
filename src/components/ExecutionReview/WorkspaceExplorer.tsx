@@ -33,6 +33,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
   const [isFileLoading, setIsFileLoading] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [activeSubTab, setActiveSubTab] = useState<'editor' | 'validation'>('editor');
+  const [editorMode, setEditorMode] = useState<'edit' | 'preview'>('preview');
 
   // Directory Tree state
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -163,6 +164,11 @@ export function WorkspaceExplorer({ repoPath }: Props) {
   // Load selected file content
   useEffect(() => {
     if (!selectedFileAbsolutePath) return;
+    if (selectedFilePath?.endsWith('.md')) {
+      setEditorMode('preview');
+    } else {
+      setEditorMode('edit');
+    }
     const loadFile = async () => {
       setIsFileLoading(true);
       try {
@@ -179,7 +185,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
       }
     };
     loadFile();
-  }, [selectedFileAbsolutePath]);
+  }, [selectedFileAbsolutePath, selectedFilePath]);
 
   // Directory toggle lazy loader
   const toggleDir = async (dirPath: string) => {
@@ -425,6 +431,30 @@ export function WorkspaceExplorer({ repoPath }: Props) {
                   <span className="text-[9px] text-zinc-500 font-mono bg-[#101014] px-1.5 py-0.5 rounded border border-zinc-800 uppercase shrink-0">
                     {getLanguageFromPath(selectedFilePath)} (Worktree)
                   </span>
+                  {selectedFilePath?.endsWith('.md') && (
+                    <div className="flex bg-[#101014] border border-zinc-800 rounded p-0.5 h-7">
+                      <button
+                        onClick={() => setEditorMode('edit')}
+                        className={`px-2 text-[10px] font-bold rounded transition-all cursor-pointer ${
+                          editorMode === 'edit'
+                            ? 'bg-zinc-800 text-white font-extrabold'
+                            : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setEditorMode('preview')}
+                        className={`px-2 text-[10px] font-bold rounded transition-all cursor-pointer ${
+                          editorMode === 'preview'
+                            ? 'bg-zinc-800 text-white font-extrabold'
+                            : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                      >
+                        Preview
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex items-center gap-3 shrink-0">
@@ -444,13 +474,15 @@ export function WorkspaceExplorer({ repoPath }: Props) {
                 </div>
               </div>
 
-              {/* Monaco Editor Container */}
+              {/* Monaco Editor or Markdown Preview Container */}
               <div className="flex-grow w-full bg-[#08080a] min-h-0 relative">
                 {isFileLoading ? (
                   <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
                     <Loader2 size={16} className="animate-spin text-amber-500 mr-2" />
                     Loading file from worktree...
                   </div>
+                ) : selectedFilePath?.endsWith('.md') && editorMode === 'preview' ? (
+                  <MarkdownPreview content={editedFileContent} />
                 ) : (
                   <Editor
                     height="100%"
@@ -613,6 +645,191 @@ function DirectoryTreeRecursive({
           );
         }
       })}
+    </div>
+  );
+}
+
+interface MarkdownPreviewProps {
+  content: string;
+}
+
+export function MarkdownPreview({ content }: MarkdownPreviewProps) {
+  const lines = content.split('\n');
+  const renderedElements: React.ReactNode[] = [];
+  let currentList: React.ReactNode[] = [];
+  let inCodeBlock = false;
+  let codeBlockLang = '';
+  let codeBlockLines: string[] = [];
+
+  const flushList = (key: number) => {
+    if (currentList.length > 0) {
+      renderedElements.push(
+        <ul key={`ul-${key}`} className="list-disc pl-5 my-2 space-y-1 text-zinc-300 text-xs">
+          {currentList}
+        </ul>
+      );
+      currentList = [];
+    }
+  };
+
+  const parseInlineStyles = (text: string) => {
+    // Escape simple HTML
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Bold: **text**
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    // Italic: *text*
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+    // Inline Code: `code`
+    html = html.replace(/`(.*?)`/g, '<code class="bg-[#121215] border border-zinc-800 px-1.5 py-0.5 rounded text-amber-500 font-mono text-[11px]">$1</code>');
+
+    return <span dangerouslySetInnerHTML={{ __html: html }} />;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Handle code blocks
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        // End of code block
+        const codeText = codeBlockLines.join('\n');
+        renderedElements.push(
+          <div key={`code-${i}`} className="my-3 bg-[#050507] border border-zinc-800 rounded-md overflow-hidden font-mono text-xs text-zinc-350">
+            {codeBlockLang && (
+              <div className="bg-[#0c0c0e] border-b border-zinc-800/85 px-3 py-1 text-[9px] uppercase tracking-wider text-zinc-550 font-bold">
+                {codeBlockLang}
+              </div>
+            )}
+            <pre className="p-3 overflow-x-auto whitespace-pre select-text">{codeText}</pre>
+          </div>
+        );
+        inCodeBlock = false;
+        codeBlockLines = [];
+      } else {
+        // Start of code block
+        flushList(i);
+        inCodeBlock = true;
+        codeBlockLang = line.trim().slice(3).trim();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockLines.push(line);
+      continue;
+    }
+
+    // Headers
+    if (line.startsWith('# ')) {
+      flushList(i);
+      renderedElements.push(
+        <h1 key={`h1-${i}`} className="text-base font-bold text-white mt-4 mb-2 border-b border-zinc-800 pb-1.5 font-sans">
+          {parseInlineStyles(line.substring(2))}
+        </h1>
+      );
+    } else if (line.startsWith('## ')) {
+      flushList(i);
+      renderedElements.push(
+        <h2 key={`h2-${i}`} className="text-sm font-bold text-zinc-200 mt-4 mb-2 font-sans">
+          {parseInlineStyles(line.substring(3))}
+        </h2>
+      );
+    } else if (line.startsWith('### ')) {
+      flushList(i);
+      renderedElements.push(
+        <h3 key={`h3-${i}`} className="text-xs font-bold text-zinc-300 mt-3 mb-1.5 font-sans">
+          {parseInlineStyles(line.substring(4))}
+        </h3>
+      );
+    }
+    // Bullet lists
+    else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      const bulletText = line.trim().substring(2);
+      currentList.push(
+        <li key={`li-${i}`} className="leading-relaxed">
+          {parseInlineStyles(bulletText)}
+        </li>
+      );
+    }
+    // Blockquotes & Alerts
+    else if (line.trim().startsWith('>')) {
+      flushList(i);
+      let quoteText = line.trim().substring(1).trim();
+      let alertType: 'note' | 'tip' | 'important' | 'warning' | 'caution' | null = null;
+      
+      if (quoteText.startsWith('[!NOTE]')) {
+        alertType = 'note';
+        quoteText = quoteText.substring(7).trim();
+      } else if (quoteText.startsWith('[!TIP]')) {
+        alertType = 'tip';
+        quoteText = quoteText.substring(6).trim();
+      } else if (quoteText.startsWith('[!IMPORTANT]')) {
+        alertType = 'important';
+        quoteText = quoteText.substring(12).trim();
+      } else if (quoteText.startsWith('[!WARNING]')) {
+        alertType = 'warning';
+        quoteText = quoteText.substring(10).trim();
+      } else if (quoteText.startsWith('[!CAUTION]')) {
+        alertType = 'caution';
+        quoteText = quoteText.substring(10).trim();
+      }
+
+      if (alertType) {
+        const borderColors = {
+          note: 'border-blue-500 bg-blue-500/5 text-blue-300',
+          tip: 'border-emerald-500 bg-emerald-500/5 text-emerald-300',
+          important: 'border-purple-500 bg-purple-500/5 text-purple-300',
+          warning: 'border-amber-500 bg-amber-500/5 text-amber-300',
+          caution: 'border-rose-500 bg-rose-500/5 text-rose-300',
+        };
+        renderedElements.push(
+          <div key={`alert-${i}`} className={`my-3 p-3 border-l-4 rounded-r-md text-xs font-sans leading-relaxed ${borderColors[alertType]}`}>
+            <span className="font-bold uppercase tracking-wider text-[9px] block mb-1">{alertType}</span>
+            {parseInlineStyles(quoteText)}
+          </div>
+        );
+      } else {
+        renderedElements.push(
+          <blockquote key={`quote-${i}`} className="my-3 p-3 border-l-4 border-zinc-700 bg-zinc-900/30 text-zinc-400 italic text-xs rounded-r-md leading-relaxed font-sans">
+            {parseInlineStyles(quoteText)}
+          </blockquote>
+        );
+      }
+    }
+    // Horizontal rule
+    else if (line.trim() === '---' || line.trim() === '***') {
+      flushList(i);
+      renderedElements.push(
+        <hr key={`hr-${i}`} className="my-4 border-zinc-800" />
+      );
+    }
+    // Empty line
+    else if (!line.trim()) {
+      flushList(i);
+    }
+    // Normal paragraph
+    else {
+      flushList(i);
+      renderedElements.push(
+        <p key={`p-${i}`} className="text-zinc-350 text-xs my-2 leading-relaxed font-sans">
+          {parseInlineStyles(line)}
+        </p>
+      );
+    }
+  }
+
+  // Final list flush
+  flushList(lines.length);
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto overflow-y-auto h-full scrollbar-thin select-text">
+      {renderedElements}
     </div>
   );
 }

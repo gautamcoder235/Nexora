@@ -26,7 +26,8 @@ export interface AgentCapabilities {
 }
 
 import { AgentPlugin } from '../plugins/types';
-import { BrowserTab } from "./browser";
+import { BrowserTab, BrowserHistoryItem } from "./browser";
+export type { BrowserTab, BrowserHistoryItem };
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type TaskStatus = 'todo' | 'doing' | 'review' | 'done';
 

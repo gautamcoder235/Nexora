@@ -27,7 +27,11 @@ pub fn init_db(app_handle: &AppHandle) -> Result<(), String> {
 
     run_migrations(&conn).map_err(|e| format!("Migration failed: {}", e))?;
     seed_default_agents(&conn).map_err(|e| format!("Seeding failed: {}", e))?;
-    seed_mock_changeset(&conn).map_err(|e| format!("Seeding mock changeset failed: {}", e))?;
+    
+    // Clean up mock changeset data from existing databases if present
+    let _ = conn.execute("DELETE FROM review_comments WHERE changeset_id = 'cset-mock-auth'", []);
+    let _ = conn.execute("DELETE FROM changeset_files WHERE changeset_id = 'cset-mock-auth'", []);
+    let _ = conn.execute("DELETE FROM changesets WHERE id = 'cset-mock-auth'", []);
     
     app_handle.manage(DbState(Mutex::new(Some(conn))));
     Ok(())

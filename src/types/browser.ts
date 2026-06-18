@@ -9,3 +9,10 @@ export interface BrowserTab {
   favicon?: string;
   isLoading: boolean;
 }
+
+export interface BrowserHistoryItem {
+  title: string;
+  url: string;
+  timestamp: number;
+}
+

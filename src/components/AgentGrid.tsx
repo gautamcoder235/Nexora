@@ -545,17 +545,31 @@ export const AgentGrid: React.FC = () => {
   }, [killTerminal]);
 
   const handleEditAgent = useCallback((agent: AgentProfile) => {
-    const newName = prompt("Edit Agent Profile Name:", agent.name);
-    if (newName !== null) {
-      const newArgsStr = prompt("Edit CLI Arguments (comma-separated):", agent.arguments.join(", "));
-      if (newArgsStr !== null) {
-        const newArgs = newArgsStr.split(",").map(a => a.trim()).filter(a => a !== "");
-        updateAgent(agent.id, {
-          name: newName.trim() || agent.name,
-          arguments: newArgs
-        });
-      }
-    }
+    useOrchestratorStore.getState().showPromptDialog(
+      "Edit Agent Profile Name",
+      "Please enter the new profile name for this agent:",
+      (newName) => {
+        if (newName !== null) {
+          useOrchestratorStore.getState().showPromptDialog(
+            "Edit CLI Arguments",
+            "Enter CLI arguments (comma-separated):",
+            (newArgsStr) => {
+              if (newArgsStr !== null) {
+                const newArgs = newArgsStr.split(",").map(a => a.trim()).filter(a => a !== "");
+                updateAgent(agent.id, {
+                  name: newName.trim() || agent.name,
+                  arguments: newArgs
+                });
+              }
+            },
+            undefined,
+            agent.arguments.join(", ")
+          );
+        }
+      },
+      undefined,
+      agent.name
+    );
   }, [updateAgent]);
 
   const handleDuplicateAgent = useCallback((agent: AgentProfile) => {

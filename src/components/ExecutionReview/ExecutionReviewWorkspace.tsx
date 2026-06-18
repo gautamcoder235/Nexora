@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useExecutionReview } from '../../hooks/useExecutionReview';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { ExecutionSummaryHeader } from './ExecutionSummaryHeader';
 import { PipelineStatusDashboard } from './PipelineStatusDashboard';
 import { PatchDiffViewer } from './PatchDiffViewer';
@@ -23,7 +24,10 @@ export function ExecutionReviewWorkspace({ executionId, onClose }: Props) {
     isLoading, 
     error,
     reviewCandidate,
-    applyMerge
+    applyMerge,
+    pauseExecution,
+    resumeExecution,
+    terminateExecution
   } = useExecutionReview(executionId);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
 
@@ -79,7 +83,13 @@ export function ExecutionReviewWorkspace({ executionId, onClose }: Props) {
 
       {/* Center: Main Review Area */}
       <div className="flex-grow flex-1 flex flex-col overflow-y-auto bg-transparent px-8 py-6 min-w-0">
-        <ExecutionSummaryHeader metadata={metadata} artifacts={artifacts} />
+        <ExecutionSummaryHeader 
+          metadata={metadata} 
+          artifacts={artifacts} 
+          onPause={pauseExecution}
+          onResume={resumeExecution}
+          onTerminate={terminateExecution}
+        />
 
         {/* DEBUG: Simulate Agent Completion */}
         {metadata && !['completed', 'passed', 'terminated', 'failed'].includes(metadata.status) && (
@@ -95,7 +105,7 @@ export function ExecutionReviewWorkspace({ executionId, onClose }: Props) {
                   await invoke('debug_simulate_agent_completion', { executionId: metadata.execution_id });
                 } catch(e) {
                   console.error(e);
-                  alert(e);
+                  useOrchestratorStore.getState().showAlertDialog('Simulation Error', String(e));
                 }
               }}
               className="glass-button glass-button--accent text-sm"
@@ -164,7 +174,7 @@ export function ExecutionReviewWorkspace({ executionId, onClose }: Props) {
                   onClick={async () => {
                     const res = await applyMerge();
                     if (!res.success) {
-                      alert(`Merge failed: ${res.error}`);
+                      useOrchestratorStore.getState().showAlertDialog('Merge Failed', `Merge failed: ${res.error}`);
                     }
                   }}
                   className="glass-button glass-button--accent px-4 py-2 font-semibold"
@@ -188,7 +198,7 @@ export function ExecutionReviewWorkspace({ executionId, onClose }: Props) {
                   onClick={async () => {
                     const res = await applyMerge();
                     if (!res.success) {
-                      alert(`Merge failed: ${res.error}`);
+                      useOrchestratorStore.getState().showAlertDialog('Merge Failed', `Merge failed: ${res.error}`);
                     }
                   }}
                   className="glass-button glass-button--danger text-sm"

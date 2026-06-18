@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useOrchestratorStore } from '../stores/orchestratorStore';
 import {
   ValidationRunInfo,
   ArtifactInfo,
@@ -74,7 +75,7 @@ export function useExecutionReview(executionId: string | null) {
       setMergeCandidate(candidate);
     } catch (err) {
       console.error('Failed to review candidate:', err);
-      alert('Failed to review: ' + err);
+      useOrchestratorStore.getState().showAlertDialog('Review Failed', 'Failed to review: ' + err);
     }
   };
 
@@ -100,6 +101,42 @@ export function useExecutionReview(executionId: string | null) {
     }
   };
 
+  const pauseExecution = async () => {
+    if (!executionId) return;
+    try {
+      await invoke('pause_execution', { executionId });
+      const meta = await invoke<ExecutionMetadata | null>('get_execution_metadata', { executionId });
+      setMetadata(meta);
+    } catch (err) {
+      console.error('Failed to pause execution:', err);
+      useOrchestratorStore.getState().showAlertDialog('Action Failed', 'Failed to pause execution: ' + err);
+    }
+  };
+
+  const resumeExecution = async () => {
+    if (!executionId) return;
+    try {
+      await invoke('resume_execution', { executionId });
+      const meta = await invoke<ExecutionMetadata | null>('get_execution_metadata', { executionId });
+      setMetadata(meta);
+    } catch (err) {
+      console.error('Failed to resume execution:', err);
+      useOrchestratorStore.getState().showAlertDialog('Action Failed', 'Failed to resume execution: ' + err);
+    }
+  };
+
+  const terminateExecution = async () => {
+    if (!executionId) return;
+    try {
+      await invoke('terminate_execution', { executionId });
+      const meta = await invoke<ExecutionMetadata | null>('get_execution_metadata', { executionId });
+      setMetadata(meta);
+    } catch (err) {
+      console.error('Failed to terminate execution:', err);
+      useOrchestratorStore.getState().showAlertDialog('Action Failed', 'Failed to terminate: ' + err);
+    }
+  };
+
   return {
     metadata,
     validationRun,
@@ -110,5 +147,8 @@ export function useExecutionReview(executionId: string | null) {
     error,
     reviewCandidate,
     applyMerge,
+    pauseExecution,
+    resumeExecution,
+    terminateExecution,
   };
 }

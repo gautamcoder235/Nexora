@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Position, Size, LogicalPosition, LogicalSize, WebviewUrl, WebviewWindowBuilder};
 
 pub mod swarm_db;
 pub mod swarm_worktrees;
@@ -477,6 +477,71 @@ fn load_config(app: AppHandle, filename: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn spawn_browser_webview(
+    app_handle: AppHandle,
+    url: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let main_window = app_handle.get_webview_window("main").ok_or("Main window not found")?;
+    let parsed_url = url.parse::<tauri::Url>().map_err(|e| format!("Invalid URL: {}", e))?;
+
+    // Check if webview window already exists
+    if let Some(browser_window) = app_handle.get_webview_window("browser") {
+        browser_window.navigate(parsed_url).map_err(|e| e.to_string())?;
+        let pos = Position::Logical(LogicalPosition::new(x, y));
+        let size = Size::Logical(LogicalSize::new(width, height));
+        browser_window.set_position(pos).map_err(|e| e.to_string())?;
+        browser_window.set_size(size).map_err(|e| e.to_string())?;
+        browser_window.show().map_err(|e| e.to_string())?;
+    } else {
+        let _browser_window = WebviewWindowBuilder::new(&app_handle, "browser", WebviewUrl::External(parsed_url))
+            .decorations(false)
+            .shadow(false)
+            .inner_size(width, height)
+            .position(x, y)
+            .parent(&main_window)
+            .map_err(|e| e.to_string())?
+            .build()
+            .map_err(|e| format!("Failed to build webview window: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn sync_browser_webview_layout(
+    app_handle: AppHandle,
+    visible: bool,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if let Some(browser_window) = app_handle.get_webview_window("browser") {
+        if visible {
+            let pos = Position::Logical(LogicalPosition::new(x, y));
+            let size = Size::Logical(LogicalSize::new(width, height));
+            browser_window.set_position(pos).map_err(|e| e.to_string())?;
+            browser_window.set_size(size).map_err(|e| e.to_string())?;
+            browser_window.show().map_err(|e| e.to_string())?;
+        } else {
+            browser_window.hide().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn destroy_browser_webview(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(browser_window) = app_handle.get_webview_window("browser") {
+        browser_window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn check_cli_tool(command: String) -> bool {
     let check_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
     
@@ -613,6 +678,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             exit_app,
+            spawn_browser_webview,
+            sync_browser_webview_layout,
+            destroy_browser_webview,
             spawn_pty,
             write_pty,
             resize_pty,
@@ -662,6 +730,10 @@ pub fn run() {
             swarm_queries::save_execution_draft,
             swarm_queries::list_execution_drafts,
             swarm_queries::discard_execution_draft,
+            swarm_queries::list_execution_snapshots,
+            swarm_worktrees::revert_execution_snapshot,
+            swarm_validation::save_validation_profile,
+            swarm_validation::get_validation_profile,
             swarm_merge::apply_merge_candidate,
             swarm_changeset::create_changeset_draft,
             swarm_changeset::add_file_to_changeset,

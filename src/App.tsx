@@ -231,11 +231,24 @@ function App() {
         e.preventDefault();
         setShowImportModal(true);
       }
+      // Enter -> Enter recent workspace
+      if (e.key === 'Enter') {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+        if (!isTyping) {
+          const sorted = [...workspaces].sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+          const latest = sorted[0];
+          if (latest) {
+            e.preventDefault();
+            useOrchestratorStore.getState().selectWorkspace(latest.id);
+          }
+        }
+      }
     };
 
     window.addEventListener('keydown', handleLandingKeyDown);
     return () => window.removeEventListener('keydown', handleLandingKeyDown);
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, workspaces]);
 
   const startSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -652,6 +665,11 @@ function App() {
                       type="text"
                       value={initName}
                       onChange={(e) => setInitName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && initName.trim()) {
+                          handleInitWorkspace();
+                        }
+                      }}
                       placeholder="Workspace name (e.g. CLI Coding Team)"
                       className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/50 focus:bg-black/60 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none transition-all duration-300 focus:shadow-[0_0_20px_rgba(245,158,11,0.08)]"
                     />
@@ -931,7 +949,7 @@ function App() {
                       // Trigger alert via store
                       useOrchestratorStore.getState().showAlertDialog("Profile Imported", "The settings profile has been successfully parsed and applied.");
                     } catch (err: any) {
-                      alert("Import error: " + err.message);
+                      useOrchestratorStore.getState().showAlertDialog("Import Error", "Import error: " + err.message);
                     }
                   }}
                   className="bg-accent-primary hover:bg-accent-secondary text-black font-bold text-[10px] uppercase py-2 px-4 rounded-lg shadow transition-all cursor-pointer"

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { BrowserTab } from "../types";
+import { BrowserTab, BrowserHistoryItem } from "../types";
 
 interface BrowserState {
   tabs: BrowserTab[];
@@ -7,6 +7,8 @@ interface BrowserState {
   isBrowserPanelVisible: boolean;
   isBrowserPanelPinned: boolean;
   browserPanelWidth: number;
+  isElementPickerOpen: boolean;
+  history: BrowserHistoryItem[];
 
   // Actions
   addTab: (url?: string) => void;
@@ -17,6 +19,9 @@ interface BrowserState {
   toggleBrowserPanel: () => void;
   toggleBrowserPanelPinned: () => void;
   setBrowserPanelWidth: (width: number) => void;
+  toggleElementPicker: () => void;
+  addToHistory: (title: string, url: string) => void;
+  clearHistoryItem: (url: string) => void;
 }
 
 const normalizeUrl = (input: string): string => {
@@ -66,6 +71,8 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   isBrowserPanelVisible: false,
   isBrowserPanelPinned: false,
   browserPanelWidth: 480,
+  isElementPickerOpen: false,
+  history: [],
 
   addTab: (url = "") => {
     const id = Math.random().toString(36).substring(7);
@@ -81,6 +88,10 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
       tabs: [...state.tabs, newTab],
       activeTabId: id,
     }));
+
+    if (normalized) {
+      get().addToHistory(getTitleFromUrl(normalized), normalized);
+    }
   },
 
   closeTab: (id) => {
@@ -134,6 +145,9 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
           : t
       ),
     }));
+    if (normalized) {
+      get().addToHistory(getTitleFromUrl(normalized), normalized);
+    }
   },
 
   setBrowserState: (newState) => {
@@ -168,5 +182,28 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 
   setBrowserPanelWidth: (width) => {
     set({ browserPanelWidth: width });
+  },
+
+  toggleElementPicker: () => {
+    set((state) => ({ isElementPickerOpen: !state.isElementPickerOpen }));
+  },
+
+  addToHistory: (title, url) => {
+    set((state) => {
+      const filtered = state.history.filter((h) => h.url !== url);
+      const newItem = {
+        title,
+        url,
+        timestamp: Date.now(),
+      };
+      const updatedHistory = [newItem, ...filtered].slice(0, 6);
+      return { history: updatedHistory };
+    });
+  },
+
+  clearHistoryItem: (url) => {
+    set((state) => ({
+      history: state.history.filter((h) => h.url !== url),
+    }));
   },
 }));

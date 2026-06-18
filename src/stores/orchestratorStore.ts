@@ -23,11 +23,14 @@ import { agentTemplates } from "../agents/templates";
 import { PluginRegistry } from "../plugins";
 
 export interface DialogConfig {
-  type: 'alert' | 'confirm';
+  type: 'alert' | 'confirm' | 'prompt';
   title: string;
   message: string;
   onConfirm: () => void;
   onCancel?: () => void;
+  promptDefaultValue?: string;
+  promptPlaceholder?: string;
+  onConfirmPrompt?: (value: string) => void;
 }
 
 interface OrchestratorState {
@@ -116,6 +119,14 @@ interface OrchestratorState {
   dialog: DialogConfig | null;
   showAlertDialog: (title: string, message: string) => void;
   showConfirmDialog: (title: string, message: string, onConfirm: () => void, onCancel?: () => void) => void;
+  showPromptDialog: (
+    title: string,
+    message: string,
+    onConfirm: (value: string) => void,
+    onCancel?: () => void,
+    defaultValue?: string,
+    placeholder?: string
+  ) => void;
   closeDialog: () => void;
 }
 
@@ -259,6 +270,26 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           if (onCancel) onCancel();
           get().closeDialog();
         }
+      }
+    });
+  },
+  showPromptDialog: (title, message, onConfirmPrompt, onCancel, defaultValue = '', placeholder = '') => {
+    set({
+      dialog: {
+        type: 'prompt',
+        title,
+        message,
+        promptDefaultValue: defaultValue,
+        promptPlaceholder: placeholder,
+        onConfirmPrompt: (value: string) => {
+          onConfirmPrompt(value);
+          get().closeDialog();
+        },
+        onCancel: () => {
+          if (onCancel) onCancel();
+          get().closeDialog();
+        },
+        onConfirm: () => {}
       }
     });
   },

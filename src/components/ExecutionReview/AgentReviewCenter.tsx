@@ -333,10 +333,10 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
       if (cset.validationStatus === 'failed') {
         setShowRecoveryDialog(true);
       } else {
-        alert('Changeset applied successfully!');
+        useOrchestratorStore.getState().showAlertDialog('Changeset Applied', 'Changeset applied successfully!');
       }
     } else {
-      alert('Transaction failed. Workspace reverted.');
+      useOrchestratorStore.getState().showAlertDialog('Apply Failed', 'Transaction failed. Workspace reverted.');
     }
   };
 
@@ -345,9 +345,9 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     const success = await rollbackChangeset(activeChangesetId, repoPath);
     if (success) {
       setShowRecoveryDialog(false);
-      alert('Changeset rolled back successfully.');
+      useOrchestratorStore.getState().showAlertDialog('Changeset Rolled Back', 'Changeset rolled back successfully.');
     } else {
-      alert('Failed to rollback changeset.');
+      useOrchestratorStore.getState().showAlertDialog('Rollback Failed', 'Failed to rollback changeset.');
     }
   };
 

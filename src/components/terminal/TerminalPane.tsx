@@ -295,8 +295,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       }
       
       // Handle Paste: Ctrl+V or Cmd+V
-      // In Tauri, native shortcuts might be blocked without a menu, so we manually intercept and write to PTY
+      // In Tauri, native shortcuts might be blocked without a menu, so we manually intercept and write to PTY.
+      // We call preventDefault() to prevent the browser's native paste event from also firing (causing double paste).
       if ((arg.ctrlKey || arg.metaKey) && arg.code === 'KeyV' && arg.type === 'keydown') {
+        arg.preventDefault();
         navigator.clipboard.readText().then(text => {
           if (text) {
             // Replace newlines with carriage returns. Many simple CLIs and Windows ConPTY 

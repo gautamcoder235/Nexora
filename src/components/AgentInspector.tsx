@@ -132,81 +132,90 @@ export function AgentInspector() {
     }
   };
 
+  // Fetch resource locks
+  const fetchLocks = async () => {
+    if (!agent) return;
+    try {
+      const allLocks = await invoke<any[]>('get_resource_locks');
+      const nowSecs = Math.floor(Date.now() / 1000);
+      const mappedLocks = allLocks
+        .filter((l: any) => l.agent_id === agent.id)
+        .map((l: any) => ({
+          file: l.file_path,
+          agentName: agent.name,
+          expiresInSecs: Math.max(0, l.expires_at - nowSecs),
+          lastHeartbeatSecsAgo: Math.max(0, nowSecs - l.heartbeat_at)
+        }));
+      setLocks(mappedLocks);
+    } catch (err) {
+      console.warn("Error fetching locks:", err);
+    }
+  };
+
+  // Fetch checkpoints (snapshots)
+  const fetchCheckpoints = async () => {
+    if (!execution) return;
+    try {
+      const list = await invoke<any[]>('list_execution_snapshots', { executionId: execution.id });
+      const mappedCheckpoints = list.map((chk, idx) => ({
+        id: chk.id,
+        name: `Worktree Snapshot (Commit ${chk.head_commit.substring(0, 7)})`,
+        hash: chk.head_commit,
+        timestamp: chk.timestamp,
+        status: (idx === 0 ? 'active' : 'archived') as 'active' | 'archived'
+      }));
+      setCheckpoints(mappedCheckpoints);
+    } catch (err) {
+      console.warn("Failed to load checkpoints:", err);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && execution) {
       fetchData();
+      fetchCheckpoints();
     }
   }, [isOpen, execution, worktreePath]);
 
-  // Simulate active lock countdown timers
-  useEffect(() => {
-    if (!isOpen || !agent) return;
-
-    // Initialize mock locks if agent is running
-    if (agent.status === 'running' && task) {
-      setLocks([
-        {
-          file: 'src/components/ExecutionReview/AgentReviewCenter.tsx',
-          agentName: agent.name,
-          expiresInSecs: 120,
-          lastHeartbeatSecsAgo: 2
-        },
-        {
-          file: 'src/stores/changesetStore.ts',
-          agentName: agent.name,
-          expiresInSecs: 180,
-          lastHeartbeatSecsAgo: 5
-        }
-      ]);
-    } else {
-      setLocks([]);
-    }
-
-    const interval = setInterval(() => {
-      setLocks(prev => 
-        prev.map(lock => {
-          const nextExpiry = lock.expiresInSecs > 0 ? lock.expiresInSecs - 1 : 120; // Loop count downs
-          const nextHb = lock.lastHeartbeatSecsAgo < 10 ? lock.lastHeartbeatSecsAgo + 1 : 0; // Tick heartbeats
-          return {
-            ...lock,
-            expiresInSecs: nextExpiry,
-            lastHeartbeatSecsAgo: nextHb
-          };
-        })
-      );
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isOpen, agent, task]);
-
-  // Initialize checkpoints list
+  // Real-time polling when execution is actively running or validating
   useEffect(() => {
     if (!isOpen || !execution) return;
 
-    setCheckpoints([
-      {
-        id: 'chk-1',
-        name: 'Initial Worktree Checkout',
-        hash: 'b14ca92fa883901bcae3',
-        timestamp: execution.started_at,
-        status: 'archived'
-      },
-      {
-        id: 'chk-2',
-        name: 'Pre-flight Compile Verified',
-        hash: '3f6e80bb291a1a9e3d93',
-        timestamp: new Date(new Date(execution.started_at).getTime() + 15000).toISOString(),
-        status: 'archived'
-      },
-      {
-        id: 'chk-3',
-        name: 'Workspace Code Modifications Saved',
-        hash: '7a9eb30f2c45e8b4e723',
-        timestamp: new Date(new Date(execution.started_at).getTime() + 45000).toISOString(),
-        status: 'active'
-      }
-    ]);
+    const isExecuting = execution.status === 'running' || execution.status === 'validating';
+    if (!isExecuting) return;
+
+    const pollInterval = setInterval(() => {
+      fetchData();
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
   }, [isOpen, execution]);
+
+  // Periodic lock refetching and heartbeat ticking
+  useEffect(() => {
+    if (!isOpen || !agent) return;
+
+    fetchLocks();
+
+    const fetchInterval = setInterval(() => {
+      fetchLocks();
+    }, 5000);
+
+    const tickInterval = setInterval(() => {
+      setLocks(prev => 
+        prev.map(lock => ({
+          ...lock,
+          expiresInSecs: Math.max(0, lock.expiresInSecs - 1),
+          lastHeartbeatSecsAgo: lock.lastHeartbeatSecsAgo + 1
+        }))
+      );
+    }, 1000);
+
+    return () => {
+      clearInterval(fetchInterval);
+      clearInterval(tickInterval);
+    };
+  }, [isOpen, agent]);
 
   if (!isOpen || !agent) return null;
 
@@ -221,12 +230,20 @@ export function AgentInspector() {
     return `${m}m ${s}s`;
   };
 
-  const handleRevertCheckpoint = (chkId: string) => {
+  const handleRevertCheckpoint = async (chkId: string) => {
+    if (!execution) return;
     setRevertingId(chkId);
-    setTimeout(() => {
+    try {
+      await invoke('revert_execution_snapshot', { executionId: execution.id, snapshotId: chkId });
+      useOrchestratorStore.getState().showAlertDialog('Revert Checkpoint', 'Workspace successfully reverted to checkpoint state.');
+      fetchCheckpoints();
+      fetchData();
+    } catch (err) {
+      console.error("Failed to revert checkpoint:", err);
+      useOrchestratorStore.getState().showAlertDialog('Revert Failed', "Failed to revert: " + err);
+    } finally {
       setRevertingId(null);
-      alert('Workspace successfully reverted to checkpoint state.');
-    }, 1500);
+    }
   };
 
   return (

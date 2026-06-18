@@ -1,5 +1,20 @@
-import React, { useState } from "react";
-import { Search, Globe, BookOpen, Terminal, Cpu } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { 
+  Search, 
+  Globe, 
+  BookOpen, 
+  Terminal, 
+  Cpu, 
+  ExternalLink, 
+  X, 
+  Plus, 
+  Clipboard, 
+  ArrowRight, 
+  Clock,
+  Sparkles
+} from "lucide-react";
+import { useBrowserStore } from "../../stores/browserStore";
+import "./BrowserHome.css";
 
 const GithubIcon = ({ size = 24, ...props }: React.SVGProps<SVGSVGElement> & { size?: number }) => (
   <svg 
@@ -23,7 +38,23 @@ interface BrowserNewTabProps {
 }
 
 export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
+  const { history, clearHistoryItem, addTab } = useBrowserStore();
   const [query, setQuery] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus omnibox on Ctrl+L
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,107 +63,235 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleCopy = async () => {
+    if (query.trim()) {
+      await navigator.clipboard.writeText(query);
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 1500);
+    }
+  };
+
+  const handlePasteAndGo = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text.trim()) {
+        onNavigate(text.trim());
+      }
+    } catch (err) {
+      console.error("Failed to read clipboard:", err);
+    }
+  };
+
+  const formatTime = (ts: number): string => {
+    const diff = Date.now() - ts;
+    if (diff < 60000) return "Just now";
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return "Yesterday";
+  };
+
   const quickLinks = [
     {
-      title: "Localhost:5173",
+      title: "localhost:5173",
       url: "http://localhost:5173",
       description: "Default Vite dev server",
-      icon: <Terminal size={16} className="text-amber-500" />,
+      icon: <Terminal size={14} className="text-amber-500" />,
     },
     {
-      title: "Localhost:3000",
+      title: "localhost:3000",
       url: "http://localhost:3000",
       description: "Common Node dev port",
-      icon: <Terminal size={16} className="text-amber-500" />,
+      icon: <Terminal size={14} className="text-amber-500" />,
     },
     {
       title: "Tauri Docs",
       url: "https://tauri.app",
       description: "App framework reference",
-      icon: <Cpu size={16} className="text-blue-400" />,
+      icon: <Cpu size={14} className="text-blue-400" />,
     },
     {
       title: "React Docs",
       url: "https://react.dev",
       description: "Library documentation",
-      icon: <BookOpen size={16} className="text-cyan-400" />,
+      icon: <BookOpen size={14} className="text-cyan-400" />,
     },
     {
       title: "GitHub",
       url: "https://github.com",
       description: "Developer platform",
-      icon: <GithubIcon size={16} className="text-zinc-200" />,
+      icon: <GithubIcon size={14} className="text-zinc-200" />,
     },
     {
       title: "Google",
       url: "https://google.com",
       description: "Web search engine",
-      icon: <Globe size={16} className="text-emerald-400" />,
+      icon: <Globe size={14} className="text-emerald-400" />,
     },
   ];
 
   return (
-    <div className="flex-grow flex flex-col items-center justify-center p-6 text-zinc-350 select-none overflow-y-auto min-h-0 bg-[#000000]/30">
-      <div className="w-full max-w-lg space-y-8 text-center">
-        {/* Brand/Header */}
-        <div className="space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-650/20 to-fuchsia-600/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-black text-sm mx-auto shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden group">
+    <div className="browser-home-container select-none min-h-0 flex-grow">
+      {/* Background Graphic Layers */}
+      <div className="browser-home-noise" />
+      <div className="browser-home-lines" />
+
+      <div className="browser-home-content">
+        {/* Header/Hero Section */}
+        <div className="text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-[#0b0b14]/90 border border-purple-500/20 flex items-center justify-center text-purple-400 font-black text-base mx-auto shadow-[0_0_25px_rgba(168,85,247,0.15)] relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
             <span>NX</span>
           </div>
-          <h2 className="text-lg font-bold tracking-tight text-zinc-200 font-sans">
+
+          <h1 className="text-2xl font-black tracking-tight text-white font-sans bg-clip-text text-transparent bg-gradient-to-r from-zinc-100 to-zinc-400">
             Nexora Browser
-          </h2>
-          <p className="text-[11px] text-zinc-500 max-w-sm mx-auto leading-relaxed">
-            Browse local development ports, documentations, and search the web alongside your terminal.
+          </h1>
+          <p className="text-[11px] text-[#a1a1aa] max-w-sm mx-auto leading-relaxed font-sans">
+            Browse local development ports, documentation and the web alongside your terminal.
           </p>
         </div>
 
-        {/* Search Bar */}
-        <form onSubmit={handleSearch} className="relative group w-full">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search Google or enter web address..."
-            className="w-full h-10 px-4 pl-10 pr-12 rounded-xl bg-black/60 border border-border-glass focus:border-purple-500/50 focus:outline-none text-xs text-zinc-200 transition-all placeholder-zinc-650 shadow-inner"
-          />
-          <Search size={14} className="text-zinc-650 absolute left-3.5 top-1/2 -translate-y-1/2 group-focus-within:text-purple-400 transition-colors" />
-          <button
-            type="submit"
-            className="absolute right-2 top-1/2 -translate-y-1/2 h-7 px-3 bg-gradient-to-r from-purple-650 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-500 rounded-lg text-[10px] font-bold text-white transition-all shadow-[0_0_10px_rgba(168,85,247,0.2)] hover:shadow-[0_0_15px_rgba(168,85,247,0.4)] cursor-pointer"
-          >
-            Search
-          </button>
-        </form>
+        {/* Search / Omnibox Form */}
+        <div className="space-y-3">
+          <form onSubmit={handleSearch} className="relative group w-full">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 flex items-center text-zinc-500 group-focus-within:text-purple-400 transition-colors">
+              <Search size={14} />
+            </div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search Google or enter web address..."
+              className="w-full h-11 px-4 pl-10 pr-24 rounded-xl bg-black/60 border border-white/[0.08] focus:border-purple-500/40 focus:outline-none text-[11px] text-zinc-100 transition-all placeholder-zinc-650 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] focus:shadow-[0_0_15px_rgba(168,85,247,0.08)]"
+            />
+            {/* Keyboard hint */}
+            <div className="absolute right-20 top-1/2 -translate-y-1/2 text-zinc-500 text-[9px] font-mono select-none pointer-events-none pr-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.06]">Ctrl + L</kbd>
+            </div>
+            <button
+              type="submit"
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-4 bg-gradient-to-r from-purple-650 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-500 rounded-lg text-[10px] font-bold text-white transition-all shadow-[0_0_12px_rgba(168,85,247,0.25)] hover:shadow-[0_0_18px_rgba(168,85,247,0.4)] cursor-pointer"
+            >
+              Search
+            </button>
+          </form>
 
-        {/* Quick Links Grid */}
-        <div className="space-y-3 pt-2">
-          <div className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider text-left pl-1">
-            Quick Links
+          {/* Quick Actions Row */}
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => addTab(query)}
+              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus size={11} />
+              <span>Open in New Tab</span>
+            </button>
+            <button
+              onClick={() => onNavigate(query)}
+              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
+            >
+              <Globe size={11} />
+              <span>Open in Workspace</span>
+            </button>
+            <button
+              onClick={handleCopy}
+              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
+            >
+              <Clipboard size={11} />
+              <span>{copyFeedback ? "Copied!" : "Copy URL"}</span>
+            </button>
+            <button
+              onClick={handlePasteAndGo}
+              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowRight size={11} />
+              <span>Paste & Go</span>
+            </button>
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
+        </div>
+
+        {/* Quick Links Section */}
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
+              Quick Links
+            </span>
+            <button className="text-[9px] font-bold text-zinc-500 hover:text-purple-400 transition-colors uppercase tracking-wider cursor-pointer">
+              Customize
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             {quickLinks.map((link) => (
-              <button
+              <div
                 key={link.title}
-                onClick={() => onNavigate(link.url)}
-                className="flex items-start gap-3 p-3 rounded-xl bg-black/30 hover:bg-purple-500/5 border border-border-glass hover:border-purple-500/30 text-left transition-all group cursor-pointer"
+                className="quick-link-card p-3 flex items-start justify-between group"
               >
-                <div className="p-1.5 rounded-lg bg-zinc-950 border border-border-glass/40 group-hover:border-border-glass-hover transition-colors flex-shrink-0">
-                  {link.icon}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold text-zinc-300 group-hover:text-purple-400 transition-colors truncate">
-                    {link.title}
+                <div 
+                  onClick={() => onNavigate(link.url)}
+                  className="flex items-start gap-3 flex-grow cursor-pointer"
+                >
+                  <div className="p-2 rounded-lg bg-black border border-white/[0.04] group-hover:border-purple-500/20 transition-colors flex-shrink-0">
+                    {link.icon}
                   </div>
-                  <div className="text-[9px] text-zinc-500 truncate mt-0.5">
-                    {link.description}
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-zinc-200 group-hover:text-purple-400 transition-colors truncate">
+                      {link.title}
+                    </div>
+                    <div className="text-[9px] text-[#71717a] truncate mt-0.5 font-medium">
+                      {link.description}
+                    </div>
                   </div>
                 </div>
-              </button>
+                <button
+                  onClick={() => onNavigate(link.url)}
+                  className="p-1 rounded text-[#71717a] hover:text-purple-400 transition-colors cursor-pointer"
+                  title={`Launch ${link.title}`}
+                >
+                  <ExternalLink size={12} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
+
+        {/* Recently Visited Section */}
+        {history.length > 0 && (
+          <div className="space-y-3 pt-2">
+            <div className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider px-1">
+              Recently Visited
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {history.map((item) => (
+                <div 
+                  key={item.url}
+                  className="relative group p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04] hover:border-white/[0.08] flex flex-col justify-between h-[52px] min-w-0 text-left transition-all"
+                >
+                  <div 
+                    onClick={() => onNavigate(item.url)}
+                    className="cursor-pointer min-w-0 flex-grow"
+                  >
+                    <div className="text-[10px] font-semibold text-zinc-300 truncate pr-4" title={item.title}>
+                      {item.title}
+                    </div>
+                    <div className="text-[8px] text-[#71717a] flex items-center gap-1 mt-1 font-mono">
+                      <Clock size={8} />
+                      <span>{formatTime(item.timestamp)}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => clearHistoryItem(item.url)}
+                    className="absolute top-2 right-2 p-0.5 rounded-md text-zinc-650 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                    title="Remove from history"
+                  >
+                    <X size={8} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

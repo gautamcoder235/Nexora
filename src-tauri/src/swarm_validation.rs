@@ -6,6 +6,7 @@ use std::fs;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Semaphore;
 use std::sync::Arc;
+use rusqlite::OptionalExtension;
 
 use crate::swarm_db::DbState;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -352,4 +353,60 @@ pub async fn run_validation_async(
     }).await.map_err(|e| e.to_string())?;
 
     res
+}
+
+#[tauri::command]
+pub fn save_validation_profile(
+    app_handle: AppHandle,
+    repository_id: String,
+    profile: ValidationProfile,
+) -> Result<(), String> {
+    let db_state: State<DbState> = app_handle.state();
+    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+
+    conn.execute(
+        "INSERT INTO validation_profiles (repository_id, typecheck_cmd, lint_cmd, test_cmd, timeout_seconds, deep_git_integrity)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(repository_id) DO UPDATE SET
+            typecheck_cmd = excluded.typecheck_cmd,
+            lint_cmd = excluded.lint_cmd,
+            test_cmd = excluded.test_cmd,
+            timeout_seconds = excluded.timeout_seconds,
+            deep_git_integrity = excluded.deep_git_integrity",
+        rusqlite::params![
+            repository_id,
+            profile.typecheck_cmd,
+            profile.lint_cmd,
+            profile.test_cmd,
+            profile.timeout_seconds as i64,
+            profile.deep_git_integrity,
+        ],
+    ).map_err(|e| format!("Failed to save validation profile: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_validation_profile(
+    app_handle: AppHandle,
+    repository_id: String,
+) -> Result<Option<ValidationProfile>, String> {
+    let db_state: State<DbState> = app_handle.state();
+    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+
+    let profile = conn.query_row(
+        "SELECT typecheck_cmd, lint_cmd, test_cmd, timeout_seconds, deep_git_integrity FROM validation_profiles WHERE repository_id = ?1",
+        [&repository_id],
+        |row| Ok(ValidationProfile {
+            typecheck_cmd: row.get(0)?,
+            lint_cmd: row.get(1)?,
+            test_cmd: row.get(2)?,
+            timeout_seconds: row.get::<_, u64>(3)?,
+            deep_git_integrity: row.get::<_, bool>(4)?,
+        })
+    ).optional().map_err(|e| format!("DB Query Error: {}", e))?;
+
+    Ok(profile)
 }

@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, State};
+use crate::swarm_db::DbState;
 use std::process::Command;
 use std::path::Path;
 use std::fs;
@@ -336,5 +338,56 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
     }
     
     Ok(cleaned)
+}
+
+#[tauri::command]
+pub fn revert_execution_snapshot(
+    app_handle: AppHandle,
+    execution_id: String,
+    snapshot_id: String,
+) -> Result<(), String> {
+    let db_state: State<DbState> = app_handle.state();
+    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+
+    // 1. Fetch worktree path
+    let (worktree_path, _repo_path): (String, String) = conn.query_row(
+        "SELECT w.path, r.path 
+         FROM executions e 
+         JOIN worktrees w ON e.worktree_id = w.id 
+         JOIN repositories r ON w.repository_id = r.id
+         WHERE e.id = ?1",
+        [&execution_id],
+        |row| Ok((row.get(0)?, row.get(1)?))
+    ).map_err(|e| format!("Failed to find worktree for execution: {}", e))?;
+
+    // 2. Fetch snapshot commit hash
+    let commit_hash: String = conn.query_row(
+        "SELECT head_commit FROM execution_snapshots WHERE id = ?1 AND execution_id = ?2",
+        [snapshot_id, execution_id.clone()],
+        |row| row.get(0)
+    ).map_err(|e| format!("Snapshot not found: {}", e))?;
+
+    // Drop lock before running git command to prevent holding lock during disk I/O
+    drop(conn_guard);
+
+    // 3. Execute git reset --hard
+    let output = std::process::Command::new("git")
+        .current_dir(&worktree_path)
+        .arg("reset")
+        .arg("--hard")
+        .arg(&commit_hash)
+        .output()
+        .map_err(|e| format!("Failed to execute git command: {}", e))?;
+
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Git reset hard failed: {}", err_msg));
+    }
+
+    // 4. Emit event to event bus to notify UI/system
+    let _ = crate::swarm_events::emit_event(&app_handle, "worktree:reverted", &execution_id);
+
+    Ok(())
 }
 

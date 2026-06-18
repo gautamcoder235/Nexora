@@ -190,7 +190,15 @@ const getPerformanceWarnings = (s: AppSettings): string[] => {
 };
 
 export const SettingsModal: React.FC = () => {
-  const { isSettingsModalOpen, setSettingsModalOpen, settings, updateSettings, resetSettings } = useOrchestratorStore();
+  const { 
+    isSettingsModalOpen, 
+    setSettingsModalOpen, 
+    settings, 
+    updateSettings, 
+    resetSettings,
+    showAlertDialog,
+    showConfirmDialog
+  } = useOrchestratorStore();
   
   // Local state for settings form
   const [rawLocalSettings, setRawLocalSettings] = useState<AppSettings>(() => deepMerge(DEFAULT_APP_SETTINGS, settings || {}));
@@ -226,64 +234,76 @@ export const SettingsModal: React.FC = () => {
   };
 
   const handleResetSection = () => {
-    if (confirm(`Are you sure you want to reset the current category settings?`)) {
-      setRawLocalSettings(prev => {
-        const updated = deepMerge(DEFAULT_APP_SETTINGS, prev || {});
-        const targetCat = activeCategory === 'appearance' ? activeAppearanceSubTab : activeCategory;
-        if (targetCat === 'shell') {
-          updated.defaultShell = DEFAULT_APP_SETTINGS.defaultShell;
-          updated.shellArgs = DEFAULT_APP_SETTINGS.shellArgs;
-        } else if (targetCat === 'clis') {
-          updated.customCLIs = DEFAULT_APP_SETTINGS.customCLIs;
-          updated.cliOverrides = DEFAULT_APP_SETTINGS.cliOverrides;
-        } else if (targetCat === 'performance') {
-          updated.backgroundWorkspaceSuspendMinutes = DEFAULT_APP_SETTINGS.backgroundWorkspaceSuspendMinutes;
-          if (updated.appearance?.terminal) {
-            updated.appearance.terminal.hardwareAcceleration = DEFAULT_APP_SETTINGS.appearance?.terminal?.hardwareAcceleration;
-            updated.appearance.terminal.terminalScrollbackLimit = DEFAULT_APP_SETTINGS.appearance?.terminal?.terminalScrollbackLimit;
+    showConfirmDialog(
+      "Reset Category Settings",
+      "Are you sure you want to reset the current category settings?",
+      () => {
+        setRawLocalSettings(prev => {
+          const updated = deepMerge(DEFAULT_APP_SETTINGS, prev || {});
+          const targetCat = activeCategory === 'appearance' ? activeAppearanceSubTab : activeCategory;
+          if (targetCat === 'shell') {
+            updated.defaultShell = DEFAULT_APP_SETTINGS.defaultShell;
+            updated.shellArgs = DEFAULT_APP_SETTINGS.shellArgs;
+          } else if (targetCat === 'clis') {
+            updated.customCLIs = DEFAULT_APP_SETTINGS.customCLIs;
+            updated.cliOverrides = DEFAULT_APP_SETTINGS.cliOverrides;
+          } else if (targetCat === 'performance') {
+            updated.backgroundWorkspaceSuspendMinutes = DEFAULT_APP_SETTINGS.backgroundWorkspaceSuspendMinutes;
+            if (updated.appearance?.terminal) {
+              updated.appearance.terminal.hardwareAcceleration = DEFAULT_APP_SETTINGS.appearance?.terminal?.hardwareAcceleration;
+              updated.appearance.terminal.terminalScrollbackLimit = DEFAULT_APP_SETTINGS.appearance?.terminal?.terminalScrollbackLimit;
+            }
+          } else if (targetCat === 'shortcuts') {
+            updated.shortcuts = DEFAULT_APP_SETTINGS.shortcuts;
+          } else if (targetCat === 'theme') {
+            if (updated.appearance) updated.appearance.theme = DEFAULT_APP_SETTINGS.appearance?.theme;
+          } else if (targetCat === 'colors') {
+            if (updated.appearance?.theme) {
+              updated.appearance.theme.accentColor = DEFAULT_APP_SETTINGS.appearance?.theme?.accentColor;
+              updated.appearance.theme.customAccentColor = DEFAULT_APP_SETTINGS.appearance?.theme?.customAccentColor;
+            }
+          } else if (targetCat === 'typography') {
+            if (updated.appearance) updated.appearance.typography = DEFAULT_APP_SETTINGS.appearance?.typography;
+          } else if (targetCat === 'workspace') {
+            if (updated.appearance) updated.appearance.workspace = DEFAULT_APP_SETTINGS.appearance?.workspace;
+          } else if (targetCat === 'terminal') {
+            if (updated.appearance) updated.appearance.terminal = DEFAULT_APP_SETTINGS.appearance?.terminal;
+          } else if (targetCat === 'agents') {
+            if (updated.appearance) updated.appearance.agent = DEFAULT_APP_SETTINGS.appearance?.agent;
+          } else if (targetCat === 'accessibility') {
+            if (updated.appearance) updated.appearance.accessibility = DEFAULT_APP_SETTINGS.appearance?.accessibility;
+          } else if (targetCat === 'layout') {
+            if (updated.appearance) updated.appearance.layout = DEFAULT_APP_SETTINGS.appearance?.layout;
           }
-        } else if (targetCat === 'shortcuts') {
-          updated.shortcuts = DEFAULT_APP_SETTINGS.shortcuts;
-        } else if (targetCat === 'theme') {
-          if (updated.appearance) updated.appearance.theme = DEFAULT_APP_SETTINGS.appearance?.theme;
-        } else if (targetCat === 'colors') {
-          if (updated.appearance?.theme) {
-            updated.appearance.theme.accentColor = DEFAULT_APP_SETTINGS.appearance?.theme?.accentColor;
-            updated.appearance.theme.customAccentColor = DEFAULT_APP_SETTINGS.appearance?.theme?.customAccentColor;
-          }
-        } else if (targetCat === 'typography') {
-          if (updated.appearance) updated.appearance.typography = DEFAULT_APP_SETTINGS.appearance?.typography;
-        } else if (targetCat === 'workspace') {
-          if (updated.appearance) updated.appearance.workspace = DEFAULT_APP_SETTINGS.appearance?.workspace;
-        } else if (targetCat === 'terminal') {
-          if (updated.appearance) updated.appearance.terminal = DEFAULT_APP_SETTINGS.appearance?.terminal;
-        } else if (targetCat === 'agents') {
-          if (updated.appearance) updated.appearance.agent = DEFAULT_APP_SETTINGS.appearance?.agent;
-        } else if (targetCat === 'accessibility') {
-          if (updated.appearance) updated.appearance.accessibility = DEFAULT_APP_SETTINGS.appearance?.accessibility;
-        } else if (targetCat === 'layout') {
-          if (updated.appearance) updated.appearance.layout = DEFAULT_APP_SETTINGS.appearance?.layout;
-        }
-        return updated;
-      });
-    }
+          return updated;
+        });
+      }
+    );
   };
 
   const handleResetAppearance = () => {
-    if (confirm("Are you sure you want to reset all Appearance categories to defaults?")) {
-      setRawLocalSettings(prev => {
-        const updated = deepMerge(DEFAULT_APP_SETTINGS, prev || {});
-        updated.appearance = DEFAULT_APP_SETTINGS.appearance;
-        return updated;
-      });
-    }
+    showConfirmDialog(
+      "Reset Appearance Settings",
+      "Are you sure you want to reset all Appearance categories to defaults?",
+      () => {
+        setRawLocalSettings(prev => {
+          const updated = deepMerge(DEFAULT_APP_SETTINGS, prev || {});
+          updated.appearance = DEFAULT_APP_SETTINGS.appearance;
+          return updated;
+        });
+      }
+    );
   };
 
   const handleResetAll = () => {
-    if (confirm("Are you sure you want to reset all settings to defaults?")) {
-      resetSettings();
-      setRawLocalSettings(DEFAULT_APP_SETTINGS);
-    }
+    showConfirmDialog(
+      "Reset All Settings",
+      "Are you sure you want to reset all settings to defaults?",
+      () => {
+        resetSettings();
+        setRawLocalSettings(DEFAULT_APP_SETTINGS);
+      }
+    );
   };
 
   // Profile JSON handlers
@@ -298,21 +318,21 @@ export const SettingsModal: React.FC = () => {
       }
       
       if (!importedSettings) {
-        alert("Invalid profile JSON format.");
+        showAlertDialog("Import Failed", "Invalid profile JSON format.");
         return;
       }
       
       if (importedSettings.version !== 2) {
-        alert(`Profile version ${importedSettings.version || 1} will be upgraded to version 2.`);
         const migrated = deepMerge(DEFAULT_APP_SETTINGS, importedSettings);
         migrated.version = 2;
         setRawLocalSettings(migrated);
+        showAlertDialog("Profile Imported", `Profile version ${importedSettings.version || 1} has been upgraded to version 2 and imported successfully! Click Save Changes to apply.`);
       } else {
         setRawLocalSettings(deepMerge(DEFAULT_APP_SETTINGS, importedSettings));
+        showAlertDialog("Profile Imported", "Profile imported successfully! Click Save Changes to apply.");
       }
-      alert("Profile imported successfully! Click Save Changes to apply.");
     } catch (e) {
-      alert("Failed to parse JSON profile. Please verify format.");
+      showAlertDialog("Import Failed", "Failed to parse JSON profile. Please verify format.");
     }
   };
 
@@ -1006,7 +1026,7 @@ export const SettingsModal: React.FC = () => {
                             settings: localSettings
                           }, null, 2);
                           navigator.clipboard.writeText(jsonStr);
-                          alert("Profile configuration copied to clipboard!");
+                          showAlertDialog("Copied to Clipboard", "Profile configuration copied to clipboard!");
                         }}
                         className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-zinc-200 bg-white/5 hover:bg-white/10 rounded transition-colors border border-white/10 cursor-pointer"
                       >

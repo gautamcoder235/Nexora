@@ -4,7 +4,7 @@ use std::path::Path;
 use globset::{Glob, GlobSetBuilder};
 
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use rusqlite::OptionalExtension;
 use crate::swarm_db::DbState;
 
@@ -211,81 +211,3 @@ pub fn get_resource_locks(app_handle: AppHandle) -> Result<Vec<ResourceLockInfo>
     Ok(result)
 }
 
-pub fn start_lock_watchdog(app_handle: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-
-            let expired_locks = {
-                let db_state = match app_handle.try_state::<DbState>() {
-                    Some(state) => state,
-                    None => continue,
-                };
-                
-                let conn_guard = match db_state.0.lock() {
-                    Ok(guard) => guard,
-                    Err(_) => continue,
-                };
-                
-                let conn = match conn_guard.as_ref() {
-                    Some(c) => c,
-                    None => continue,
-                };
-
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() as i64;
-
-                let mut stmt = match conn.prepare("SELECT file_path, agent_id, expires_at FROM resource_locks WHERE expires_at < ?1") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-
-                let rows = match stmt.query_map([now], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
-                }) {
-                    Ok(r) => r,
-                    Err(_) => continue,
-                };
-
-                let mut list = Vec::new();
-                for r in rows {
-                    if let Ok(item) = r {
-                        list.push(item);
-                    }
-                }
-
-                if !list.is_empty() {
-                    let _ = conn.execute("DELETE FROM resource_locks WHERE expires_at < ?1", [now]);
-                }
-
-                list
-            };
-
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64;
-
-            for (file_path, agent_id, expires_at) in expired_locks {
-                #[derive(Serialize, Clone)]
-                struct LockExpirationPayload {
-                    file_path: String,
-                    agent_id: String,
-                    expired_at: i64,
-                    cleared_at: i64,
-                }
-
-                let payload = LockExpirationPayload {
-                    file_path,
-                    agent_id,
-                    expired_at: expires_at,
-                    cleared_at: now,
-                };
-
-                let _ = app_handle.emit("lock:expired", payload);
-            }
-        }
-    });
-}

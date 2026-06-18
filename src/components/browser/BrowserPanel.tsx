@@ -1,34 +1,27 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, ArrowRight, RotateCw, Home, X, Plus, ExternalLink, Globe, Pin, PinOff } from "lucide-react";
+import { ArrowLeft, ArrowRight, RotateCw, Home, X, Plus, ExternalLink, Globe, Pin, PinOff, Target } from "lucide-react";
 import { useBrowserStore } from "../../stores/browserStore";
 import { useOrchestratorStore } from "../../stores/orchestratorStore";
 import { BrowserNewTab } from "./BrowserNewTab";
+import { ElementPickerPanel } from "./ElementPickerPanel";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
-const blocksIFrame = (url: string): boolean => {
+const isLocalUrl = (url: string): boolean => {
   if (!url) return false;
   try {
     const parsed = new URL(url);
-    const blockedHosts = [
-      "google.com",
-      "github.com",
-      "stackoverflow.com",
-      "youtube.com",
-      "twitter.com",
-      "x.com",
-      "facebook.com",
-      "linkedin.com",
-      "reddit.com",
-      "medium.com",
-      "wikipedia.org",
-      "npmtrends.com",
-      "npmjs.com",
-    ];
-    return blockedHosts.some(
-      (host) => parsed.hostname === host || parsed.hostname.endsWith("." + host)
+    return (
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname.startsWith("192.168.") ||
+      parsed.hostname.startsWith("10.") ||
+      parsed.hostname.endsWith(".local")
     );
   } catch (e) {
-    return false;
+    const trimmed = url.trim().toLowerCase();
+    return trimmed.startsWith("localhost") || trimmed.startsWith("127.0.0.1");
   }
 };
 
@@ -43,13 +36,17 @@ export const BrowserPanel: React.FC = () => {
     toggleBrowserPanel,
     isBrowserPanelPinned,
     toggleBrowserPanelPinned,
+    isElementPickerOpen,
+    toggleElementPicker,
   } = useBrowserStore();
 
   const terminals = useOrchestratorStore((s) => s.terminals);
+  const isSettingsModalOpen = useOrchestratorStore((s) => s.isSettingsModalOpen);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const [address, setAddress] = useState(activeTab?.url || "");
   const [refreshKey, setRefreshKey] = useState(0);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   // Sync address input when active tab changes
   useEffect(() => {
@@ -85,7 +82,158 @@ export const BrowserPanel: React.FC = () => {
     }
   };
 
-  const isBlocked = blocksIFrame(activeTab?.url || "");
+  // WebView layout sync logic
+  const updateWebviewBounds = async () => {
+    if (!viewportRef.current || isSettingsModalOpen) {
+      await invoke("sync_browser_webview_layout", {
+        visible: false,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      }).catch(() => {});
+      return;
+    }
+
+    const rect = viewportRef.current.getBoundingClientRect();
+    const hasUrl = activeTab?.url && !isLocalUrl(activeTab.url);
+
+    if (rect.width === 0 || rect.height === 0 || !hasUrl) {
+      await invoke("sync_browser_webview_layout", {
+        visible: false,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      }).catch(() => {});
+      return;
+    }
+
+    try {
+      const win = getCurrentWindow() as any;
+      const winPos = await win.position();
+      const scaleFactor = await win.scaleFactor();
+
+      const winLogicalX = winPos.x / scaleFactor;
+      const winLogicalY = winPos.y / scaleFactor;
+
+      const x = winLogicalX + rect.left;
+      const y = winLogicalY + rect.top;
+      const width = rect.width;
+      const height = rect.height;
+
+      await invoke("sync_browser_webview_layout", {
+        visible: true,
+        x,
+        y,
+        width,
+        height
+      });
+    } catch (err) {
+      console.error("Failed to sync webview layout:", err);
+    }
+  };
+
+  const handleLoadUrl = async (url: string) => {
+    if (!url || isLocalUrl(url)) return;
+    if (!viewportRef.current) return;
+
+    const rect = viewportRef.current.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    try {
+      const win = getCurrentWindow() as any;
+      const winPos = await win.position();
+      const scaleFactor = await win.scaleFactor();
+
+      const winLogicalX = winPos.x / scaleFactor;
+      const winLogicalY = winPos.y / scaleFactor;
+
+      const x = winLogicalX + rect.left;
+      const y = winLogicalY + rect.top;
+      const width = rect.width;
+      const height = rect.height;
+
+      await invoke("spawn_browser_webview", {
+        url,
+        x,
+        y,
+        width,
+        height
+      });
+    } catch (err) {
+      console.error("Failed to spawn webview:", err);
+    }
+  };
+
+  // Handle activeTab changes
+  useEffect(() => {
+    if (activeTab?.url && !isLocalUrl(activeTab.url)) {
+      handleLoadUrl(activeTab.url);
+    } else {
+      invoke("destroy_browser_webview").catch(() => {});
+    }
+  }, [activeTab?.id, activeTab?.url, refreshKey]);
+
+  // Handle settings modal changes
+  useEffect(() => {
+    if (isSettingsModalOpen) {
+      invoke("sync_browser_webview_layout", {
+        visible: false,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      }).catch(() => {});
+    } else {
+      setTimeout(updateWebviewBounds, 100);
+    }
+  }, [isSettingsModalOpen]);
+
+  // Handle resize events
+  useEffect(() => {
+    if (!viewportRef.current) return;
+
+    const observer = new ResizeObserver(() => {
+      updateWebviewBounds();
+    });
+
+    observer.observe(viewportRef.current);
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeTab?.id, activeTab?.url]);
+
+  // Handle window movements
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    
+    const setupWindowListener = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        const unsubscribe = await win.onMoved(() => {
+          updateWebviewBounds();
+        });
+        unlisten = unsubscribe;
+      } catch (err) {
+        console.error("Failed to listen to window move:", err);
+      }
+    };
+
+    setupWindowListener();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [activeTab?.id, activeTab?.url]);
+
+  // Hide child webview on unmount
+  useEffect(() => {
+    return () => {
+      invoke("destroy_browser_webview").catch(() => {});
+    };
+  }, []);
 
   return (
     <div className="h-full w-full flex flex-col bg-[#08080a] font-sans min-w-0 select-none text-zinc-300">
@@ -213,53 +361,62 @@ export const BrowserPanel: React.FC = () => {
           />
         </form>
 
-        {activeTab?.url && (
-          <button
-            onClick={handleOpenExternal}
-            className="p-1.5 rounded-lg bg-zinc-800/20 border border-border-glass hover:border-border-glass-hover text-zinc-400 hover:text-zinc-200 transition-all flex items-center gap-1 cursor-pointer text-[10px] font-semibold"
-            title="Open page in system web browser"
-          >
-            <ExternalLink size={12} />
-            <span>Open Browser</span>
-          </button>
-        )}
-      </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {activeTab?.url && (
+            <button
+              onClick={toggleElementPicker}
+              className={`p-1.5 rounded-lg border transition-all flex items-center gap-1 cursor-pointer text-[10px] font-bold tracking-wide ${
+                isElementPickerOpen
+                  ? "bg-purple-500/10 border-purple-500/30 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
+                  : "bg-zinc-800/20 border-border-glass text-zinc-450 hover:border-border-glass-hover hover:text-zinc-200"
+              }`}
+              title="Inspect page element"
+            >
+              <Target size={12} />
+              <span>Inspect Element</span>
+            </button>
+          )}
 
-      {/* 3. Browser Viewport Area */}
-      <div className="flex-1 min-h-0 relative overflow-hidden bg-black/10">
-        {!activeTab?.url ? (
-          <BrowserNewTab onNavigate={(url) => activeTab ? navigateTab(activeTab.id, url) : addTab(url)} />
-        ) : isBlocked ? (
-          /* Fallback view when domain is known to block iframes */
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-black/40">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mb-4 animate-pulse">
-              <Globe size={20} />
-            </div>
-            <h3 className="text-sm font-semibold text-zinc-200">Embedded View Blocked</h3>
-            <p className="text-[10px] text-zinc-500 mt-2 max-w-sm leading-relaxed">
-              Domain <span className="font-mono text-zinc-400">{activeTab ? new URL(activeTab.url).hostname : ""}</span> restricts embedded iframe viewing. Click the button below to view it in your default system browser instead.
-            </p>
+          {activeTab?.url && (
             <button
               onClick={handleOpenExternal}
-              className="mt-5 h-8 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold tracking-wide transition-all flex items-center gap-1.5 shadow-lg shadow-amber-500/5 cursor-pointer"
+              className="p-1.5 rounded-lg bg-zinc-800/20 border border-border-glass hover:border-border-glass-hover text-zinc-450 hover:text-zinc-200 transition-all flex items-center gap-1 cursor-pointer text-[10px] font-bold tracking-wide"
+              title="Open page in system web browser"
             >
-              <ExternalLink size={13} strokeWidth={2.5} />
-              Open in System Browser
+              <ExternalLink size={12} />
+              <span>Open Browser</span>
             </button>
-            <p className="text-[9px] text-zinc-650 mt-4 max-w-[280px]">
-              Note: Local dev servers (localhost) and docs like tauri.app or react.dev render inside the panel correctly.
-            </p>
-          </div>
-        ) : (
-          /* Normal iframe viewer */
-          <iframe
-            key={`${activeTab?.id || "empty"}-${refreshKey}`}
-            src={activeTab?.url}
-            className="w-full h-full border-none bg-white"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            title="Browser Panel Viewport"
-          />
-        )}
+          )}
+        </div>
+      </div>
+
+      {/* 3. Browser Split Viewport & Element Picker Sidebar Area */}
+      <div className="flex-1 min-h-0 flex flex-row overflow-hidden relative">
+        <div ref={viewportRef} className="flex-1 min-h-0 relative overflow-hidden bg-black/10">
+          {!activeTab?.url ? (
+            <BrowserNewTab onNavigate={(url) => activeTab ? navigateTab(activeTab.id, url) : addTab(url)} />
+          ) : isLocalUrl(activeTab.url) ? (
+            /* Local iframe viewer */
+            <iframe
+              key={`${activeTab?.id || "empty"}-${refreshKey}`}
+              src={activeTab?.url}
+              className="w-full h-full border-none bg-white"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              title="Browser Panel Viewport"
+            />
+          ) : (
+            /* External webview placeholder */
+            <div className="w-full h-full bg-[#050508] flex flex-col items-center justify-center text-zinc-500 font-mono text-[10px] gap-2 select-none">
+              <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">Rendering Webview Overlay</span>
+              <span className="text-zinc-650 text-[8px] max-w-[200px] text-center leading-normal">
+                This external page is loaded in a native child window overlay for complete compatibility.
+              </span>
+            </div>
+          )}
+        </div>
+        
+        {isElementPickerOpen && <ElementPickerPanel />}
       </div>
     </div>
   );
