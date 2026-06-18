@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Layout Store (Zustand)
+ * Nexora — Layout Store (Zustand)
  *
  * Manages workspace layout: sidebar, panes, bottom bar, and theme.
  */

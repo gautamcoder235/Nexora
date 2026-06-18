@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Agent Type Definitions
+ * Nexora — Agent Type Definitions
  * For CLI agent detection and multi-agent swarm orchestration
  */
 

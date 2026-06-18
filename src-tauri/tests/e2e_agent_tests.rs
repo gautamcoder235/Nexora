@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 // NOTE: True E2E tests for Tauri commands require a mocked AppHandle or the Tauri testing framework.
-// These represent the architecture of the E2E verification test suite for the Multi-Vibe Orchestration Platform.
+// These represent the architecture of the E2E verification test suite for the Nexora Orchestration Platform.
 
 #[tokio::test]
 async fn test_scenario_1_success_path() {
@@ -33,7 +33,7 @@ async fn test_scenario_3_lint_failure() {
 
 #[tokio::test]
 async fn test_scenario_4_crash_recovery() {
-    // Process OOMs or User hard-kills Multi-Vibe.
+    // Process OOMs or User hard-kills Nexora.
     // Expected: `recover_swarm_state` identifies dead agent, cleans worktree, and resets execution state.
     println!("Running Scenario 4: Crash Recovery");
     assert!(true, "Orphaned worktrees cleaned up and execution state reset.");

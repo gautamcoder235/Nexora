@@ -339,7 +339,7 @@ pub fn update_agent_process_status(conn: &Connection, id: &str, status: &str, ex
     Ok(())
 }
 
-pub(crate) fn update_execution_status(conn: &Connection, execution_id: &str, new_status: &str) -> Result<()> {
+pub fn update_execution_status(conn: &Connection, execution_id: &str, new_status: &str) -> Result<()> {
     // 1. Enforce State Machine Integrity
     let current_status: String = conn.query_row(
         "SELECT status FROM executions WHERE id = ?1",

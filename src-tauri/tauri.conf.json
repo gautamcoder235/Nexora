@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Multi Vibe",
+  "productName": "Nexora",
   "version": "0.1.0",
-  "identifier": "com.sharm.multivibe",
+  "identifier": "com.sharm.nexora",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Multiple Vibe - AI Workspace",
+        "title": "Nexora - AI Workspace",
         "width": 1280,
         "height": 800,
         "maximized": true

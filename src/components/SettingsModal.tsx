@@ -134,7 +134,7 @@ export const SettingsModal: React.FC = () => {
     setIsChecking(prev => ({ ...prev, [cli.id]: true }));
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const isInstalled = await invoke<boolean>("check_command_exists", { cmd: cmdToCheck });
+      const isInstalled = await invoke<boolean>("check_cli_tool", { command: cmdToCheck });
       setInstalledStatuses(prev => ({ ...prev, [cli.id]: isInstalled }));
     } catch (e) {
       setInstalledStatuses(prev => ({ ...prev, [cli.id]: false }));

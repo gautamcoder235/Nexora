@@ -1,6 +1,6 @@
-# Multi Vibe — Research Information
+# Nexora — Research Information
 
-> **Project Name:** Multi Vibe  
+> **Project Name:** Nexora  
 > **Tagline:** A full Application Development Environment (ADE) with Warp-inspired block terminal  
 > **Status:** Research & Planning Phase
 
@@ -10,11 +10,11 @@
 
 | # | Document | Description |
 |---|----------|-------------|
-| 1 | [BridgeSpace Product Research](./01_BridgeSpace_Product_Research.md) | Internet research on BridgeSpace — the AI-native ADE by BridgeMind |
+| 1 | [Nexora Product Research](./01_BridgeSpace_Product_Research.md) | Internet research on Nexora — the AI-native ADE by BridgeMind |
 | 2 | [Warp Terminal Architecture](./02_Warp_Terminal_Architecture.md) | Deep codebase analysis of Warp's Rust terminal architecture |
 | 3 | [Tech Stack Research](./03_Tech_Stack_Research.md) | Package versions, integration patterns, and code examples |
 | 4 | [Design Decisions](./04_Design_Decisions.md) | 11 design decisions from the grill-me planning session |
-| 5 | [Architecture Recommendations](./05_Architecture_Recommendations.md) | How to build Multi Vibe using patterns learned from Warp |
+| 5 | [Architecture Recommendations](./05_Architecture_Recommendations.md) | How to build Nexora using patterns learned from Warp |
 
 ---
 
@@ -40,7 +40,7 @@
 3. **Swarm Orchestration** — Multi-agent coordination for complex development tasks
 4. **BridgeMemory** — Local markdown-based knowledge graph for project context
 5. **Block-Based Output** — Each command and its output is an interactive, selectable block
-6. **Command Center Layout** — BridgeSpace-inspired workroom with zero context switching
+6. **Command Center Layout** — Nexora-inspired workroom with zero context switching
 
 ---
 
@@ -48,7 +48,7 @@
 
 | Source | Type | Key Insights |
 |--------|------|-------------|
-| [BridgeSpace Website](https://bridgespace.app) | Product | ADE concept, agent-native UI, BridgeSwarm architecture |
+| [Nexora Website](https://nexora.app) | Product | ADE concept, agent-native UI, BridgeSwarm architecture |
 | [Warp GitHub (leaked/OSS)](https://github.com/warpdotdev/warp) | Codebase | Block terminal architecture, rendering pipeline, input modes |
 | [Tauri v2 Docs](https://v2.tauri.app) | Documentation | Desktop framework APIs, plugin system, IPC |
 | [xterm.js Docs](https://xtermjs.org) | Documentation | Terminal emulation, WebGL addon, fit addon |
@@ -59,7 +59,7 @@
 
 ## Key Discoveries
 
-### From BridgeSpace Research
+### From Nexora Research
 - **Agent-Native UI** is a paradigm shift — the entire IDE is designed around AI agents, not just bolted on
 - **BridgeSwarm** uses 16 specialized agents orchestrated together for complex tasks
 - **BridgeMemory** uses a markdown-based knowledge graph — simple, portable, version-controllable
@@ -74,7 +74,7 @@
 - **OSC 133 markers** enable semantic shell integration for block boundary detection
 
 ### From Design Session
-- **Multi Vibe** is the chosen project name
+- **Nexora** is the chosen project name
 - **Dark glassmorphism** with deep blue/purple palette is the visual identity
 - **Detect, don't bundle** — leverage existing CLI AI agents rather than shipping our own
 - **Local-first knowledge** — BridgeMemory stored as markdown, no cloud dependency

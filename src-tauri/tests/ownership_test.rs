@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::process::Command;
 
-use multi_vibe_lib::swarm_ownership::validate_ownership;
+use nexora_lib::swarm_ownership::validate_ownership;
 
 #[test]
 fn test_validate_ownership() {

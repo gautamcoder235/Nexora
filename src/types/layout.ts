@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Layout Type Definitions
+ * Nexora — Layout Type Definitions
  * For workroom pane management and UI state
  */
 

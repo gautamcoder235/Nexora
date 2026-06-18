@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — OSC 133 Block Parser
+ * Nexora — OSC 133 Block Parser
  *
  * Parses raw PTY byte streams (represented as UTF-8 strings) containing
  * OSC 133 shell integration markers.

@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Agent Store (Zustand)
+ * Nexora — Agent Store (Zustand)
  *
  * Manages detected AI coding agents, active instances, and conversation logs.
  */

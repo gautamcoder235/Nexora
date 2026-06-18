@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Terminal Store (Zustand)
+ * Nexora — Terminal Store (Zustand)
  *
  * Manages terminal sessions, command blocks, and active state.
  * Adapted from Warp's TerminalModel + BlockList architecture.

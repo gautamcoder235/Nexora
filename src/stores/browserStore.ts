@@ -5,6 +5,7 @@ interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
   isBrowserPanelVisible: boolean;
+  isBrowserPanelPinned: boolean;
   browserPanelWidth: number;
 
   // Actions
@@ -14,6 +15,7 @@ interface BrowserState {
   navigateTab: (id: string, url: string) => void;
   setBrowserState: (state: Partial<BrowserState>) => void;
   toggleBrowserPanel: () => void;
+  toggleBrowserPanelPinned: () => void;
   setBrowserPanelWidth: (width: number) => void;
 }
 
@@ -62,6 +64,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   tabs: [],
   activeTabId: null,
   isBrowserPanelVisible: false,
+  isBrowserPanelPinned: false,
   browserPanelWidth: 480,
 
   addTab: (url = "") => {
@@ -157,6 +160,10 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
         ...tabsUpdate
       };
     });
+  },
+
+  toggleBrowserPanelPinned: () => {
+    set((state) => ({ isBrowserPanelPinned: !state.isBrowserPanelPinned }));
   },
 
   setBrowserPanelWidth: (width) => {

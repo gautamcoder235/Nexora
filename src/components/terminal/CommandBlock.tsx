@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — CommandBlock Component
+ * Nexora — CommandBlock Component
  *
  * Renders an isolated Warp-style terminal command block.
  * Uses xterm.js to render ANSI-compliant output with colors and formatting.

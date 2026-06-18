@@ -1,6 +1,6 @@
 # 03 — Tech Stack Research
 
-> Package versions, integration patterns, and code examples for the Multi Vibe tech stack.
+> Package versions, integration patterns, and code examples for the Nexora tech stack.
 
 ---
 
@@ -53,9 +53,9 @@ my-app/
 
 ```json
 {
-  "productName": "Multi Vibe",
+  "productName": "Nexora",
   "version": "0.1.0",
-  "identifier": "com.multivibe.app",
+  "identifier": "com.nexora.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -65,7 +65,7 @@ my-app/
   "app": {
     "windows": [
       {
-        "title": "Multi Vibe",
+        "title": "Nexora",
         "width": 1400,
         "height": 900,
         "decorations": false,
@@ -98,7 +98,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_pty::init())
         .run(tauri::generate_context!())
-        .expect("error while running Multi Vibe");
+        .expect("error while running Nexora");
 }
 ```
 
@@ -159,7 +159,7 @@ fn spawn_pty_shell() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     // Write input to the PTY
-    writer.write_all(b"echo 'Hello from Multi Vibe'\n")?;
+    writer.write_all(b"echo 'Hello from Nexora'\n")?;
     
     // Wait for the child process
     let status = child.wait()?;
@@ -403,7 +403,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ id, cwd }) => {
 
 ## 4. CLI Agent Detection
 
-Multi Vibe detects existing CLI AI agents installed on the user's system rather than bundling its own.
+Nexora detects existing CLI AI agents installed on the user's system rather than bundling its own.
 
 ### Target Agents
 

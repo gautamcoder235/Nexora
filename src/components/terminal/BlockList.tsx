@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — BlockList Component
+ * Nexora — BlockList Component
  *
  * Renders the vertical list of terminal command blocks for a session.
  */
@@ -27,7 +27,7 @@ export const BlockList: React.FC<BlockListProps> = ({ sessionId, blocks }) => {
     return (
       <div className="block-list block-list--empty">
         <div className="block-list__welcome glass-card animate-fade-in-scale">
-          <h2 className="block-list__welcome-title">Welcome to Multi Vibe</h2>
+          <h2 className="block-list__welcome-title">Welcome to Nexora</h2>
           <p className="block-list__welcome-desc text-muted">
             An AI-native development environment with Warp-inspired block-based terminal command lines.
           </p>

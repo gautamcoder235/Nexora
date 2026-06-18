@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — TerminalPane Component
+ * Nexora — TerminalPane Component
  *
  * Renders a direct, interactive xterm.js terminal.
  * Key input is forwarded directly to the backend PTY and output is rendered in real-time.

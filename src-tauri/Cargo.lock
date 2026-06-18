@@ -2201,26 +2201,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "multi_vibe"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "globset",
- "lazy_static",
- "portable-pty",
- "rfd",
- "rusqlite",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
- "wait-timeout",
-]
-
-[[package]]
 name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2249,6 +2229,26 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "nexora"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "globset",
+ "lazy_static",
+ "portable-pty",
+ "rfd",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
+ "wait-timeout",
+]
 
 [[package]]
 name = "nix"

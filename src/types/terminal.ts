@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Terminal Type Definitions
+ * Nexora — Terminal Type Definitions
  * Adapted from Warp's Block-based architecture
  */
 
@@ -13,7 +13,7 @@ export type SessionId = string;
 export type BlockStatus = 'idle' | 'running' | 'success' | 'error';
 
 /**
- * A terminal command block — the core unit of Multi Vibe's terminal.
+ * A terminal command block — the core unit of Nexora's terminal.
  * Each block represents one command and its output, inspired by Warp's Block struct.
  *
  * @see Warp's `app/src/terminal/model/block.rs` for the original Rust implementation

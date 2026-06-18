@@ -115,6 +115,7 @@ export interface WorkspaceSnapshot {
   sidebarWidth?: number;
   topPanelHeight?: number;
   isBrowserPanelVisible?: boolean;
+  isBrowserPanelPinned?: boolean;
   browserPanelWidth?: number;
   browserTabs?: BrowserTab[];
   activeBrowserTabId?: string | null;
@@ -157,6 +158,24 @@ export interface AppSettings {
   backgroundWorkspaceSuspendMinutes: number;
 }
 
+const isWindows = typeof window !== 'undefined' && (
+  window.navigator.userAgent.toLowerCase().includes('win') ||
+  window.navigator.platform.toLowerCase().includes('win')
+);
+
+export const getDefaultCustomCLIs = (): CustomCLI[] => [
+  {
+    id: "agy",
+    name: "Antigravity CLI (agy)",
+    command: "agy",
+    args: [],
+    checkCmd: "agy --version",
+    installCommand: isWindows 
+      ? "powershell -Command \"irm https://antigravity.google/cli/install.ps1 | iex\""
+      : "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+  }
+];
+
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   fontSize: 12,
   fontFamily: 'courier-new, courier, monospace',
@@ -169,7 +188,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   defaultShell: 'auto', // 'auto' means backend resolves default (e.g. bash on unix, cmd on win)
   shellArgs: [],
 
-  customCLIs: [],
+  customCLIs: getDefaultCustomCLIs(),
   cliOverrides: {},
 
   shortcuts: {

@@ -169,7 +169,7 @@ pub fn run_validation_pipeline(
     // GATE B: Ownership Check & Hash Drift
     let start_b = Instant::now();
     
-    let ownership_hash_path = Path::new(worktree_path).join(".multivibe").join("ownership.hash");
+    let ownership_hash_path = Path::new(worktree_path).join(".nexora").join("ownership.hash");
     if let Ok(disk_hash) = fs::read_to_string(&ownership_hash_path) {
         use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;

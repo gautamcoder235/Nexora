@@ -1,5 +1,5 @@
 /* ============================================================
- * Design Tokens — Multi Vibe
+ * Design Tokens — Nexora
  * Dark glassmorphism theme custom properties
  * ============================================================ */
 
@@ -144,5 +144,5 @@
   --sidebar-width: 260px;
   --sidebar-collapsed-width: 56px;
   --topbar-height: 48px;
-  --bottombar-height: 18px;
+  --bottombar-height: 24px;
 }

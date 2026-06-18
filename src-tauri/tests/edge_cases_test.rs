@@ -4,9 +4,9 @@ use std::process::Command;
 use std::time::Instant;
 use rusqlite::Connection;
 
-use multi_vibe_lib::swarm_db;
-use multi_vibe_lib::swarm_ownership::validate_ownership;
-use multi_vibe_lib::swarm_worktrees::{create_worktree, remove_worktree};
+use nexora_lib::swarm_db;
+use nexora_lib::swarm_ownership::validate_ownership;
+use nexora_lib::swarm_worktrees::{create_worktree, remove_worktree};
 
 fn setup_git_repo(repo_path: &std::path::Path) {
     fs::create_dir_all(repo_path).unwrap();

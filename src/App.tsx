@@ -78,7 +78,7 @@ function App() {
   const [isBrowserDragging, setIsBrowserDragging] = useState(false);
 
   const { isSwarmPanelVisible, swarmPanelHeight, setSwarmPanelHeight } = useSwarmStore();
-  const { isBrowserPanelVisible, browserPanelWidth, setBrowserPanelWidth, toggleBrowserPanel } = useBrowserStore();
+  const { isBrowserPanelVisible, isBrowserPanelPinned, browserPanelWidth, setBrowserPanelWidth, toggleBrowserPanel, toggleBrowserPanelPinned } = useBrowserStore();
 
   // Power User Top Right Panel (Tasks/Memory) state
   const [activeRightTab, setActiveRightTab] = useState<"tasks" | "memory">("tasks");
@@ -350,38 +350,60 @@ function App() {
   // If no workspace is active/defined, prompt to create a Workspace Session
   if (!activeWorkspaceId) {
     return (
-      <div className="h-screen w-screen text-zinc-100 flex flex-col justify-center items-center font-sans p-6 select-none relative">
-        
-        <div className="w-full max-w-md glass-panel-elevated p-8 space-y-6 text-center z-10 relative">
+      <div className="h-screen w-screen text-zinc-100 flex flex-col justify-center items-center font-sans p-6 select-none relative workspace-setup-bg overflow-hidden">
+        {/* Glow ambient background circles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          <div className="absolute top-[-10%] left-[-10%] w-[55%] h-[55%] rounded-full bg-amber-500/5 blur-[120px] animate-pulse" style={{ animationDuration: '8s' }}></div>
+          <div className="absolute bottom-[-10%] right-[-10%] w-[55%] h-[55%] rounded-full bg-purple-500/5 blur-[120px] animate-pulse" style={{ animationDuration: '12s' }}></div>
+        </div>
+
+        <div className="w-full max-w-md workspace-setup-card p-8 space-y-6 text-center z-10 relative">
           {/* Logo brand */}
-          <div className="w-12 h-12 rounded-2xl bg-zinc-800/20 border border-zinc-700/30 flex items-center justify-center text-accent-primary font-bold text-lg mx-auto shadow-inner">
-            MV
+          <div className="relative w-16 h-16 mx-auto flex items-center justify-center group mb-2">
+            {/* Outer glowing gradient aura */}
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 opacity-25 blur-md group-hover:opacity-45 transition-opacity duration-500 animate-pulse"></div>
+            {/* Logo box */}
+            <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1c1c24] to-[#0c0c12] border border-white/15 flex items-center justify-center shadow-2xl group-hover:border-amber-500/40 transition-all duration-300">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 font-black text-xl tracking-wider select-none font-mono">
+                NX
+              </span>
+            </div>
           </div>
           
-          <div className="space-y-2">
-            <h1 className="text-xl font-bold tracking-tight text-zinc-200">
-              Multiple Vibe AI Orchestrator
+          <div className="space-y-3">
+            <h1 className="text-3xl font-black tracking-tight text-white bg-clip-text bg-gradient-to-b from-white via-zinc-100 to-zinc-400 select-none">
+              Nexora
             </h1>
-            <p className="text-zinc-500 text-xs max-w-sm mx-auto leading-relaxed">
-              A command-center dashboard designed to coordinate and monitor arbitrary CLI coding agents across multiple project folders.
+            <div className="flex justify-center">
+              <span className="px-3 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono bg-amber-500/10 text-amber-500 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.05)] select-none">
+                AI Orchestrator
+              </span>
+            </div>
+            <p className="text-zinc-400 text-xs max-w-sm mx-auto leading-relaxed pt-2 select-none px-4">
+              A command-center dashboard designed to coordinate and monitor <span className="text-zinc-200 font-medium">autonomous CLI coding agents</span> across multiple project folders.
             </p>
           </div>
 
           <div className="space-y-4 pt-2">
             {workspaces.length > 0 ? (
               <div className="space-y-3">
-                <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
+                <div className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider text-left pl-1">
                   Resume Workspace Session
                 </div>
                 <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1">
                   {workspaces.map(ws => (
-                    <div key={ws.id} className="flex items-center gap-2 w-full">
+                    <div key={ws.id} className="group/item flex items-center gap-2 w-full p-1 rounded-xl bg-white/[0.01] border border-white/[0.04] hover:bg-white/[0.04] hover:border-white/[0.08] transition-all duration-200">
                       <button
                         onClick={() => useOrchestratorStore.getState().selectWorkspace(ws.id)}
-                        className="flex-1 glass-button hover:bg-white/5 px-4 py-2.5 rounded text-left text-xs font-medium text-zinc-300 transition-colors flex items-center justify-between min-w-0"
+                        className="flex-1 flex items-center gap-3 px-3 py-2 text-left rounded-lg text-zinc-300 transition-colors min-w-0 bg-transparent border-0 outline-none cursor-pointer"
                       >
-                        <span className="truncate font-semibold mr-2">{ws.name}</span>
-                        <span className="text-[9px] font-mono text-zinc-500 truncate max-w-[150px]" title={ws.rootPath}>{ws.rootPath}</span>
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover/item:bg-amber-500/20 group-hover/item:border-amber-500/30 transition-all">
+                          <FolderOpen size={14} />
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-semibold text-zinc-200 truncate group-hover/item:text-white transition-colors">{ws.name}</span>
+                          <span className="text-[10px] font-mono text-zinc-500 truncate max-w-[220px]" title={ws.rootPath}>{ws.rootPath}</span>
+                        </div>
                       </button>
                       <button
                         onClick={(e) => {
@@ -395,35 +417,49 @@ function App() {
                           );
                         }}
                         title="Delete Workspace Session"
-                        className="glass-button glass-button--danger glass-button--sm flex-shrink-0 cursor-pointer"
+                        className="mr-2 p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all cursor-pointer opacity-0 group-hover/item:opacity-100 focus:opacity-100"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   ))}
                 </div>
-                <div className="text-zinc-650 font-semibold text-[11px] font-mono select-none">
-                  - OR -
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-white/[0.06]"></div>
+                  <span className="flex-shrink mx-4 text-zinc-500 text-[9px] font-mono uppercase tracking-wider font-semibold">OR</span>
+                  <div className="flex-grow border-t border-white/[0.06]"></div>
                 </div>
               </div>
             ) : null}
 
-            <div className="space-y-3 border-t border-zinc-800/40 pt-4">
-              <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
+            <div className="space-y-3">
+              <div className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider text-left pl-1">
                 Create New Session
               </div>
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={initName}
-                  onChange={(e) => setInitName(e.target.value)}
-                  placeholder="Workspace Name (e.g. CLI Coding Team)"
-                  className="glass-input"
-                />
+              <div className="space-y-3">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={initName}
+                    onChange={(e) => setInitName(e.target.value)}
+                    placeholder="Workspace Name (e.g. CLI Coding Team)"
+                    className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/60 rounded-xl px-4 py-3 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:outline-none transition-all duration-300 focus:shadow-[0_0_15px_rgba(245,158,11,0.08)]"
+                  />
+                </div>
+                {!initName.trim() && (
+                  <p className="text-[10px] text-zinc-500 text-left px-1 mt-0.5 italic flex items-center gap-1.5">
+                    <span className="inline-block w-1 h-1 rounded-full bg-amber-500/50"></span>
+                    Enter a workspace name to select a directory
+                  </p>
+                )}
                 <button
                   onClick={handleInitWorkspace}
                   disabled={!initName.trim()}
-                  className="glass-button glass-button--accent w-full flex items-center justify-center gap-2 font-semibold text-xs py-2.5 px-4 rounded shadow-md transition-colors"
+                  className={`w-full flex items-center justify-center gap-2 font-bold text-xs py-3 px-4 rounded-xl transition-all duration-300 ${
+                    initName.trim()
+                      ? "bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-black shadow-lg shadow-amber-500/10 hover:shadow-amber-500/20 cursor-pointer active:scale-[0.98]"
+                      : "bg-white/[0.04] border border-white/[0.06] text-zinc-500 cursor-not-allowed"
+                  }`}
                 >
                   <FolderOpen size={14} />
                   Choose Workspace Directory
@@ -453,7 +489,7 @@ function App() {
       {/* Main content column */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* 2. Main Dashboard Layout splits */}
-        <div className="flex-1 flex overflow-hidden p-1 gap-0 relative">
+        <div className="flex-1 flex overflow-hidden pt-2.5 px-2 pb-2 gap-0 relative">
         {/* Left Side Dock columns (resizable) - Agents & Telemetry Feed */}
         {isSidebarVisible && !isAgentPanelPinned && (
           <div 
@@ -463,33 +499,21 @@ function App() {
           />
         )}
         <div 
-          className={`flex flex-col gap-1 h-full overflow-hidden ${
-            isAgentPanelPinned ? 'flex-shrink-0 relative' : 'absolute left-0 top-0 bottom-0 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg'
+          className={`flex flex-col gap-1 overflow-hidden ${
+            isAgentPanelPinned ? 'flex-shrink-0 relative mr-1' : 'absolute left-2 top-2.5 bottom-2 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg'
           } ${
             isSidebarDragging ? '' : 'transition-[width,opacity,margin,transform] duration-300 ease-out'
           } ${
             isSidebarVisible 
-              ? `opacity-100 ${isAgentPanelPinned ? 'mr-1' : 'translate-x-0'}` 
-              : `opacity-0 pointer-events-none ${isAgentPanelPinned ? 'mr-0' : '-translate-x-4'}`
+              ? `opacity-100 ${isAgentPanelPinned ? '' : 'translate-x-0'}` 
+              : `opacity-0 pointer-events-none ${isAgentPanelPinned ? '' : '-translate-x-4'}`
           }`}
           style={{ width: isSidebarVisible ? 'var(--sidebar-width)' : '0px' }}
         >
           {/* Inner container to prevent text reflow while width animates */}
           <div className="flex-1 flex flex-col h-full gap-1" style={{ width: 'var(--sidebar-width)', minWidth: 'var(--sidebar-width)' }}>
             {/* Active Agent Profiles list */}
-            <div className="flex-grow flex flex-col glass-panel px-1.5 pb-0 min-h-[300px] overflow-hidden relative">
-              <div className="flex items-center justify-between px-1 py-1">
-                <span className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-wider">Agents</span>
-                <button
-                  onClick={() => {
-                    if (terminals.length <= 8) setAgentPanelPinned(!isAgentPanelPinned);
-                  }}
-                  className={`p-1 rounded transition-colors ${terminals.length > 8 ? 'opacity-50 cursor-not-allowed text-zinc-600' : isAgentPanelPinned ? 'text-accent-primary bg-accent-primary/10' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-                  title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isAgentPanelPinned ? "Unpin Agent Panel (Float)" : "Pin Agent Panel (Dock)"}
-                >
-                  {isAgentPanelPinned ? <Pin size={10} className={terminals.length > 8 ? "fill-zinc-600" : "fill-accent-primary"} /> : <PinOff size={10} />}
-                </button>
-              </div>
+            <div className="flex-grow flex flex-col glass-panel px-1.5 pt-1.5 pb-0 min-h-[300px] overflow-hidden relative">
               <AgentGrid />
             </div>
 
@@ -523,8 +547,8 @@ function App() {
         {isSidebarVisible && !isAgentPanelPinned && (
           <div
             onMouseDown={startSidebarResize}
-            className="absolute top-1 bottom-1 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
-            style={{ left: 'var(--sidebar-width)' }}
+            className="absolute top-2.5 bottom-2 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
+            style={{ left: 'calc(var(--sidebar-width) + 8px)' }}
           >
             <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
@@ -535,7 +559,7 @@ function App() {
         )}
 
         {/* Right Side Dock viewport (split into top controls panel & bottom PTY workspace) */}
-        <div className="flex-1 h-full min-w-0 flex flex-col gap-0 overflow-hidden relative">
+        <div className="flex-1 min-w-0 flex flex-col gap-0 overflow-hidden relative">
           
           {/* Top Panel Overlay Backdrop */}
           {activeWs && isTaskCenterVisible && !isTaskPanelPinned && (
@@ -561,7 +585,7 @@ function App() {
                     }
                   : { 
                       height: 'var(--top-panel-height)',
-                      left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 4px)' : '0px',
+                      left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 8px)' : '0px',
                       transform: isTaskCenterVisible ? 'translateY(0)' : 'translateY(calc(-1 * var(--top-panel-height)))',
                       opacity: isTaskCenterVisible ? 1 : 0,
                       pointerEvents: isTaskCenterVisible ? 'auto' : 'none'
@@ -709,7 +733,7 @@ function App() {
               className={`${isTaskPanelPinned ? 'relative w-full' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
               style={isTaskPanelPinned ? {} : { 
                 top: 'var(--top-panel-height)',
-                left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 4px)' : '0px'
+                left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 8px)' : '0px'
               }}
               title="Drag to resize top panel, Double-click to collapse"
             >
@@ -746,14 +770,22 @@ function App() {
           )}
 
           {/* Bottom Panel (Terminal Workspace / Web Browser split) */}
-          <div className="flex-1 h-full min-h-0 flex flex-row gap-1 relative overflow-hidden">
-            <div className="flex-1 h-full min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-row gap-1 relative overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
               <TerminalWorkspace />
             </div>
 
-            {isBrowserPanelVisible && (
+            {/* Backdrop overlay for unpinned browser panel */}
+            {isBrowserPanelVisible && !isBrowserPanelPinned && (
+              <div 
+                className="absolute inset-0 z-20 bg-black/20 cursor-default"
+                onClick={toggleBrowserPanel}
+              />
+            )}
+
+            {isBrowserPanelVisible && isBrowserPanelPinned && (
               <>
-                {/* Resizable Divider Handle */}
+                {/* Resizable Divider Handle (only when pinned) */}
                 <div
                   onMouseDown={startBrowserResize}
                   onDoubleClick={toggleBrowserPanel}
@@ -768,12 +800,39 @@ function App() {
                   </div>
                 </div>
 
-                {/* Web Browser Panel */}
+                {/* Web Browser Panel (Pinned) */}
                 <div
                   className={`flex-shrink-0 h-full overflow-hidden glass-panel ${
                     isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
                   }`}
-                  style={{ width: isBrowserPanelVisible ? 'var(--browser-panel-width)' : '0px' }}
+                  style={{ width: 'var(--browser-panel-width)' }}
+                >
+                  <BrowserPanel />
+                </div>
+              </>
+            )}
+
+            {isBrowserPanelVisible && !isBrowserPanelPinned && (
+              <>
+                {/* Floating Resizer Handle (only when unpinned) */}
+                <div
+                  onMouseDown={startBrowserResize}
+                  className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
+                  style={{ right: 'var(--browser-panel-width)' }}
+                >
+                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                  </div>
+                </div>
+
+                {/* Web Browser Panel (Unpinned/Popup) */}
+                <div
+                  className={`!absolute right-0 top-0 bottom-0 z-30 overflow-hidden glass-panel shadow-2xl bg-[#08080a] backdrop-blur-xl border border-border-glass rounded-lg ${
+                    isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
+                  }`}
+                  style={{ width: 'var(--browser-panel-width)' }}
                 >
                   <BrowserPanel />
                 </div>
@@ -784,37 +843,61 @@ function App() {
       </div>
 
       {/* Visual Status bar at the bottom */}
-      <div className="h-[18px] glass-bottombar px-4 flex items-center justify-between text-[9px] text-zinc-500 font-mono select-none flex-shrink-0 border-t border-border-glass/30">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            PTY Server Connected
-          </span>
+      <div className="h-6 glass-bottombar px-4 flex items-center justify-between text-[10px] text-zinc-400 font-mono select-none flex-shrink-0 border-t border-white/[0.04] bg-[#050508]/90 z-40">
+        {/* Left section: Connection & Workspace info */}
+        <div className="flex items-center gap-3">
+          {/* Connection status badge */}
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-bold">
+            <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
+            PTY SERVER
+          </div>
+
           {activeWs && (
-            <span>
-              Root: {activeWs.rootPath}
-            </span>
+            <div className="flex items-center gap-1.5 text-zinc-300">
+              <span className="text-zinc-650">|</span>
+              <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
+                Workspace:
+              </span>
+              <span className="text-zinc-200 font-semibold">{activeWs.name}</span>
+            </div>
+          )}
+
+          {activeWs && (
+            <div className="flex items-center gap-1.5 text-zinc-400 max-w-sm truncate" title={activeWs.rootPath}>
+              <span className="text-zinc-750">/</span>
+              <span className="text-[9px] font-mono text-zinc-500 truncate">{activeWs.rootPath}</span>
+            </div>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <span>Active Workspace: {activeWs?.name}</span>
-          <span className="flex items-center gap-1 border-r border-zinc-800/80 pr-3">
-            <BarChart2 size={10} className="text-zinc-600" />
-            Session Snapshot Saved
+
+        {/* Right section: Session state & Metrics */}
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5 text-zinc-500">
+            <BarChart2 size={10} className="text-zinc-500" />
+            Snapshot Synced
           </span>
-          <div className="flex items-center gap-3.5">
-            <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="Global CPU Load">
-              <Cpu size={10} className="text-accent-primary" />
-              CPU: <span className="text-zinc-300 font-semibold">{cpuLoad}%</span>
-            </span>
-            <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="Global Memory Used">
-              <HardDrive size={10} className="text-accent-primary" />
-              RAM: <span className="text-zinc-300 font-semibold">{ramLoad} GB</span>
-            </span>
-            <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-mono" title="OS PTY processes count">
-              <Layers size={10} className="text-accent-primary" />
-              PTYs: <span className="text-zinc-300 font-semibold">{terminals.length}</span>
-            </span>
+
+          <div className="h-3 w-[1px] bg-zinc-800" />
+
+          {/* Metrics Gauges */}
+          <div className="flex items-center gap-1.5">
+            {/* CPU */}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global CPU Load">
+              <Cpu size={10} className="text-amber-500" />
+              <span>CPU <span className="text-zinc-200 font-bold">{cpuLoad}%</span></span>
+            </div>
+            
+            {/* RAM */}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global Memory Used">
+              <HardDrive size={10} className="text-amber-500" />
+              <span>RAM <span className="text-zinc-200 font-bold">{ramLoad} GB</span></span>
+            </div>
+
+            {/* PTYs */}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Active PTY Processes">
+              <Layers size={10} className="text-amber-500" />
+              <span>PTYs <span className="text-zinc-200 font-bold">{terminals.length}</span></span>
+            </div>
           </div>
         </div>
       </div>

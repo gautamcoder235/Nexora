@@ -186,7 +186,7 @@ pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Resul
 
     for exec in active_execs {
         let worktree_dir = std::path::Path::new(&exec.worktree_path);
-        let contract_dir = worktree_dir.join(".multivibe");
+        let contract_dir = worktree_dir.join(".nexora");
 
         if worktree_dir.exists() && contract_dir.exists() {
             valid_execs.push(exec);
@@ -203,7 +203,7 @@ pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Resul
         }
     }
 
-    // Optional: Sweep the .multi-vibe-worktrees directory for orphans
+    // Optional: Sweep the .nexora-worktrees directory for orphans
     let cleaned_orphans = swarm_worktrees::cleanup_worktrees(project_root).unwrap_or_default();
 
     // Phase 3.5: Validation Recovery

@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Memory Type Definitions
+ * Nexora — Memory Type Definitions
  * For BridgeMemory knowledge graph (local Markdown files)
  */
 
@@ -11,7 +11,7 @@ export type MemoryTag = string;
 
 /**
  * A single memory entry — corresponds to one Markdown file
- * in the project's .multivibe/memory/ directory.
+ * in the project's .nexora/memory/ directory.
  */
 export interface MemoryEntry {
   /** Unique entry identifier */
@@ -32,7 +32,7 @@ export interface MemoryEntry {
   updatedAt: Date;
   /** Source session or swarm that created this */
   source: string | null;
-  /** File path relative to .multivibe/memory/ */
+  /** File path relative to .nexora/memory/ */
   filePath: string;
 }
 

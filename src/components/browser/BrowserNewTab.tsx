@@ -78,10 +78,10 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
         <div className="space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-650/20 to-fuchsia-600/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-black text-sm mx-auto shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-            <span>MV</span>
+            <span>NX</span>
           </div>
           <h2 className="text-lg font-bold tracking-tight text-zinc-200 font-sans">
-            BridgeSpace Browser
+            Nexora Browser
           </h2>
           <p className="text-[11px] text-zinc-500 max-w-sm mx-auto leading-relaxed">
             Browse local development ports, documentations, and search the web alongside your terminal.

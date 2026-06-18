@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AgentPlugin } from "./types";
 import { claudePlugin } from "./claude";
-import { aiderPlugin } from "./aider";
+import { agyPlugin } from "./agy";
 import { codexPlugin } from "./codex";
 import { opencodePlugin } from "./opencode";
 import { genericPlugin } from "./generic";
@@ -9,7 +9,7 @@ import { genericPlugin } from "./generic";
 export class PluginRegistry {
   private static plugins: Map<string, AgentPlugin> = new Map([
     ["claude", claudePlugin],
-    ["aider", aiderPlugin],
+    ["agy", agyPlugin],
     ["codex", codexPlugin],
     ["opencode", opencodePlugin],
     ["generic", genericPlugin]

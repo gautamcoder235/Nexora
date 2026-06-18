@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 // Make sure to import the crate's library name
-// In Cargo.toml: name = "multi_vibe_lib"
-use multi_vibe_lib::swarm_worktrees::{create_worktree, remove_worktree};
+// In Cargo.toml: name = "nexora_lib"
+use nexora_lib::swarm_worktrees::{create_worktree, remove_worktree};
 
 #[test]
 fn test_worktree_lifecycle() {
@@ -72,8 +72,8 @@ fn test_worktree_lifecycle() {
     assert!(worktree_path.is_dir(), "Worktree path is not a directory");
     assert_eq!(result.branch_name, format!("task-{}-exec-{}", task_id, exec_id));
 
-    // 5. Assert that the `.multivibe` contract directory exists inside the worktree
-    let contract_dir = worktree_path.join(".multivibe");
+    // 5. Assert that the `.nexora` contract directory exists inside the worktree
+    let contract_dir = worktree_path.join(".nexora");
     assert!(contract_dir.exists(), "Contract directory does not exist");
     
     // Assert task.json, ownership.json, status.json, and execution.log are successfully written
@@ -102,7 +102,7 @@ fn test_worktree_lifecycle() {
     // Clean up
     let _ = fs::remove_dir_all(&temp_dir);
     // Also remove the parent .multi-vibe-worktrees created by create_worktree
-    let parent_worktrees_dir = temp_dir.parent().unwrap().join(".multi-vibe-worktrees");
+    let parent_worktrees_dir = temp_dir.parent().unwrap().join(".nexora-worktrees");
     if parent_worktrees_dir.exists() {
         let _ = fs::remove_dir_all(&parent_worktrees_dir);
     }

@@ -1,12 +1,12 @@
 # 05 — Architecture Recommendations
 
-> How to build Multi Vibe using patterns learned from Warp's architecture, adapted for our Tauri + React + TypeScript stack.
+> How to build Nexora using patterns learned from Warp's architecture, adapted for our Tauri + React + TypeScript stack.
 
 ---
 
 ## Recommended Tech Stack
 
-| Layer | Warp Uses | Multi Vibe Uses | Rationale |
+| Layer | Warp Uses | Nexora Uses | Rationale |
 |-------|-----------|-----------------|-----------|
 | Desktop Framework | Custom Rust app | **Tauri v2** | Cross-platform with Rust backend + WebView frontend |
 | UI Framework | Custom WarpUI (Rust) | **React + TypeScript** | Faster iteration, larger ecosystem, Tauri-native |
@@ -111,7 +111,7 @@ Warp's 5 input modes show that different contexts need different input handling.
 
 ```typescript
 /**
- * Input modes for Multi Vibe.
+ * Input modes for Nexora.
  * Each mode defines its own keybinding set and behavior.
  */
 enum InputMode {
@@ -179,7 +179,7 @@ type TerminalAction =
 Warp's 71+ crate structure shows the value of modular packages. We adapt for our monorepo:
 
 ```
-multi-vibe/
+nexora/
 ├── src/                          # React frontend
 │   ├── components/
 │   │   ├── terminal/             # Terminal components
@@ -417,7 +417,7 @@ useTerminalStore.subscribe(
 
 ## Swarm Architecture
 
-Multi Vibe's swarm orchestration coordinates multiple CLI agents for complex tasks:
+Nexora's swarm orchestration coordinates multiple CLI agents for complex tasks:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -612,9 +612,9 @@ interface MemoryQuery {
 
 ---
 
-## Warp vs Multi Vibe Comparison
+## Warp vs Nexora Comparison
 
-| Aspect | Warp | Multi Vibe |
+| Aspect | Warp | Nexora |
 |--------|------|-----------|
 | **Language** | 100% Rust | TypeScript (frontend) + Rust (backend) |
 | **UI Framework** | Custom WarpUI | React + Zustand |
@@ -626,7 +626,7 @@ interface MemoryQuery {
 | **AI** | Custom `crates/ai/` engine | CLI agent detection (claude, codex, gemini) |
 | **State** | Entity-Handle-Context + FairMutex | Zustand + Immer + subscribeWithSelector |
 | **Theming** | Custom theme engine + YAML | CSS variables + design tokens |
-| **Knowledge Graph** | N/A | BridgeMemory (markdown + YAML frontmatter) |
+| **Knowledge Graph** | N/A | NexoraMemory (markdown + YAML frontmatter) |
 | **Multi-Agent** | N/A | Swarm coordinator with task decomposition |
 | **Open Source** | Source-available (not OSS) | TBD |
 | **Performance** | Native (fastest possible) | WebView (fast enough with WebGL) |
@@ -636,11 +636,11 @@ interface MemoryQuery {
 
 ### Key Differences in Philosophy
 
-| Philosophy | Warp | Multi Vibe |
+| Philosophy | Warp | Nexora |
 |-----------|------|-----------|
 | AI Approach | Built-in AI engine | Detect existing agents |
 | Agent Model | Single AI assistant | Multi-agent swarm |
-| Knowledge | No persistent knowledge | BridgeMemory knowledge graph |
+| Knowledge | No persistent knowledge | NexoraMemory knowledge graph |
 | Target Users | Individual developers | Developers who "vibe code" with AI |
 | Extensibility | Workflows (limited) | Swarm tasks + memory plugins |
 | Terminal Model | Full replacement terminal | ADE with terminal core |
@@ -649,10 +649,10 @@ interface MemoryQuery {
 
 ## Summary
 
-Multi Vibe combines the best of three worlds:
+Nexora combines the best of three worlds:
 1. **Warp's block terminal** — the best terminal UX pattern ever created
-2. **BridgeSpace's ADE concept** — agent-first development environment
-3. **Our innovations** — CLI agent detection, swarm orchestration, BridgeMemory knowledge graph
+2. **Nexora's ADE concept** — agent-first development environment
+3. **Our innovations** — CLI agent detection, swarm orchestration, NexoraMemory knowledge graph
 
 By building on Tauri + React + xterm.js, we trade some raw performance for **dramatically faster development speed** and a **richer ecosystem**. The WebGL addon for xterm.js ensures terminal rendering is still GPU-accelerated and smooth.
 

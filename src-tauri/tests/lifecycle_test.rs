@@ -1,5 +1,5 @@
 use rusqlite::Connection;
-use multi_vibe_lib::swarm_db;
+use nexora_lib::swarm_db;
 use std::fs;
 use std::process::Command;
 
@@ -51,7 +51,7 @@ fn test_recover_swarm_state_missing_worktree() {
     let task_id = "task-456";
     let exec_id = "exec-789";
     let worktree_id = "wt-101";
-    let missing_worktree_path = repo_dir.join(".multi-vibe-worktrees").join(task_id);
+    let missing_worktree_path = repo_dir.join(".nexora-worktrees").join(task_id);
 
     swarm_db::insert_repository_if_missing(&conn, repo_id, "Test Repo", repo_path).unwrap();
     swarm_db::insert_task(&conn, task_id, repo_id, "Test Task", "Desc", "running").unwrap();
@@ -79,7 +79,7 @@ fn test_recover_swarm_state_missing_worktree() {
 
     // Manually verify the folder existence logic as written in `recover_swarm_state`
     let worktree_dir = std::path::Path::new(&exec.worktree_path);
-    let contract_dir = worktree_dir.join(".multivibe");
+    let contract_dir = worktree_dir.join(".nexora");
 
     let is_missing = !worktree_dir.exists() || !contract_dir.exists();
     assert!(is_missing, "Worktree folder should not exist in this simulated crash");

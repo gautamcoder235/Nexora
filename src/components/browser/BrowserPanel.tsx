@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, ArrowRight, RotateCw, Home, X, Plus, ExternalLink, Globe } from "lucide-react";
+import { ArrowLeft, ArrowRight, RotateCw, Home, X, Plus, ExternalLink, Globe, Pin, PinOff } from "lucide-react";
 import { useBrowserStore } from "../../stores/browserStore";
+import { useOrchestratorStore } from "../../stores/orchestratorStore";
 import { BrowserNewTab } from "./BrowserNewTab";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -40,7 +41,11 @@ export const BrowserPanel: React.FC = () => {
     setActiveTab,
     navigateTab,
     toggleBrowserPanel,
+    isBrowserPanelPinned,
+    toggleBrowserPanelPinned,
   } = useBrowserStore();
+
+  const terminals = useOrchestratorStore((s) => s.terminals);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const [address, setAddress] = useState(activeTab?.url || "");
@@ -123,13 +128,46 @@ export const BrowserPanel: React.FC = () => {
           </button>
         </div>
 
-        <button
-          onClick={toggleBrowserPanel}
-          title="Close Browser Panel"
-          className="p-1 rounded hover:bg-rose-500/10 text-zinc-500 hover:text-rose-400 transition-colors"
-        >
-          <X size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              if (terminals.length <= 8) {
+                toggleBrowserPanelPinned();
+                setTimeout(() => {
+                  useOrchestratorStore.getState().saveSnapshot();
+                }, 0);
+              }
+            }}
+            title={
+              terminals.length > 8
+                ? "Docking disabled (> 8 terminals)"
+                : isBrowserPanelPinned
+                ? "Float Panel"
+                : "Dock Panel"
+            }
+            className={`p-1 rounded transition-all cursor-pointer ${
+              terminals.length > 8
+                ? "opacity-35 cursor-not-allowed text-zinc-500"
+                : isBrowserPanelPinned
+                ? "bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20"
+                : "text-zinc-500 hover:text-zinc-350 hover:bg-white/5"
+            }`}
+          >
+            {isBrowserPanelPinned ? (
+              <Pin size={11} className="fill-amber-500" />
+            ) : (
+              <PinOff size={11} />
+            )}
+          </button>
+
+          <button
+            onClick={toggleBrowserPanel}
+            title="Close Browser Panel"
+            className="p-1 rounded hover:bg-rose-500/10 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
       </div>
 
       {/* 2. Navigation / Address Bar */}

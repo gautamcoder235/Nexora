@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — Web Browser Type Definitions
+ * Nexora — Web Browser Type Definitions
  */
 
 export interface BrowserTab {

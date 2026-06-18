@@ -1,8 +1,8 @@
 use rusqlite::Connection;
 use std::time::Instant;
 use std::fs;
-use multi_vibe_lib::swarm_validation::{ValidationProfile, ValidationStepResult};
-use multi_vibe_lib::swarm_ownership;
+use nexora_lib::swarm_validation::{ValidationProfile, ValidationStepResult};
+use nexora_lib::swarm_ownership;
 
 // NOTE: swarm_validation::run_validation_pipeline expects AppHandle, which is hard to mock in tests.
 // So we will test the validation gates directly or refactor the DB extraction in swarm_validation.rs.
@@ -14,8 +14,8 @@ fn test_ownership_hash_drift() {
     let repo_dir = std::env::temp_dir().join(format!("drift_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
     std::fs::create_dir_all(&repo_dir).unwrap();
     
-    // Setup .multivibe
-    let mv_dir = repo_dir.join(".multivibe");
+    // Setup .nexora
+    let mv_dir = repo_dir.join(".nexora");
     std::fs::create_dir_all(&mv_dir).unwrap();
     
     // Create ownership.hash with WRONG hash

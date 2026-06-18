@@ -1,5 +1,5 @@
 use rusqlite::Connection;
-use multi_vibe_lib::swarm_db;
+use nexora_lib::swarm_db;
 
 #[test]
 fn test_database_initialization() {

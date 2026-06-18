@@ -1,5 +1,5 @@
 /**
- * Multi Vibe — TerminalInput Component
+ * Nexora — TerminalInput Component
  *
  * Warp-style terminal command entry editor.
  * Separate from command blocks, supporting history and future autocomplete features.

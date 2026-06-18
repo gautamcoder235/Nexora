@@ -1,6 +1,6 @@
 # 04 — Design Decisions
 
-> 11 design decisions from the grill-me planning session for Multi Vibe.
+> 11 design decisions from the grill-me planning session for Nexora.
 
 ---
 
@@ -17,8 +17,8 @@
 | 7 | AI Strategy | Detect existing CLI agents (don't bundle) |
 | 8 | Knowledge Graph | Local Markdown with YAML frontmatter |
 | 9 | Design Language | Dark glassmorphism |
-| 10 | Layout | BridgeSpace-inspired workroom |
-| 11 | Name | Multi Vibe |
+| 10 | Layout | Nexora-inspired workroom |
+| 11 | Name | Nexora |
 
 ---
 
@@ -27,7 +27,7 @@
 **Decision:** Build a full **Application Development Environment (ADE)** with a Warp-inspired block terminal at its core.
 
 **Rationale:**
-- The ADE paradigm (pioneered by BridgeSpace) is the next evolution beyond IDEs
+- The ADE paradigm (pioneered by Nexora) is the next evolution beyond IDEs
 - Warp proved that block-based terminal interaction is superior to raw scrollback
 - Combining both gives us: agent-first workspace + developer-friendly terminal
 - We're not building "just another terminal" or "just another IDE" — it's a new category
@@ -44,7 +44,7 @@
 **Decision:** Use **Tauri v2** as the desktop application framework.
 
 **Rationale:**
-- BridgeSpace validates Tauri for ADE-class applications
+- Nexora validates Tauri for ADE-class applications
 - ~10MB binary vs Electron's ~150MB+
 - Rust backend for system-level operations (PTY, file watching, process management)
 - Native WebView (no bundled Chromium) = lower memory usage
@@ -372,9 +372,9 @@ We will use a modular component structure with...
 
 ---
 
-## Decision 10: Layout — BridgeSpace Workroom
+## Decision 10: Layout — Nexora Workroom
 
-**Decision:** Use a **BridgeSpace-inspired workroom layout** with a command center feel.
+**Decision:** Use a **Nexora-inspired workroom layout** with a command center feel.
 
 ### Layout Dimensions
 
@@ -429,14 +429,14 @@ We will use a modular component structure with...
 
 ---
 
-## Decision 11: Name — Multi Vibe
+## Decision 11: Name — Nexora
 
-**Decision:** The project is named **Multi Vibe**.
+**Decision:** The project is named **Nexora**.
 
-**Why "Multi Vibe":**
-- **Multi** — Multiple panes, multiple agents, multiple capabilities
-- **Vibe** — Vibe coding, the emerging paradigm of AI-assisted development
-- Memorable, unique, and not already taken
+**Why "Nexora":**
+- **Nex** — Next generation, next evolution of development environments
+- **Ora** — Aura, clean vibe of AI collaboration and environment orchestration
+- Memorable, unique, and professional.
 - Works as both a product name and a philosophy
 - Domain-friendly and searchable
 

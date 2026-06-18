@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
 import { PluginRegistry } from '../plugins';
-import { Plus, Terminal } from 'lucide-react';
+import { Plus, Terminal, Pin, PinOff } from 'lucide-react';
 import { AgentCapabilities } from '../types';
 
 export const CliSpawnerPanel: React.FC = () => {
@@ -19,6 +19,9 @@ export const CliSpawnerPanel: React.FC = () => {
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
   const settings = useOrchestratorStore(s => s.settings);
   const createAgent = useOrchestratorStore(s => s.createAgent);
+  const isAgentPanelPinned = useOrchestratorStore(s => s.isAgentPanelPinned);
+  const setAgentPanelPinned = useOrchestratorStore(s => s.setAgentPanelPinned);
+  const terminals = useOrchestratorStore(s => s.terminals);
 
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
 
@@ -76,25 +79,43 @@ export const CliSpawnerPanel: React.FC = () => {
       {/* Header Row */}
       <div className="w-full flex items-center justify-between py-1.5 px-2.5 glass-panel bg-bg-secondary/20 border-b border-border-glass gap-3 h-[34px] relative z-20">
         <h2 className="text-[10px] font-bold uppercase tracking-wider text-zinc-200 font-mono flex items-center gap-1.5 select-none shrink-0">
-          <Terminal size={10} className="text-accent-primary animate-pulse" />
+          <Terminal size={11} className="text-amber-500 animate-pulse" />
           CLI Agent Swarm
         </h2>
         
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className={`flex items-center justify-center gap-1 shrink-0 ${
-            isExpanded 
-              ? 'glass-button glass-button--sm' 
-              : 'glass-button glass-button--accent glass-button--sm'
-          }`}
-        >
-          {isExpanded ? 'Cancel' : <><Plus size={10} /> New Agent</>}
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className={`flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider py-1.5 px-2.5 rounded-md transition-all duration-300 ${
+              isExpanded 
+                ? 'bg-zinc-800 border border-zinc-700 text-zinc-450 hover:bg-zinc-750' 
+                : 'bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 hover:border-amber-500/30 cursor-pointer'
+            }`}
+          >
+            {isExpanded ? 'Cancel' : <><Plus size={10} /> New Agent</>}
+          </button>
+          
+          <button
+            onClick={() => {
+              if (terminals.length <= 8) setAgentPanelPinned(!isAgentPanelPinned);
+            }}
+            className={`p-1.5 rounded-md border transition-all cursor-pointer ${
+              terminals.length > 8 
+                ? 'opacity-40 cursor-not-allowed border-transparent text-zinc-650' 
+                : isAgentPanelPinned 
+                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-500 hover:bg-amber-500/20' 
+                  : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
+            }`}
+            title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isAgentPanelPinned ? "Float Panel" : "Dock Panel"}
+          >
+            {isAgentPanelPinned ? <Pin size={10} className="fill-amber-500" /> : <PinOff size={10} />}
+          </button>
+        </div>
       </div>
 
       {/* Expanded Spawn Form (Floating Menu) */}
       <div 
-        className={`!absolute top-[34px] left-0 right-0 z-10 w-full flex flex-col gap-2.5 p-2.5 glass-panel-elevated bg-[#0a0a0f]/60 backdrop-blur-2xl shadow-2xl border-b border-border-glass transition-all duration-300 ease-in-out origin-top ${
+        className={`!absolute top-[38px] left-0 right-0 z-10 w-full flex flex-col gap-2.5 p-3 glass-panel-elevated bg-[#0a0a0f]/85 backdrop-blur-2xl shadow-2xl border border-border-glass/80 rounded-xl transition-all duration-300 ease-in-out origin-top ${
           isExpanded ? 'opacity-100 translate-y-0 visible' : 'opacity-0 -translate-y-2 invisible pointer-events-none'
         }`}
       >
@@ -129,10 +150,9 @@ export const CliSpawnerPanel: React.FC = () => {
         <button
           onClick={() => {
             handleSpawn();
-            setIsExpanded(false);
           }}
           disabled={!selectedCliId || !selectedProjectId}
-          className="mt-2 glass-button glass-button--accent w-full h-[34px] !text-[10px] uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-2 glass-button glass-button--accent w-full h-[34px] !text-[10px] uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           <Plus size={12} className="stroke-[2.5px]" /> Add Agent to Swarm
         </button>

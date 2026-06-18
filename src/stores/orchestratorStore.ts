@@ -67,6 +67,8 @@ interface OrchestratorState {
   selectWorkspace: (workspaceId: string) => Promise<void>;
   deleteWorkspace: (workspaceId: string) => Promise<void>;
   addProject: (name: string, path: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
+  renameProject: (projectId: string, newName: string) => Promise<void>;
   createAgent: (profile: Omit<AgentProfile, "id" | "status" | "runtimeSeconds" | "lastActive" | "terminalSessionIds">) => Promise<void>;
   deleteAgent: (agentId: string) => Promise<void>;
   
@@ -227,20 +229,26 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
             mergedSettings.fontSize = DEFAULT_APP_SETTINGS.fontSize;
           }
 
+          // Migration: merge new default custom CLIs into loaded settings if they are missing
+          const defaultCLIs = DEFAULT_APP_SETTINGS.customCLIs || [];
+          const existingCLIs = mergedSettings.customCLIs || [];
+          const mergedCLIs = [...existingCLIs];
+          for (const dCli of defaultCLIs) {
+            if (!mergedCLIs.some(c => c.id === dCli.id)) {
+              mergedCLIs.push(dCli);
+            }
+          }
+          mergedSettings.customCLIs = mergedCLIs;
+
           set({
             workspaces: data.workspaces || [],
             projects: data.projects || [],
             agents: data.agents || [],
             tasks: data.tasks || [],
             activityFeed: data.activityFeed || [],
-            activeWorkspaceId: data.activeWorkspaceId || null,
+            activeWorkspaceId: null, // Always show selection panel on launch
             settings: mergedSettings
           });
-
-        // 2. If an active workspace was set, load its terminal layouts snapshot
-        if (data.activeWorkspaceId) {
-          await get().loadSnapshot();
-        }
       }
 
       // Initialize runtime ticker for active running agents
@@ -385,6 +393,63 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     get().logActivity('workspace', 'info', `Added project "${name}" mapping to ${path}`, newProject.id);
     await get().initializeProjectMemory(newProject.id);
+    get().saveSnapshot();
+  },
+
+  deleteProject: async (projectId) => {
+    const { activeWorkspaceId } = get();
+    if (!activeWorkspaceId) return;
+
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    // 1. Close all active terminal sessions in this project
+    const projectTerminals = get().terminals.filter(t => t.projectId === projectId);
+    for (const term of projectTerminals) {
+      try {
+        await invoke("close_terminal", { id: term.id });
+      } catch (e) {
+        console.error(`Failed to close terminal ${term.id} on project delete:`, e);
+      }
+    }
+
+    set((state) => {
+      const updatedWorkspaces = state.workspaces.map(ws => {
+        if (ws.id === activeWorkspaceId) {
+          return { ...ws, projectIds: ws.projectIds.filter(id => id !== projectId) };
+        }
+        return ws;
+      });
+
+      const remainingProjects = state.projects.filter(p => p.id !== projectId);
+      const remainingAgents = state.agents.filter(a => a.projectId !== projectId);
+      const remainingTasks = state.tasks.filter(t => t.projectId !== projectId);
+      const remainingTerminals = state.terminals.filter(t => t.projectId !== projectId);
+
+      return {
+        workspaces: updatedWorkspaces,
+        projects: remainingProjects,
+        agents: remainingAgents,
+        tasks: remainingTasks,
+        terminals: remainingTerminals
+      };
+    });
+
+    get().logActivity('workspace', 'warning', `Deleted Project Session "${project.name}"`, '', undefined);
+    get().saveSnapshot();
+  },
+
+  renameProject: async (projectId, newName) => {
+    if (!newName.trim()) return;
+
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    set((state) => ({
+      projects: state.projects.map(p => p.id === projectId ? { ...p, name: newName } : p)
+    }));
+
+    get().logActivity('workspace', 'info', `Renamed Project "${project.name}" to "${newName}"`, projectId);
     get().saveSnapshot();
   },
 
@@ -802,6 +867,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           sidebarWidth: state.sidebarWidth,
           topPanelHeight: state.topPanelHeight,
           isBrowserPanelVisible: browserState.isBrowserPanelVisible,
+          isBrowserPanelPinned: browserState.isBrowserPanelPinned,
           browserPanelWidth: browserState.browserPanelWidth,
           browserTabs: browserState.tabs,
           activeBrowserTabId: browserState.activeTabId
@@ -876,6 +942,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         // Restore browser state
         useBrowserStore.getState().setBrowserState({
           isBrowserPanelVisible: snapshot.isBrowserPanelVisible || false,
+          isBrowserPanelPinned: snapshot.isBrowserPanelPinned !== undefined ? snapshot.isBrowserPanelPinned : false,
           browserPanelWidth: snapshot.browserPanelWidth || 480,
           tabs: snapshot.browserTabs || [],
           activeTabId: snapshot.activeBrowserTabId || null

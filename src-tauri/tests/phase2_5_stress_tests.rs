@@ -1,5 +1,5 @@
-use multi_vibe_lib::swarm_db::{self, DbState};
-use multi_vibe_lib::swarm_lifecycle::{self, LifecycleStartResult};
+use nexora_lib::swarm_db::{self, DbState};
+use nexora_lib::swarm_lifecycle::{self, LifecycleStartResult};
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -197,7 +197,7 @@ fn test_ownership_scale() {
     ];
     
     let validate_start = Instant::now();
-    let result = multi_vibe_lib::swarm_ownership::validate_ownership(
+    let result = nexora_lib::swarm_ownership::validate_ownership(
         repo_dir.to_string_lossy().to_string(), 
         allowed_patterns.clone()
     ).unwrap();
@@ -210,7 +210,7 @@ fn test_ownership_scale() {
     // Test Worst-case (9,999 valid, 1 invalid at the root)
     std::fs::write(repo_dir.join("App.tsx"), "invalid mod").unwrap();
     let worst_case_start = Instant::now();
-    let worst_case_result = multi_vibe_lib::swarm_ownership::validate_ownership(
+    let worst_case_result = nexora_lib::swarm_ownership::validate_ownership(
         repo_dir.to_string_lossy().to_string(), 
         allowed_patterns
     ).unwrap();

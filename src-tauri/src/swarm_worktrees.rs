@@ -114,11 +114,11 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
     }
 
     // 5. Check if worktrees parent directory is writable
-    // We'll put worktrees in `.multi-vibe-worktrees` at the same level as the repo, or inside `.git/worktrees` natively.
+    // We'll put worktrees in `.nexora-worktrees` at the same level as the repo, or inside `.git/worktrees` natively.
     // Let's use standard native `git worktree add`, so we just need the parent of where we'll put them to be writable.
-    // A good place is root_path/../.multi-vibe-worktrees/
+    // A good place is root_path/../.nexora-worktrees/
     let parent = root.parent().unwrap_or(root);
-    let worktrees_dir = parent.join(".multi-vibe-worktrees");
+    let worktrees_dir = parent.join(".nexora-worktrees");
     
     if !worktrees_dir.exists() {
         if let Err(e) = fs::create_dir_all(&worktrees_dir) {
@@ -130,7 +130,7 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
         }
     } else {
         // Quick writability check by creating and removing a temp file
-        let temp_file = worktrees_dir.join(".multi-vibe-write-test");
+        let temp_file = worktrees_dir.join(".nexora-write-test");
         if fs::write(&temp_file, b"test").is_err() || fs::remove_file(&temp_file).is_err() {
             result.is_valid = false;
             result.errors.push(GitError {
@@ -162,7 +162,7 @@ pub fn create_worktree(
 ) -> Result<WorktreeResult, String> {
     let root = Path::new(&project_root);
     let parent = root.parent().unwrap_or(root);
-    let worktrees_dir = parent.join(".multi-vibe-worktrees");
+    let worktrees_dir = parent.join(".nexora-worktrees");
     
     if !worktrees_dir.exists() {
         if let Err(e) = fs::create_dir_all(&worktrees_dir) {
@@ -195,8 +195,8 @@ pub fn create_worktree(
         });
     }
 
-    // 2. Generate `.multivibe` contract directory
-    let contract_dir = worktree_path.join(".multivibe");
+    // 2. Generate `.nexora` contract directory
+    let contract_dir = worktree_path.join(".nexora");
     if let Err(e) = fs::create_dir_all(&contract_dir) {
         // Cleanup worktree if we fail to create the contract
         let _ = Command::new("git").current_dir(root).arg("worktree").arg("remove").arg(&worktree_path).arg("--force").output();
@@ -204,7 +204,7 @@ pub fn create_worktree(
             success: false,
             path: "".to_string(),
             branch_name: "".to_string(),
-            error: Some(format!("Failed to create .multivibe directory: {}", e)),
+            error: Some(format!("Failed to create .nexora directory: {}", e)),
         });
     }
 
@@ -250,7 +250,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
         .map_err(|e| format!("Failed to write execution.json: {}", e))?;
     fs::write(contract_dir.join("ownership.hash"), ownership_hash_str)
         .map_err(|e| format!("Failed to write ownership.hash: {}", e))?;
-    let _ = fs::write(contract_dir.join("execution.log"), "[Multi-Vibe] Worktree and contract initialized.\n");
+    let _ = fs::write(contract_dir.join("execution.log"), "[Nexora] Worktree and contract initialized.\n");
 
     Ok(WorktreeResult {
         success: true,
@@ -300,7 +300,7 @@ pub fn remove_worktree(project_root: String, worktree_path: String, branch_name:
 pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
     let root = Path::new(&project_root);
     let parent = root.parent().unwrap_or(root);
-    let worktrees_dir = parent.join(".multi-vibe-worktrees");
+    let worktrees_dir = parent.join(".nexora-worktrees");
     
     let mut cleaned = Vec::new();
     

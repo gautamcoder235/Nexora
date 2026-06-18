@@ -315,7 +315,7 @@ fn save_merge_artifact(conn: &rusqlite::Connection, repo_dir: &Path, execution_i
     let checksum = format!("{:x}", hasher.finish());
 
     let artifact_id = format!("art-{}-{}", artifact_type.replace("_", "-"), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
-    let multivibe_dir = repo_dir.join(".multivibe");
+    let multivibe_dir = repo_dir.join(".nexora");
     if !multivibe_dir.exists() {
         let _ = fs::create_dir_all(&multivibe_dir);
     }

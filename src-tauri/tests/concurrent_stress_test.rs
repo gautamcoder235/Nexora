@@ -5,10 +5,10 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use multi_vibe_lib::swarm_db::{
+use nexora_lib::swarm_db::{
     insert_execution, insert_repository_if_missing, insert_task, run_migrations,
 };
-use multi_vibe_lib::swarm_worktrees::create_worktree;
+use nexora_lib::swarm_worktrees::create_worktree;
 use rusqlite::Connection;
 
 #[test]
@@ -151,7 +151,7 @@ fn test_concurrent_stress() {
     assert_eq!(exec_count, NUM_THREADS as i32, "Expected {} executions", NUM_THREADS);
 
     // Assert worktrees on disk
-    let parent_worktrees_dir = temp_dir.parent().unwrap().join(".multi-vibe-worktrees");
+    let parent_worktrees_dir = temp_dir.parent().unwrap().join(".nexora-worktrees");
     let mut actual_wt_count = 0;
     let run_id = std::process::id();
     let prefix = format!("task-task_{}_", run_id);
