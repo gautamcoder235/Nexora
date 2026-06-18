@@ -15,6 +15,7 @@ import {
   DEFAULT_APP_SETTINGS
 } from "../types";
 import { EventBus } from "../core/events";
+import { useBrowserStore } from "./browserStore";
 import { TerminalBufferManager } from '../services/TerminalBufferManager';
 import { PersistenceManager } from '../services/PersistenceManager';
 import { agentTemplates } from "../agents/templates";
@@ -786,6 +787,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           history: TerminalBufferManager.getInstance().getSnapshot(t.id)
         }));
 
+        const browserState = useBrowserStore.getState();
+
         const snapPayload: WorkspaceSnapshot = {
           workspaceId: state.activeWorkspaceId,
           sessionId: state.activeSessionId || Math.random().toString(36).substring(7),
@@ -797,7 +800,11 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           isSidebarVisible: state.isSidebarVisible,
           isTaskCenterVisible: state.isTaskCenterVisible,
           sidebarWidth: state.sidebarWidth,
-          topPanelHeight: state.topPanelHeight
+          topPanelHeight: state.topPanelHeight,
+          isBrowserPanelVisible: browserState.isBrowserPanelVisible,
+          browserPanelWidth: browserState.browserPanelWidth,
+          browserTabs: browserState.tabs,
+          activeBrowserTabId: browserState.activeTabId
         };
 
         const snapJson = JSON.stringify(snapPayload);
@@ -864,6 +871,14 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           isTaskCenterVisible: snapshot.isTaskCenterVisible !== undefined ? snapshot.isTaskCenterVisible : true,
           sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 490,
           topPanelHeight: snapshot.topPanelHeight !== undefined ? snapshot.topPanelHeight : 320
+        });
+
+        // Restore browser state
+        useBrowserStore.getState().setBrowserState({
+          isBrowserPanelVisible: snapshot.isBrowserPanelVisible || false,
+          browserPanelWidth: snapshot.browserPanelWidth || 480,
+          tabs: snapshot.browserTabs || [],
+          activeTabId: snapshot.activeBrowserTabId || null
         });
 
         // Trigger reconnect for each restored terminal session asynchronously

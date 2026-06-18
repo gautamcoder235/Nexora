@@ -1,0 +1,228 @@
+import React, { useState, useEffect, useRef } from "react";
+import { ArrowLeft, ArrowRight, RotateCw, Home, X, Plus, ExternalLink, Globe } from "lucide-react";
+import { useBrowserStore } from "../../stores/browserStore";
+import { BrowserNewTab } from "./BrowserNewTab";
+import { openUrl } from "@tauri-apps/plugin-opener";
+
+const blocksIFrame = (url: string): boolean => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const blockedHosts = [
+      "google.com",
+      "github.com",
+      "stackoverflow.com",
+      "youtube.com",
+      "twitter.com",
+      "x.com",
+      "facebook.com",
+      "linkedin.com",
+      "reddit.com",
+      "medium.com",
+      "wikipedia.org",
+      "npmtrends.com",
+      "npmjs.com",
+    ];
+    return blockedHosts.some(
+      (host) => parsed.hostname === host || parsed.hostname.endsWith("." + host)
+    );
+  } catch (e) {
+    return false;
+  }
+};
+
+export const BrowserPanel: React.FC = () => {
+  const {
+    tabs,
+    activeTabId,
+    addTab,
+    closeTab,
+    setActiveTab,
+    navigateTab,
+    toggleBrowserPanel,
+  } = useBrowserStore();
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+  const [address, setAddress] = useState(activeTab?.url || "");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Sync address input when active tab changes
+  useEffect(() => {
+    if (activeTab) {
+      setAddress(activeTab.url);
+    }
+  }, [activeTab?.id, activeTab?.url]);
+
+  const handleGo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (address.trim() && activeTab) {
+      navigateTab(activeTab.id, address);
+    }
+  };
+
+  const handleHome = () => {
+    if (activeTab) {
+      navigateTab(activeTab.id, "");
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleOpenExternal = async () => {
+    if (activeTab?.url) {
+      try {
+        await openUrl(activeTab.url);
+      } catch (e) {
+        console.error("Failed to open URL in system browser", e);
+      }
+    }
+  };
+
+  const isBlocked = blocksIFrame(activeTab?.url || "");
+
+  return (
+    <div className="h-full w-full flex flex-col bg-[#08080a] font-sans min-w-0 select-none text-zinc-300">
+      {/* 1. Tab Bar */}
+      <div className="flex items-center justify-between bg-black/40 border-b border-border-glass h-9 px-2 gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1 overflow-x-auto max-w-[calc(100%-80px)] pr-2 py-1 scrollbar-none">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-[10px] font-semibold tracking-wide border-t border-x cursor-pointer transition-all max-w-[120px] truncate ${
+                  isActive
+                    ? "bg-[#08080a] border-border-glass text-[#f59e0b] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                    : "bg-transparent border-transparent text-zinc-500 hover:text-zinc-350 hover:bg-white/5"
+                }`}
+              >
+                <Globe size={10} className="flex-shrink-0" />
+                <span className="truncate flex-grow">{tab.title || "New Tab"}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  className="p-0.5 rounded-full hover:bg-white/10 text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  <X size={8} />
+                </button>
+              </div>
+            );
+          })}
+
+          <button
+            onClick={() => addTab()}
+            title="New Tab"
+            className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-zinc-350 transition-colors"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+
+        <button
+          onClick={toggleBrowserPanel}
+          title="Close Browser Panel"
+          className="p-1 rounded hover:bg-rose-500/10 text-zinc-500 hover:text-rose-400 transition-colors"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* 2. Navigation / Address Bar */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-black/25 border-b border-border-glass flex-shrink-0">
+        <div className="flex items-center gap-1 text-zinc-500">
+          <button
+            disabled // Back/Forward disabled because of cross-origin iframe security limitations
+            className="p-1 rounded opacity-35 cursor-not-allowed hover:bg-white/5 text-zinc-400"
+            title="Back (Iframe limit)"
+          >
+            <ArrowLeft size={13} />
+          </button>
+          <button
+            disabled
+            className="p-1 rounded opacity-35 cursor-not-allowed hover:bg-white/5 text-zinc-400"
+            title="Forward (Iframe limit)"
+          >
+            <ArrowRight size={13} />
+          </button>
+          <button
+            onClick={handleRefresh}
+            className="p-1 rounded hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+            title="Reload Frame"
+          >
+            <RotateCw size={12} />
+          </button>
+          <button
+            onClick={handleHome}
+            className="p-1 rounded hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+            title="Go to Home"
+          >
+            <Home size={12} />
+          </button>
+        </div>
+
+        <form onSubmit={handleGo} className="flex-grow flex items-center relative">
+          <input
+            type="text"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="Type web address or search Google..."
+            className="w-full h-7 px-3 rounded-lg bg-black/50 border border-border-glass focus:border-border-glass-hover focus:outline-none text-[11px] text-zinc-200 placeholder-zinc-650"
+          />
+        </form>
+
+        {activeTab?.url && (
+          <button
+            onClick={handleOpenExternal}
+            className="p-1.5 rounded-lg bg-zinc-800/20 border border-border-glass hover:border-border-glass-hover text-zinc-400 hover:text-zinc-200 transition-all flex items-center gap-1 cursor-pointer text-[10px] font-semibold"
+            title="Open page in system web browser"
+          >
+            <ExternalLink size={12} />
+            <span>Open Browser</span>
+          </button>
+        )}
+      </div>
+
+      {/* 3. Browser Viewport Area */}
+      <div className="flex-1 min-h-0 relative overflow-hidden bg-black/10">
+        {!activeTab?.url ? (
+          <BrowserNewTab onNavigate={(url) => activeTab ? navigateTab(activeTab.id, url) : addTab(url)} />
+        ) : isBlocked ? (
+          /* Fallback view when domain is known to block iframes */
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-black/40">
+            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mb-4 animate-pulse">
+              <Globe size={20} />
+            </div>
+            <h3 className="text-sm font-semibold text-zinc-200">Embedded View Blocked</h3>
+            <p className="text-[10px] text-zinc-500 mt-2 max-w-sm leading-relaxed">
+              Domain <span className="font-mono text-zinc-400">{activeTab ? new URL(activeTab.url).hostname : ""}</span> restricts embedded iframe viewing. Click the button below to view it in your default system browser instead.
+            </p>
+            <button
+              onClick={handleOpenExternal}
+              className="mt-5 h-8 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold tracking-wide transition-all flex items-center gap-1.5 shadow-lg shadow-amber-500/5 cursor-pointer"
+            >
+              <ExternalLink size={13} strokeWidth={2.5} />
+              Open in System Browser
+            </button>
+            <p className="text-[9px] text-zinc-650 mt-4 max-w-[280px]">
+              Note: Local dev servers (localhost) and docs like tauri.app or react.dev render inside the panel correctly.
+            </p>
+          </div>
+        ) : (
+          /* Normal iframe viewer */
+          <iframe
+            key={`${activeTab?.id || "empty"}-${refreshKey}`}
+            src={activeTab?.url}
+            className="w-full h-full border-none bg-white"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            title="Browser Panel Viewport"
+          />
+        )}
+      </div>
+    </div>
+  );
+};

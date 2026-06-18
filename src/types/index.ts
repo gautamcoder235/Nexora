@@ -25,6 +25,7 @@ export interface AgentCapabilities {
 }
 
 import { AgentPlugin } from '../plugins/types';
+import { BrowserTab } from "./browser";
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type TaskStatus = 'todo' | 'doing' | 'review' | 'done';
 
@@ -55,6 +56,7 @@ export interface AgentProfile {
   terminalSessionIds: string[]; // Associated terminal sessions
   runtimeSeconds: number;
   lastActive: string; // ISO Timestamp
+  startedAt?: number; // timestamp when running started
   role?: string;
   startupInstructions?: string[];
   behavioralRules?: string[];
@@ -112,6 +114,10 @@ export interface WorkspaceSnapshot {
   isTaskCenterVisible?: boolean;
   sidebarWidth?: number;
   topPanelHeight?: number;
+  isBrowserPanelVisible?: boolean;
+  browserPanelWidth?: number;
+  browserTabs?: BrowserTab[];
+  activeBrowserTabId?: string | null;
 }
 
 export interface CustomCLI {
@@ -191,3 +197,5 @@ export interface ActivityLog {
   taskId?: string;
   message: string;
 }
+
+export * from "./browser";

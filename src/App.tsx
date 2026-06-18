@@ -9,6 +9,8 @@ import { ProjectMemory } from "./components/ProjectMemory";
 import { SwarmView } from "./components/SwarmView/SwarmView";
 import { useOrchestratorStore } from "./stores/orchestratorStore";
 import { useSwarmStore } from "./stores/swarmStore";
+import { useBrowserStore } from "./stores/browserStore";
+import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { AnalyticsService } from "./services/analytics";
 import { invoke } from "@tauri-apps/api/core";
 import { ContextMenu } from "./components/ContextMenu";
@@ -73,8 +75,10 @@ function App() {
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const [isHeightDragging, setIsHeightDragging] = useState(false);
   const [isSwarmDragging, setIsSwarmDragging] = useState(false);
+  const [isBrowserDragging, setIsBrowserDragging] = useState(false);
 
   const { isSwarmPanelVisible, swarmPanelHeight, setSwarmPanelHeight } = useSwarmStore();
+  const { isBrowserPanelVisible, browserPanelWidth, setBrowserPanelWidth, toggleBrowserPanel } = useBrowserStore();
 
   // Power User Top Right Panel (Tasks/Memory) state
   const [activeRightTab, setActiveRightTab] = useState<"tasks" | "memory">("tasks");
@@ -229,6 +233,47 @@ function App() {
     };
   }, [isSwarmDragging, setSwarmPanelHeight]);
 
+  const startBrowserResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsBrowserDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isBrowserDragging) return;
+
+    let frameId: number;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        const leftBoundary = 56 + (isSidebarVisible ? sidebarWidth : 0) + 300;
+        const rightBoundary = window.innerWidth - 300;
+        const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
+        const newWidth = window.innerWidth - currentX - 8;
+
+        if (appRef.current) {
+          appRef.current.style.setProperty('--browser-panel-width', `${newWidth}px`);
+        }
+        resizeRef.current.lastWidth = newWidth;
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      if (resizeRef.current.lastWidth) setBrowserPanelWidth(resizeRef.current.lastWidth);
+      setIsBrowserDragging(false);
+      useOrchestratorStore.getState().saveSnapshot();
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isBrowserDragging, isSidebarVisible, sidebarWidth, setBrowserPanelWidth]);
+
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -271,6 +316,9 @@ function App() {
       } else if (checkShortcut(shortcuts.toggleAddAgent)) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('toggle-add-agent'));
+      } else if (checkShortcut((shortcuts as any).toggleBrowser || 'Ctrl+Shift+B')) {
+        e.preventDefault();
+        useBrowserStore.getState().toggleBrowserPanel();
       }
     };
 
@@ -393,8 +441,12 @@ function App() {
   return (
     <div 
       ref={appRef}
-      style={{ '--sidebar-width': `${sidebarWidth}px`, '--top-panel-height': `${topPanelHeight}px` } as React.CSSProperties}
-      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-black ${(isSidebarDragging || isHeightDragging || isSwarmDragging) ? "is-dragging" : ""}`}
+      style={{ 
+        '--sidebar-width': `${sidebarWidth}px`, 
+        '--top-panel-height': `${topPanelHeight}px`,
+        '--browser-panel-width': `${browserPanelWidth}px`
+      } as React.CSSProperties}
+      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-black ${(isSidebarDragging || isHeightDragging || isSwarmDragging || isBrowserDragging) ? "is-dragging" : ""}`}
     >
       <ActivityBar />
 
@@ -693,9 +745,40 @@ function App() {
             </>
           )}
 
-          {/* Bottom Panel (Terminal Workspace) */}
-          <div className="flex-1 h-full min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
-            <TerminalWorkspace />
+          {/* Bottom Panel (Terminal Workspace / Web Browser split) */}
+          <div className="flex-1 h-full min-h-0 flex flex-row gap-1 relative overflow-hidden">
+            <div className="flex-1 h-full min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
+              <TerminalWorkspace />
+            </div>
+
+            {isBrowserPanelVisible && (
+              <>
+                {/* Resizable Divider Handle */}
+                <div
+                  onMouseDown={startBrowserResize}
+                  onDoubleClick={toggleBrowserPanel}
+                  className="w-1.5 hover:w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none z-10"
+                  title="Drag to resize browser panel, Double-click to collapse"
+                >
+                  <div className="w-[1px] h-full bg-border-glass group-hover:bg-[#f59e0b]/50 group-active:bg-[#f59e0b] transition-colors duration-150" />
+                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                  </div>
+                </div>
+
+                {/* Web Browser Panel */}
+                <div
+                  className={`flex-shrink-0 h-full overflow-hidden glass-panel ${
+                    isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
+                  }`}
+                  style={{ width: isBrowserPanelVisible ? 'var(--browser-panel-width)' : '0px' }}
+                >
+                  <BrowserPanel />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

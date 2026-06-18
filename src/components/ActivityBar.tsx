@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { FolderPlus, FolderOpen, Plus, Layout, Layers, Trash2, Settings, Box, Zap } from "lucide-react";
+import { FolderPlus, FolderOpen, Plus, Layout, Layers, Trash2, Settings, Box, Zap, Globe } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { useSwarmStore } from "../stores/swarmStore";
+import { useBrowserStore } from "../stores/browserStore";
 import { invoke } from "@tauri-apps/api/core";
 
 export const ActivityBar: React.FC = () => {
@@ -238,6 +239,19 @@ export const ActivityBar: React.FC = () => {
                   {runningCount}
                 </span>
               )}
+            </button>
+
+            {/* Web Browser Panel Toggle */}
+            <button
+              onClick={() => useBrowserStore.getState().toggleBrowserPanel()}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                useBrowserStore((s) => s.isBrowserPanelVisible)
+                  ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
+                  : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
+              }`}
+              title={useBrowserStore((s) => s.isBrowserPanelVisible) ? "Hide Web Browser" : "Show Web Browser"}
+            >
+              <Globe size={20} />
             </button>
           </>
         )}
