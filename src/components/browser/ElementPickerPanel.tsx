@@ -37,7 +37,7 @@ interface SelectedElementInfo {
 export const ElementPickerPanel: React.FC = () => {
   const { toggleElementPicker, activeTabId, tabs } = useBrowserStore();
   const activeTab = tabs.find((t) => t.id === activeTabId);
-  const isExternal = !!(activeTab?.url && !isLocalUrl(activeTab.url));
+  const isExternal = false;
 
   const [isPickMode, setIsPickMode] = useState(false);
   const [selectedEl, setSelectedEl] = useState<SelectedElementInfo | null>(null);

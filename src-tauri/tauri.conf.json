@@ -15,7 +15,8 @@
         "title": "Nexora - AI Workspace",
         "width": 1280,
         "height": 800,
-        "maximized": true
+        "maximized": true,
+        "additionalBrowserArgs": "--disable-web-security"
       }
     ],
     "security": {
