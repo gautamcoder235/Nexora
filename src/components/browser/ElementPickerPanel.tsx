@@ -446,8 +446,6 @@ export const ElementPickerPanel: React.FC = () => {
           computedStyles,
           accessibility,
         });
-
-        setIsPickMode(false);
       }
     };
 
@@ -810,28 +808,31 @@ export const ElementPickerPanel: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="p-3.5 rounded-xl border border-border-glass bg-white/[0.01] flex flex-col gap-2 relative">
-            <div className="flex items-center justify-between">
+          <div 
+            onClick={() => {
+              if (hasCorsError) return;
+              setIsPickMode(!isPickMode);
+            }}
+            className={`p-3.5 rounded-xl border border-border-glass bg-white/[0.01] hover:bg-white/[0.03] active:bg-white/[0.05] transition-all cursor-pointer flex flex-col gap-2 relative ${
+              hasCorsError ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+          >
+            <div className="flex items-center justify-between select-none">
               <div>
                 <span className="font-bold text-zinc-200 block text-[11px]">Pick mode</span>
                 <span className="text-[9px] text-zinc-500">Click an element to capture it</span>
               </div>
-              <button
-                onClick={() => {
-                  if (hasCorsError) return;
-                  setIsPickMode(!isPickMode);
-                }}
-                disabled={hasCorsError}
-                className={`w-9 h-5 rounded-full p-0.5 transition-all cursor-pointer relative ${
+              <div
+                className={`w-9 h-5 rounded-full p-0.5 transition-all relative ${
                   isPickMode ? "bg-purple-650" : "bg-zinc-800"
-                } ${hasCorsError ? "opacity-40 cursor-not-allowed" : ""}`}
+                }`}
               >
                 <div 
                   className={`w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200 ${
                     isPickMode ? "translate-x-4" : "translate-x-0"
                   }`} 
                 />
-              </button>
+              </div>
             </div>
             {hasCorsError && (
               <div className="text-[9px] text-amber-500 flex items-center gap-1.5 mt-1 bg-amber-500/5 px-2 py-1 rounded border border-amber-500/10">
