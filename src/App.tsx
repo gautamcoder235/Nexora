@@ -588,29 +588,35 @@ function App() {
         <div className="flex-1 flex flex-col justify-center items-center w-full max-w-4xl z-10 relative">
           
           {/* Header section */}
-          <div className="text-center space-y-4 mb-12 select-none">
-            {/* Logo brand with orange glow */}
-            <div className="relative w-20 h-20 mx-auto flex items-center justify-center group mb-4">
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 opacity-25 blur-lg group-hover:opacity-45 transition-opacity duration-500 animate-pulse"></div>
-              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-[#181822] to-[#07070b] border border-white/10 flex items-center justify-center shadow-2xl group-hover:border-amber-500/40 transition-all duration-300">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 font-black text-2xl tracking-wider select-none font-mono">
-                  NX
-                </span>
-              </div>
-            </div>
+          <div className="launcher-card select-none">
+            <div className="launcher-content text-center">
+              <div className="launcher-overlay"></div>
+              
+              <div className="relative z-10 space-y-4">
+                {/* Logo brand with orange glow */}
+                <div className="relative w-20 h-20 mx-auto flex items-center justify-center group mb-4">
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 opacity-25 blur-lg group-hover:opacity-45 transition-opacity duration-500 animate-pulse"></div>
+                  <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-[#181822] to-[#07070b] border border-white/10 flex items-center justify-center shadow-2xl group-hover:border-amber-500/40 transition-all duration-300">
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 font-black text-2xl tracking-wider select-none font-mono">
+                      NX
+                    </span>
+                  </div>
+                </div>
 
-            <div className="space-y-3">
-              <h1 className="text-5xl md:text-6xl font-black tracking-tight text-white bg-clip-text bg-gradient-to-r from-white via-zinc-200 to-amber-500 select-none filter drop-shadow-[0_0_30px_rgba(245,158,11,0.25)]">
-                Nexora
-              </h1>
-              <div className="flex justify-center">
-                <span className="px-3.5 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono bg-amber-500/10 text-[#f59e0b] border border-amber-500/25 shadow-[0_0_15px_rgba(245,158,11,0.08)] select-none">
-                  🤖 AI Orchestrator
-                </span>
+                <div className="space-y-3">
+                  <h1 className="text-5xl md:text-6xl font-black tracking-tight text-white bg-clip-text bg-gradient-to-r from-white via-zinc-200 to-amber-500 select-none filter drop-shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+                    Nexora
+                  </h1>
+                  <div className="flex justify-center">
+                    <span className="px-3.5 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono bg-amber-500/10 text-[#f59e0b] border border-amber-500/25 shadow-[0_0_15px_rgba(245,158,11,0.08)] select-none">
+                      🤖 AI Orchestrator
+                    </span>
+                  </div>
+                  <p className="text-zinc-350 text-xs md:text-sm max-w-lg mx-auto leading-relaxed pt-2 px-4 select-none">
+                    A command-center dashboard designed to coordinate and monitor <span className="text-[#f59e0b] font-semibold">autonomous CLI coding agents</span> across multiple project folders.
+                  </p>
+                </div>
               </div>
-              <p className="text-zinc-400 text-xs md:text-sm max-w-lg mx-auto leading-relaxed pt-2 px-4 select-none">
-                A command-center dashboard designed to coordinate and monitor <span className="text-[#f59e0b] font-semibold">autonomous CLI coding agents</span> across multiple project folders.
-              </p>
             </div>
           </div>
 
