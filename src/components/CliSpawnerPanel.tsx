@@ -25,7 +25,7 @@ export const CliSpawnerPanel: React.FC = () => {
 
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
 
-  // Combine custom CLIs and predefined CLIs
+  // Combine custom CLIs and predefined CLIs without duplicating IDs
   const predefinedCLIs = PluginRegistry.getAll().filter(p => p.id !== 'generic').map(p => {
     const overrides = settings.cliOverrides?.[p.id] || {};
     return {
@@ -49,7 +49,15 @@ export const CliSpawnerPanel: React.FC = () => {
     startupInstructions: c.startupInstructions
   }));
 
-  const allCLIs = [...predefinedCLIs, ...customCLIs];
+  // De-duplicate CLIs list by id, prioritizing predefined ones
+  const allCLIsMap = new Map<string, typeof predefinedCLIs[number]>();
+  predefinedCLIs.forEach(cli => allCLIsMap.set(cli.id, cli));
+  customCLIs.forEach(cli => {
+    if (!allCLIsMap.has(cli.id)) {
+      allCLIsMap.set(cli.id, cli);
+    }
+  });
+  const allCLIs = Array.from(allCLIsMap.values());
 
   const handleSpawn = () => {
     if (!selectedCliId || !selectedProjectId) return;

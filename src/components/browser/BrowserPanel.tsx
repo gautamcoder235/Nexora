@@ -8,6 +8,18 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
+  let timeout: number | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+    timeout = window.setTimeout(() => {
+      func(...args);
+    }, wait);
+  };
+}
+
 const isLocalUrl = (url: string): boolean => {
   if (!url) return false;
   try {
@@ -47,6 +59,8 @@ export const BrowserPanel: React.FC = () => {
   const [address, setAddress] = useState(activeTab?.url || "");
   const [refreshKey, setRefreshKey] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const lastParentPos = useRef<{ x: number; y: number } | null>(null);
+  const lastViewportRect = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
 
   // Sync address input when active tab changes
   useEffect(() => {
@@ -122,6 +136,10 @@ export const BrowserPanel: React.FC = () => {
       const width = rect.width;
       const height = rect.height;
 
+      // Update refs to break loops
+      lastParentPos.current = { x: winPos.x, y: winPos.y };
+      lastViewportRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+
       await invoke("sync_browser_webview_layout", {
         visible: true,
         x,
@@ -154,6 +172,9 @@ export const BrowserPanel: React.FC = () => {
       const width = rect.width;
       const height = rect.height;
 
+      lastParentPos.current = { x: winPos.x, y: winPos.y };
+      lastViewportRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+
       await invoke("spawn_browser_webview", {
         url,
         x,
@@ -165,6 +186,18 @@ export const BrowserPanel: React.FC = () => {
       console.error("Failed to spawn webview:", err);
     }
   };
+
+  // Keep a ref of the latest function to avoid stale closure in debounce
+  const latestUpdateWebviewBounds = useRef(updateWebviewBounds);
+  useEffect(() => {
+    latestUpdateWebviewBounds.current = updateWebviewBounds;
+  });
+
+  const debouncedUpdateWebviewBounds = useRef(
+    debounce(() => {
+      latestUpdateWebviewBounds.current();
+    }, 100)
+  ).current;
 
   // Handle activeTab changes
   useEffect(() => {
@@ -194,8 +227,19 @@ export const BrowserPanel: React.FC = () => {
   useEffect(() => {
     if (!viewportRef.current) return;
 
-    const observer = new ResizeObserver(() => {
-      updateWebviewBounds();
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const rect = entry.contentRect;
+        // Check if the size has actually changed significantly to avoid micro-resizes
+        if (
+          lastViewportRect.current &&
+          Math.abs(rect.width - lastViewportRect.current.width) < 1 &&
+          Math.abs(rect.height - lastViewportRect.current.height) < 1
+        ) {
+          continue;
+        }
+        debouncedUpdateWebviewBounds();
+      }
     });
 
     observer.observe(viewportRef.current);
@@ -204,16 +248,24 @@ export const BrowserPanel: React.FC = () => {
     };
   }, [activeTab?.id, activeTab?.url]);
 
-  // Handle window movements
+  // Handle window movements (to make the child window follow parent)
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     
     const setupWindowListener = async () => {
       try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const win = getCurrentWindow();
-        const unsubscribe = await win.onMoved(() => {
-          updateWebviewBounds();
+        const win = getCurrentWindow() as any;
+        const unsubscribe = await win.onMoved(async () => {
+          const winPos = await win.position();
+          // ONLY trigger update if the parent window has actually moved its screen position
+          if (
+            lastParentPos.current &&
+            winPos.x === lastParentPos.current.x &&
+            winPos.y === lastParentPos.current.y
+          ) {
+            return;
+          }
+          debouncedUpdateWebviewBounds();
         });
         unlisten = unsubscribe;
       } catch (err) {

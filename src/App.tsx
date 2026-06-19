@@ -387,9 +387,12 @@ function App() {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
         const leftBoundary = 56 + (isSidebarVisible ? sidebarWidth : 0) + 300;
-        const rightBoundary = window.innerWidth - (isReviewCenterOpen && isReviewPanelPinned ? reviewPanelWidth : 0) - 300;
+        const rightBoundary = Math.min(
+          window.innerWidth - (isReviewCenterOpen && isReviewPanelPinned ? reviewPanelWidth : 0) - 300,
+          window.innerWidth - 320 - 8
+        );
         const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
-        const newWidth = window.innerWidth - currentX - 8;
+        const newWidth = Math.max(320, window.innerWidth - currentX - 8);
 
         if (appRef.current) {
           appRef.current.style.setProperty('--browser-panel-width', `${newWidth}px`);

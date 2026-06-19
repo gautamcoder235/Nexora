@@ -542,6 +542,14 @@ fn destroy_browser_webview(app_handle: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_browser_devtools(app_handle: AppHandle, label: String) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window(&label) {
+        window.open_devtools();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn check_cli_tool(command: String) -> bool {
     let check_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
     
@@ -681,6 +689,7 @@ pub fn run() {
             spawn_browser_webview,
             sync_browser_webview_layout,
             destroy_browser_webview,
+            open_browser_devtools,
             spawn_pty,
             write_pty,
             resize_pty,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { 
   Search, 
   Globe, 
@@ -11,7 +11,10 @@ import {
   Clipboard, 
   ArrowRight, 
   Clock,
-  Sparkles
+  Sparkles,
+  Edit2,
+  Trash2,
+  RotateCcw
 } from "lucide-react";
 import { useBrowserStore } from "../../stores/browserStore";
 import "./BrowserHome.css";
@@ -37,48 +40,129 @@ interface BrowserNewTabProps {
   onNavigate: (url: string) => void;
 }
 
+interface QuickLink {
+  id: string;
+  title: string;
+  url: string;
+  description: string;
+  iconType: "Terminal" | "Cpu" | "BookOpen" | "Github" | "Globe";
+}
+
+const DEFAULT_QUICK_LINKS: QuickLink[] = [
+  {
+    id: "vite",
+    title: "localhost:5173",
+    url: "http://localhost:5173",
+    description: "Default Vite dev server",
+    iconType: "Terminal",
+  },
+  {
+    id: "node",
+    title: "localhost:3000",
+    url: "http://localhost:3000",
+    description: "Common Node dev port",
+    iconType: "Terminal",
+  },
+  {
+    id: "tauri",
+    title: "Tauri Docs",
+    url: "https://tauri.app",
+    description: "App framework reference",
+    iconType: "Cpu",
+  },
+  {
+    id: "react",
+    title: "React Docs",
+    url: "https://react.dev",
+    description: "Library documentation",
+    iconType: "BookOpen",
+  },
+  {
+    id: "github",
+    title: "GitHub",
+    url: "https://github.com",
+    description: "Developer platform",
+    iconType: "Github",
+  },
+  {
+    id: "google",
+    title: "Google",
+    url: "https://google.com",
+    description: "Web search engine",
+    iconType: "Globe",
+  },
+];
+
+const getIconElement = (type: string) => {
+  switch (type) {
+    case "Terminal":
+      return <Terminal size={14} className="text-amber-500" />;
+    case "Cpu":
+      return <Cpu size={14} className="text-blue-400" />;
+    case "BookOpen":
+      return <BookOpen size={14} className="text-cyan-400" />;
+    case "Github":
+      return <GithubIcon size={14} className="text-zinc-200" />;
+    case "Globe":
+    default:
+      return <Globe size={14} className="text-emerald-400" />;
+  }
+};
+
 export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
-  const { history, clearHistoryItem, addTab } = useBrowserStore();
+  const { history, clearHistoryItem } = useBrowserStore();
   const [query, setQuery] = useState("");
-  const [copyFeedback, setCopyFeedback] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Quick Links State
+  const [quickLinks, setQuickLinks] = useState<QuickLink[]>(() => {
+    const saved = localStorage.getItem("nexora_quick_links");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse quick links:", e);
+      }
+    }
+    return DEFAULT_QUICK_LINKS;
+  });
+
+  const saveQuickLinks = (links: QuickLink[]) => {
+    setQuickLinks(links);
+    localStorage.setItem("nexora_quick_links", JSON.stringify(links));
+  };
+
+  // Customize Modal States
+  const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
+  const [isAddingLink, setIsAddingLink] = useState(false);
+  const [editingLink, setEditingLink] = useState<QuickLink | null>(null);
+
+  const [formTitle, setFormTitle] = useState("");
+  const [formUrl, setFormUrl] = useState("");
+  const [formDesc, setFormDesc] = useState("");
+  const [formIconType, setFormIconType] = useState<"Terminal" | "Cpu" | "BookOpen" | "Github" | "Globe">("Globe");
+
+  // Autocomplete Suggestions State
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const [isFocused, setIsFocused] = useState(false);
 
   // Focus omnibox on Ctrl+L
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDownGlobal = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
         e.preventDefault();
         inputRef.current?.focus();
         inputRef.current?.select();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDownGlobal);
+    return () => window.removeEventListener('keydown', handleKeyDownGlobal);
   }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
       onNavigate(query);
-    }
-  };
-
-  const handleCopy = async () => {
-    if (query.trim()) {
-      await navigator.clipboard.writeText(query);
-      setCopyFeedback(true);
-      setTimeout(() => setCopyFeedback(false), 1500);
-    }
-  };
-
-  const handlePasteAndGo = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text.trim()) {
-        onNavigate(text.trim());
-      }
-    } catch (err) {
-      console.error("Failed to read clipboard:", err);
     }
   };
 
@@ -92,44 +176,136 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
     return "Yesterday";
   };
 
-  const quickLinks = [
-    {
-      title: "localhost:5173",
-      url: "http://localhost:5173",
-      description: "Default Vite dev server",
-      icon: <Terminal size={14} className="text-amber-500" />,
-    },
-    {
-      title: "localhost:3000",
-      url: "http://localhost:3000",
-      description: "Common Node dev port",
-      icon: <Terminal size={14} className="text-amber-500" />,
-    },
-    {
-      title: "Tauri Docs",
-      url: "https://tauri.app",
-      description: "App framework reference",
-      icon: <Cpu size={14} className="text-blue-400" />,
-    },
-    {
-      title: "React Docs",
-      url: "https://react.dev",
-      description: "Library documentation",
-      icon: <BookOpen size={14} className="text-cyan-400" />,
-    },
-    {
-      title: "GitHub",
-      url: "https://github.com",
-      description: "Developer platform",
-      icon: <GithubIcon size={14} className="text-zinc-200" />,
-    },
-    {
-      title: "Google",
-      url: "https://google.com",
-      description: "Web search engine",
-      icon: <Globe size={14} className="text-emerald-400" />,
-    },
-  ];
+  // Construct suggestions list based on query
+  const suggestions = useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) return [];
+
+    // Filter from history and quickLinks matching title or url
+    const historyMatches = history
+      .filter((item) => item.title.toLowerCase().includes(trimmed) || item.url.toLowerCase().includes(trimmed))
+      .map((item) => ({ type: "history", title: item.title, url: item.url }));
+
+    const quickLinkMatches = quickLinks
+      .filter((item) => item.title.toLowerCase().includes(trimmed) || item.url.toLowerCase().includes(trimmed))
+      .map((item) => ({ type: "quicklink", title: item.title, url: item.url }));
+
+    // De-duplicate by URL
+    const seenUrls = new Set<string>();
+    const uniqueMatches: Array<{ type: string; title: string; url: string }> = [];
+
+    [...quickLinkMatches, ...historyMatches].forEach((item) => {
+      if (!seenUrls.has(item.url)) {
+        seenUrls.add(item.url);
+        uniqueMatches.push(item);
+      }
+    });
+
+    const limitedMatches = uniqueMatches.slice(0, 4);
+
+    // Always include a Google Search suggestion as the last item
+    limitedMatches.push({
+      type: "search",
+      title: `Search Google for "${query}"`,
+      url: query,
+    });
+
+    return limitedMatches;
+  }, [query, history, quickLinks]);
+
+  // Reset active suggestion index when suggestions length changes
+  useEffect(() => {
+    setActiveSuggestionIndex(0);
+  }, [suggestions.length]);
+
+  const handleSelectSuggestion = (suggestion: { type: string; title: string; url: string }) => {
+    setIsFocused(false);
+    if (suggestion.type === "search") {
+      onNavigate(query);
+    } else {
+      onNavigate(suggestion.url);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (suggestions.length > 0 && isFocused) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        handleSelectSuggestion(suggestions[activeSuggestionIndex]);
+      } else if (e.key === "Escape") {
+        setIsFocused(false);
+      }
+    }
+  };
+
+  // Quick Link CRUD Actions
+  const resetForm = () => {
+    setFormTitle("");
+    setFormUrl("");
+    setFormDesc("");
+    setFormIconType("Globe");
+    setIsAddingLink(false);
+    setEditingLink(null);
+  };
+
+  const handleStartAdd = () => {
+    resetForm();
+    setIsAddingLink(true);
+  };
+
+  const handleStartEdit = (link: QuickLink) => {
+    setFormTitle(link.title);
+    setFormUrl(link.url);
+    setFormDesc(link.description);
+    setFormIconType(link.iconType);
+    setEditingLink(link);
+    setIsAddingLink(false);
+  };
+
+  const handleDeleteLink = (id: string) => {
+    const updated = quickLinks.filter((link) => link.id !== id);
+    saveQuickLinks(updated);
+  };
+
+  const handleRestoreDefaults = () => {
+    saveQuickLinks(DEFAULT_QUICK_LINKS);
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formTitle.trim() || !formUrl.trim()) return;
+
+    if (isAddingLink) {
+      const newLink: QuickLink = {
+        id: Math.random().toString(36).substring(7),
+        title: formTitle.trim(),
+        url: formUrl.trim(),
+        description: formDesc.trim(),
+        iconType: formIconType,
+      };
+      saveQuickLinks([...quickLinks, newLink]);
+    } else if (editingLink) {
+      const updated = quickLinks.map((link) =>
+        link.id === editingLink.id
+          ? {
+              ...link,
+              title: formTitle.trim(),
+              url: formUrl.trim(),
+              description: formDesc.trim(),
+              iconType: formIconType,
+            }
+          : link
+      );
+      saveQuickLinks(updated);
+    }
+    resetForm();
+  };
 
   return (
     <div className="browser-home-container select-none min-h-0 flex-grow">
@@ -164,6 +340,9 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              onKeyDown={handleKeyDown}
               placeholder="Search Google or enter web address..."
               className="w-full h-11 px-4 pl-10 pr-24 rounded-xl bg-black/60 border border-white/[0.08] focus:border-purple-500/40 focus:outline-none text-[11px] text-zinc-100 transition-all placeholder-zinc-650 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] focus:shadow-[0_0_15px_rgba(168,85,247,0.08)]"
             />
@@ -177,39 +356,38 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
             >
               Search
             </button>
-          </form>
 
-          {/* Quick Actions Row */}
-          <div className="flex items-center justify-center gap-2">
-            <button
-              onClick={() => addTab(query)}
-              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus size={11} />
-              <span>Open in New Tab</span>
-            </button>
-            <button
-              onClick={() => onNavigate(query)}
-              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
-            >
-              <Globe size={11} />
-              <span>Open in Workspace</span>
-            </button>
-            <button
-              onClick={handleCopy}
-              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
-            >
-              <Clipboard size={11} />
-              <span>{copyFeedback ? "Copied!" : "Copy URL"}</span>
-            </button>
-            <button
-              onClick={handlePasteAndGo}
-              className="glass-action-btn h-8 px-3 text-[10px] font-semibold flex items-center gap-1.5 cursor-pointer"
-            >
-              <ArrowRight size={11} />
-              <span>Paste & Go</span>
-            </button>
-          </div>
+            {/* Autocomplete Dropdown */}
+            {isFocused && suggestions.length > 0 && (
+              <div className="search-suggestions-dropdown">
+                {suggestions.map((suggestion, index) => (
+                  <div
+                    key={index}
+                    onMouseDown={() => handleSelectSuggestion(suggestion)}
+                    onMouseEnter={() => setActiveSuggestionIndex(index)}
+                    className={`suggestion-item ${
+                      index === activeSuggestionIndex ? "active" : ""
+                    }`}
+                  >
+                    {suggestion.type === "search" && <Search size={12} className="text-purple-400 flex-shrink-0" />}
+                    {suggestion.type === "history" && <Clock size={12} className="text-zinc-500 flex-shrink-0" />}
+                    {suggestion.type === "quicklink" && <Globe size={12} className="text-emerald-400 flex-shrink-0" />}
+                    
+                    <div className="flex-grow flex items-center justify-between min-w-0">
+                      <span className="text-[11px] text-zinc-200 truncate pr-2">
+                        {suggestion.title}
+                      </span>
+                      {suggestion.type !== "search" && (
+                        <span className="text-[9px] text-[#71717a] truncate font-mono">
+                          {suggestion.url}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </form>
         </div>
 
         {/* Quick Links Section */}
@@ -218,35 +396,38 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
             <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
               Quick Links
             </span>
-            <button className="text-[9px] font-bold text-zinc-500 hover:text-purple-400 transition-colors uppercase tracking-wider cursor-pointer">
+            <button 
+              onClick={() => setIsCustomizeOpen(true)}
+              className="text-[9px] font-bold text-zinc-500 hover:text-purple-400 transition-colors uppercase tracking-wider cursor-pointer"
+            >
               Customize
             </button>
           </div>
           <div className="grid grid-cols-2 gap-3">
             {quickLinks.map((link) => (
               <div
-                key={link.title}
+                key={link.id}
                 className="quick-link-card p-3 flex items-start justify-between group"
               >
                 <div 
                   onClick={() => onNavigate(link.url)}
-                  className="flex items-start gap-3 flex-grow cursor-pointer"
+                  className="flex items-start gap-3 flex-grow cursor-pointer min-w-0"
                 >
                   <div className="p-2 rounded-lg bg-black border border-white/[0.04] group-hover:border-purple-500/20 transition-colors flex-shrink-0">
-                    {link.icon}
+                    {getIconElement(link.iconType)}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 text-left">
                     <div className="text-[11px] font-bold text-zinc-200 group-hover:text-purple-400 transition-colors truncate">
                       {link.title}
                     </div>
                     <div className="text-[9px] text-[#71717a] truncate mt-0.5 font-medium">
-                      {link.description}
+                      {link.description || link.url}
                     </div>
                   </div>
                 </div>
                 <button
                   onClick={() => onNavigate(link.url)}
-                  className="p-1 rounded text-[#71717a] hover:text-purple-400 transition-colors cursor-pointer"
+                  className="p-1 rounded text-[#71717a] hover:text-purple-400 transition-colors cursor-pointer flex-shrink-0"
                   title={`Launch ${link.title}`}
                 >
                   <ExternalLink size={12} />
@@ -293,6 +474,174 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
           </div>
         )}
       </div>
+
+      {/* Customize Modal Overlay */}
+      {isCustomizeOpen && (
+        <div className="customize-modal-overlay">
+          <div className="customize-modal w-full max-w-md rounded-2xl flex flex-col max-h-[80vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/[0.08]">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-purple-400" />
+                <h2 className="text-[11px] font-bold text-white font-sans uppercase tracking-wider">Customize Quick Links</h2>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsCustomizeOpen(false);
+                  resetForm();
+                }}
+                className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 flex-grow overflow-y-auto">
+              {isAddingLink || editingLink ? (
+                <form onSubmit={handleFormSubmit} className="space-y-3.5 text-left font-sans">
+                  <h3 className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">
+                    {isAddingLink ? "Add Quick Link" : "Edit Quick Link"}
+                  </h3>
+                  
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Title</label>
+                    <input
+                      type="text"
+                      required
+                      value={formTitle}
+                      onChange={(e) => setFormTitle(e.target.value)}
+                      placeholder="e.g. Google"
+                      className="customize-input"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">URL</label>
+                    <input
+                      type="text"
+                      required
+                      value={formUrl}
+                      onChange={(e) => setFormUrl(e.target.value)}
+                      placeholder="e.g. https://google.com"
+                      className="customize-input"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Description</label>
+                    <input
+                      type="text"
+                      value={formDesc}
+                      onChange={(e) => setFormDesc(e.target.value)}
+                      placeholder="e.g. Web search engine"
+                      className="customize-input"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider block">Icon Type</label>
+                    <div className="grid grid-cols-5 gap-2">
+                      {(["Terminal", "Cpu", "BookOpen", "Github", "Globe"] as const).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setFormIconType(type)}
+                          className={`icon-select-btn ${formIconType === type ? "selected" : ""}`}
+                        >
+                          {getIconElement(type)}
+                          <span className="text-[9px] font-bold">{type}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="h-8 px-4 rounded-lg border border-white/[0.08] hover:bg-white/5 text-[10px] font-bold text-zinc-300 transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="h-8 px-4 bg-gradient-to-r from-purple-650 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-500 rounded-lg text-[10px] font-bold text-white transition-all shadow-[0_0_12px_rgba(168,85,247,0.25)] cursor-pointer"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-2">
+                  {quickLinks.map((link) => (
+                    <div
+                      key={link.id}
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04]"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2 rounded-lg bg-black border border-white/[0.04] flex-shrink-0">
+                          {getIconElement(link.iconType)}
+                        </div>
+                        <div className="min-w-0 text-left">
+                          <div className="text-[11px] font-bold text-zinc-200 truncate">
+                            {link.title}
+                          </div>
+                          <div className="text-[9px] text-zinc-500 truncate mt-0.5">
+                            {link.url}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => handleStartEdit(link)}
+                          className="p-1.5 rounded text-zinc-400 hover:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer"
+                          title="Edit"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLink(link.id)}
+                          className="p-1.5 rounded text-zinc-400 hover:text-rose-455 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title="Delete"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {quickLinks.length === 0 && (
+                    <div className="text-center py-6 text-[10px] text-zinc-500 font-sans">
+                      No custom quick links yet. Add one or restore defaults!
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            {!isAddingLink && !editingLink && (
+              <div className="p-4 border-t border-white/[0.08] flex items-center justify-between bg-black/20">
+                <button
+                  onClick={handleRestoreDefaults}
+                  className="h-8 px-3 rounded-lg border border-white/[0.08] hover:bg-white/5 text-[10px] font-bold text-zinc-400 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RotateCcw size={11} />
+                  <span>Restore Defaults</span>
+                </button>
+                <button
+                  onClick={handleStartAdd}
+                  className="h-8 px-3 bg-gradient-to-r from-purple-650 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-500 rounded-lg text-[10px] font-bold text-white flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(168,85,247,0.25)] cursor-pointer"
+                >
+                  <Plus size={11} />
+                  <span>Add Link</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

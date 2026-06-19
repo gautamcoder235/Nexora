@@ -9,10 +9,12 @@ import {
   Info, 
   Check, 
   Code,
-  ShieldAlert
+  ShieldAlert,
+  Camera
 } from "lucide-react";
 import { useBrowserStore } from "../../stores/browserStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 
 interface SelectedElementInfo {
   tagName: string;
@@ -33,7 +35,7 @@ interface SelectedElementInfo {
 export const ElementPickerPanel: React.FC = () => {
   const { toggleElementPicker, activeTabId, tabs } = useBrowserStore();
   const activeTab = tabs.find((t) => t.id === activeTabId);
-  const isExternal = activeTab?.url && !isLocalUrl(activeTab.url);
+  const isExternal = !!(activeTab?.url && !isLocalUrl(activeTab.url));
 
   const [isPickMode, setIsPickMode] = useState(false);
   const [selectedEl, setSelectedEl] = useState<SelectedElementInfo | null>(null);
@@ -42,6 +44,19 @@ export const ElementPickerPanel: React.FC = () => {
 
   // States to keep track of CORS accessibility
   const [hasCorsError, setHasCorsError] = useState(false);
+
+  const [screenshotSuccess, setScreenshotSuccess] = useState(false);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
+  const successTimeoutRef = useRef<number | null>(null);
+
+  // Cleanup screenshot timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function isLocalUrl(url: string): boolean {
     if (!url) return false;
@@ -69,8 +84,7 @@ export const ElementPickerPanel: React.FC = () => {
 
   const handleOpenDevTools = async () => {
     try {
-      const win = getCurrentWindow() as any;
-      await win.openDevTools();
+      await invoke("open_browser_devtools", { label: "main" });
     } catch (err) {
       console.error("Failed to open DevTools:", err);
     }
@@ -276,6 +290,291 @@ export const ElementPickerPanel: React.FC = () => {
       // so we let the browser clean up or we reload the frame if needed. But standard
       // practice is to save the reference. Let's make sure listeners are detached.
     } catch (e) {}
+  };
+
+  // Capture element screenshot and copy to clipboard
+  const captureElementScreenshot = async () => {
+    if (!selectedEl) {
+      setScreenshotError("No element selected");
+      return;
+    }
+
+    const iframe = document.querySelector("iframe");
+    if (!iframe) {
+      setScreenshotError("No preview frame found");
+      return;
+    }
+
+    try {
+      setScreenshotError(null);
+      const iframeWindow = iframe.contentWindow;
+      const doc = iframe.contentDocument || iframeWindow?.document;
+      if (!doc || !iframeWindow) {
+        setScreenshotError("Access to preview frame denied");
+        return;
+      }
+
+      const element = doc.querySelector(selectedEl.selector) as HTMLElement | null;
+      if (!element) {
+        setScreenshotError(`Element not found in DOM: ${selectedEl.selector}`);
+        return;
+      }
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        setScreenshotError("Element has zero width or height");
+        return;
+      }
+
+      // Clone element and inline computed styles recursively
+      const clone = element.cloneNode(true) as HTMLElement;
+      
+      const inlineStylesRecursive = (src: HTMLElement, dest: HTMLElement) => {
+        const computed = iframeWindow.getComputedStyle(src);
+        for (let i = 0; i < computed.length; i++) {
+          const prop = computed[i];
+          dest.style.setProperty(
+            prop, 
+            computed.getPropertyValue(prop), 
+            computed.getPropertyPriority(prop)
+          );
+        }
+        
+        const srcChildren = Array.from(src.children) as HTMLElement[];
+        const destChildren = Array.from(dest.children) as HTMLElement[];
+        for (let i = 0; i < srcChildren.length; i++) {
+          inlineStylesRecursive(srcChildren[i], destChildren[i]);
+        }
+      };
+
+      inlineStylesRecursive(element, clone);
+
+      // Inline all images inside the clone as base64 to prevent canvas tainting
+      const inlineImages = async (dest: HTMLElement) => {
+        const imgs = [
+          ...(dest.tagName.toLowerCase() === "img" ? [dest] : []),
+          ...Array.from(dest.querySelectorAll("img"))
+        ] as HTMLImageElement[];
+        
+        for (const img of imgs) {
+          try {
+            if (!img.src) continue;
+            if (img.src.startsWith("data:")) continue;
+            
+            // Resolve relative url
+            const resolvedUrl = new URL(img.src, iframe.src || window.location.href).href;
+            
+            const response = await fetch(resolvedUrl);
+            if (response.ok) {
+              const blob = await response.blob();
+              const base64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              img.src = base64;
+            } else {
+              // Fetch failed, remove src to prevent canvas tainting on cross-origin/error
+              img.removeAttribute("src");
+            }
+          } catch (e) {
+            console.warn("Failed to inline image base64:", img.src, e);
+            // Remove src on exception to prevent canvas tainting
+            img.removeAttribute("src");
+          }
+        }
+      };
+
+      // Inline all CSS url("...") values to prevent canvas tainting
+      const inlineCssUrls = async (dest: HTMLElement) => {
+        const elements = [dest, ...Array.from(dest.querySelectorAll("*"))] as HTMLElement[];
+        
+        for (const el of elements) {
+          if (!el.style) continue;
+          
+          for (let i = 0; i < el.style.length; i++) {
+            const prop = el.style[i];
+            const value = el.style.getPropertyValue(prop);
+            
+            if (value && value.includes("url(")) {
+              const urlRegex = /url\(['"]?([^'")]+)['"]?\)/g;
+              let match;
+              let newValue = value;
+              const replacements: Array<{ original: string; base64: string }> = [];
+              
+              while ((match = urlRegex.exec(value)) !== null) {
+                const originalMatch = match[0];
+                const rawUrl = match[1];
+                
+                if (rawUrl.startsWith("data:")) continue;
+                
+                try {
+                  const resolvedUrl = new URL(rawUrl, iframe.src || window.location.href).href;
+                  const response = await fetch(resolvedUrl);
+                  if (response.ok) {
+                    const blob = await response.blob();
+                    const base64 = await new Promise<string>((resolve, reject) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => resolve(reader.result as string);
+                      reader.onerror = reject;
+                      reader.readAsDataURL(blob);
+                    });
+                    replacements.push({ original: originalMatch, base64: `url("${base64}")` });
+                  } else {
+                    replacements.push({ original: originalMatch, base64: "none" });
+                  }
+                } catch (e) {
+                  console.warn("Failed to inline CSS url:", rawUrl, e);
+                  replacements.push({ original: originalMatch, base64: "none" });
+                }
+              }
+              
+              for (const rep of replacements) {
+                newValue = newValue.replace(rep.original, rep.base64);
+              }
+              
+              if (newValue !== value) {
+                el.style.setProperty(prop, newValue, el.style.getPropertyPriority(prop));
+              }
+            }
+          }
+        }
+      };
+
+      // Inline SVG <use> tag hrefs
+      const inlineSvgUses = async (dest: HTMLElement) => {
+        const uses = Array.from(dest.querySelectorAll("use")) as SVGUseElement[];
+        for (const use of uses) {
+          try {
+            const href = use.getAttribute("href") || use.getAttribute("xlink:href");
+            if (!href) continue;
+            if (href.startsWith("#")) continue;
+            
+            const [urlPart, hashPart] = href.split("#");
+            if (!hashPart) continue;
+            
+            const resolvedUrl = new URL(urlPart, iframe.src || window.location.href).href;
+            const response = await fetch(resolvedUrl);
+            if (response.ok) {
+              const text = await response.text();
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(text, "image/svg+xml");
+              const symbol = doc.getElementById(hashPart);
+              if (symbol) {
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                for (let i = 0; i < use.attributes.length; i++) {
+                  const attr = use.attributes[i];
+                  if (attr.name !== "href" && attr.name !== "xlink:href") {
+                    g.setAttribute(attr.name, attr.value);
+                  }
+                }
+                for (const child of Array.from(symbol.childNodes)) {
+                  g.appendChild(child.cloneNode(true));
+                }
+                use.parentNode?.replaceChild(g, use);
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to inline SVG use element:", e);
+            use.removeAttribute("href");
+            use.removeAttribute("xlink:href");
+          }
+        }
+      };
+
+      await inlineImages(clone);
+      await inlineCssUrls(clone);
+      await inlineSvgUses(clone);
+
+      // Serialize clone to XML string
+      const serializer = new XMLSerializer();
+      const elementHTML = serializer.serializeToString(clone);
+
+      // Construct SVG with foreignObject containing the HTML
+      const svgData = `
+        <svg xmlns="http://www.w3.org/2000/svg" 
+             width="${Math.ceil(rect.width)}" 
+             height="${Math.ceil(rect.height)}">
+          <style>
+            * { 
+              box-sizing: border-box; 
+            }
+          </style>
+          <foreignObject x="0" y="0" width="100%" height="100%">
+            ${elementHTML}
+          </foreignObject>
+        </svg>
+      `.trim();
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(rect.width);
+      canvas.height = Math.ceil(rect.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setScreenshotError("Failed to get 2D canvas context");
+        return;
+      }
+
+      const img = new Image();
+      const base64Svg = btoa(unescape(encodeURIComponent(svgData)));
+      const url = `data:image/svg+xml;base64,${base64Svg}`;
+
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => {
+          try {
+            ctx.drawImage(img, 0, 0);
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        };
+        img.onerror = () => {
+          reject(new Error("Failed to render element as SVG image"));
+        };
+        img.src = url;
+      });
+
+      // Write canvas PNG blob to system clipboard
+      canvas.toBlob(
+        async (blob) => {
+          if (!blob) {
+            setScreenshotError("Failed to create PNG blob");
+            return;
+          }
+
+          try {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                "image/png": blob,
+              }),
+            ]);
+
+            setScreenshotSuccess(true);
+            if (successTimeoutRef.current) {
+              clearTimeout(successTimeoutRef.current);
+            }
+            successTimeoutRef.current = window.setTimeout(() => {
+              setScreenshotSuccess(false);
+            }, 2000);
+          } catch (err: any) {
+            console.error("Screenshot clipboard write failed:", err);
+            const errMsg = err?.message || String(err);
+            const errName = err?.name || "Error";
+            setScreenshotError(
+              `Failed to write to clipboard: ${errName}: ${errMsg}`
+            );
+          }
+        },
+        "image/png",
+        1.0
+      );
+    } catch (err: any) {
+      console.error("Screenshot capture failed:", err);
+      const errMsg = err?.message || String(err);
+      const errName = err?.name || "Error";
+      setScreenshotError(`Capture failed: ${errName}: ${errMsg}`);
+    }
   };
 
   return (
@@ -485,6 +784,25 @@ export const ElementPickerPanel: React.FC = () => {
                   {copiedKey === "copyStylesAction" ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
                 </button>
                 <button
+                  onClick={captureElementScreenshot}
+                  disabled={isExternal}
+                  title={
+                    isExternal
+                      ? "Screenshot only works with same-origin iframe previews"
+                      : "Copy element screenshot to clipboard"
+                  }
+                  className={`w-full flex items-center justify-between p-2.5 hover:bg-white/5 transition-colors text-left cursor-pointer ${
+                    isExternal ? "opacity-35 cursor-not-allowed text-zinc-550" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  <span>» Copy Element Screenshot</span>
+                  {screenshotSuccess ? (
+                    <Check size={11} className="text-emerald-400" />
+                  ) : (
+                    <Camera size={11} className={isExternal ? "text-zinc-550" : "text-zinc-400"} />
+                  )}
+                </button>
+                <button
                   onClick={handleOpenDevTools}
                   className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 transition-colors text-left text-zinc-400 hover:text-zinc-200 cursor-pointer"
                 >
@@ -492,6 +810,12 @@ export const ElementPickerPanel: React.FC = () => {
                   <ExternalLink size={11} />
                 </button>
               </div>
+              {screenshotError && (
+                <div className="mt-2 p-2 rounded border border-rose-500/20 bg-rose-500/5 text-rose-450 text-[10px] flex items-center gap-1.5 leading-normal">
+                  <Info size={11} className="shrink-0 text-rose-400" />
+                  <span>{screenshotError}</span>
+                </div>
+              )}
             </div>
           </div>
         )}

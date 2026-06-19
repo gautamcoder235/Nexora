@@ -181,7 +181,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   },
 
   setBrowserPanelWidth: (width) => {
-    set({ browserPanelWidth: width });
+    set({ browserPanelWidth: Math.max(320, width) });
   },
 
   toggleElementPicker: () => {
