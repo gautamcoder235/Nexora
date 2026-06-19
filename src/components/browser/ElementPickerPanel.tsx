@@ -37,7 +37,7 @@ interface SelectedElementInfo {
 export const ElementPickerPanel: React.FC = () => {
   const { toggleElementPicker, activeTabId, tabs } = useBrowserStore();
   const activeTab = tabs.find((t) => t.id === activeTabId);
-  const isExternal = false;
+  const isExternal = !!(activeTab?.url && !isLocalUrl(activeTab.url));
 
   const [isPickMode, setIsPickMode] = useState(false);
   const [selectedEl, setSelectedEl] = useState<SelectedElementInfo | null>(null);
@@ -190,71 +190,14 @@ export const ElementPickerPanel: React.FC = () => {
           overflow: hidden;
           border-radius: var(--highlighter-radius, 0px);
           z-index: 2;
-          background: rgba(5, 7, 13, 0.45);
-          backdrop-filter: blur(10px);
+          background: transparent;
         }
 
         /* =========================
            FULL COLOR OVERLAY
         ========================= */
         .magic-overlay {
-          position: absolute;
-          inset: -10%;
-          border-radius: inherit;
-          background: conic-gradient(
-            from var(--angle),
-            rgba(255,0,85,.45),
-            rgba(255,136,0,.40),
-            rgba(255,238,0,.35),
-            rgba(0,255,102,.35),
-            rgba(0,255,255,.40),
-            rgba(0,102,255,.40),
-            rgba(170,0,255,.45),
-            rgba(255,0,85,.45)
-          );
-          animation: spin 4s linear infinite;
-          mix-blend-mode: screen;
-          opacity: 0.75;
-          filter: blur(var(--highlighter-blur, 30px));
-          z-index: 2;
-        }
-
-        /* =========================
-           INNER LIGHT FLOW
-        ========================= */
-        .magic-overlay::before {
-          content: "";
-          position: absolute;
-          inset: -20%;
-          background: conic-gradient(
-            from calc(var(--angle) * -1),
-            #ff0055,
-            #ff8800,
-            #ffee00,
-            #00ff66,
-            #00ffff,
-            #0066ff,
-            #aa00ff,
-            #ff0055
-          );
-          animation: spin 4s linear infinite;
-          filter: blur(var(--highlighter-blur, 40px));
-          opacity: 0.45;
-        }
-
-        /* =========================
-           GLASS HIGHLIGHT
-        ========================= */
-        .magic-overlay::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(
-            135deg,
-            rgba(255,255,255,.08),
-            rgba(255,255,255,0) 40%
-          );
-          pointer-events: none;
+          display: none;
         }
 
         /* =========================

@@ -5,6 +5,37 @@ import { useOrchestratorStore } from "../../stores/orchestratorStore";
 import { BrowserNewTab } from "./BrowserNewTab";
 import { ElementPickerPanel } from "./ElementPickerPanel";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
+  let timeout: number | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+    timeout = window.setTimeout(() => {
+      func(...args);
+    }, wait);
+  };
+}
+
+const isLocalUrl = (url: string): boolean => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname.startsWith("192.168.") ||
+      parsed.hostname.startsWith("10.") ||
+      parsed.hostname.endsWith(".local")
+    );
+  } catch (e) {
+    const trimmed = url.trim().toLowerCase();
+    return trimmed.startsWith("localhost") || trimmed.startsWith("127.0.0.1");
+  }
+};
 
 export const BrowserPanel: React.FC = () => {
   const {
@@ -22,11 +53,14 @@ export const BrowserPanel: React.FC = () => {
   } = useBrowserStore();
 
   const terminals = useOrchestratorStore((s) => s.terminals);
+  const isSettingsModalOpen = useOrchestratorStore((s) => s.isSettingsModalOpen);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const [address, setAddress] = useState(activeTab?.url || "");
   const [refreshKey, setRefreshKey] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const lastParentPos = useRef<{ x: number; y: number } | null>(null);
+  const lastViewportRect = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
 
   // Sync address input when active tab changes
   useEffect(() => {
@@ -61,6 +95,197 @@ export const BrowserPanel: React.FC = () => {
       }
     }
   };
+
+  // WebView layout sync logic
+  const updateWebviewBounds = async () => {
+    if (!viewportRef.current || isSettingsModalOpen) {
+      await invoke("sync_browser_webview_layout", {
+        visible: false,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      }).catch(() => {});
+      return;
+    }
+
+    const rect = viewportRef.current.getBoundingClientRect();
+    const hasUrl = activeTab?.url && !isLocalUrl(activeTab.url);
+
+    if (rect.width === 0 || rect.height === 0 || !hasUrl) {
+      await invoke("sync_browser_webview_layout", {
+        visible: false,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      }).catch(() => {});
+      return;
+    }
+
+    try {
+      const win = getCurrentWindow() as any;
+      const winPos = await win.position();
+      const scaleFactor = await win.scaleFactor();
+
+      const winLogicalX = winPos.x / scaleFactor;
+      const winLogicalY = winPos.y / scaleFactor;
+
+      const x = winLogicalX + rect.left;
+      const y = winLogicalY + rect.top;
+      const width = rect.width;
+      const height = rect.height;
+
+      // Update refs to break loops
+      lastParentPos.current = { x: winPos.x, y: winPos.y };
+      lastViewportRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+
+      await invoke("sync_browser_webview_layout", {
+        visible: true,
+        x,
+        y,
+        width,
+        height
+      });
+    } catch (err) {
+      console.error("Failed to sync webview layout:", err);
+    }
+  };
+
+  const handleLoadUrl = async (url: string) => {
+    if (!url || isLocalUrl(url)) return;
+    if (!viewportRef.current) return;
+
+    const rect = viewportRef.current.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    try {
+      const win = getCurrentWindow() as any;
+      const winPos = await win.position();
+      const scaleFactor = await win.scaleFactor();
+
+      const winLogicalX = winPos.x / scaleFactor;
+      const winLogicalY = winPos.y / scaleFactor;
+
+      const x = winLogicalX + rect.left;
+      const y = winLogicalY + rect.top;
+      const width = rect.width;
+      const height = rect.height;
+
+      lastParentPos.current = { x: winPos.x, y: winPos.y };
+      lastViewportRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+
+      await invoke("spawn_browser_webview", {
+        url,
+        x,
+        y,
+        width,
+        height
+      });
+    } catch (err) {
+      console.error("Failed to spawn webview:", err);
+    }
+  };
+
+  // Keep a ref of the latest function to avoid stale closure in debounce
+  const latestUpdateWebviewBounds = useRef(updateWebviewBounds);
+  useEffect(() => {
+    latestUpdateWebviewBounds.current = updateWebviewBounds;
+  });
+
+  const debouncedUpdateWebviewBounds = useRef(
+    debounce(() => {
+      latestUpdateWebviewBounds.current();
+    }, 100)
+  ).current;
+
+  // Handle activeTab changes
+  useEffect(() => {
+    if (activeTab?.url && !isLocalUrl(activeTab.url)) {
+      handleLoadUrl(activeTab.url);
+    } else {
+      invoke("destroy_browser_webview").catch(() => {});
+    }
+  }, [activeTab?.id, activeTab?.url, refreshKey]);
+
+  // Handle settings modal changes
+  useEffect(() => {
+    if (isSettingsModalOpen) {
+      invoke("sync_browser_webview_layout", {
+        visible: false,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      }).catch(() => {});
+    } else {
+      setTimeout(updateWebviewBounds, 100);
+    }
+  }, [isSettingsModalOpen]);
+
+  // Handle resize events
+  useEffect(() => {
+    if (!viewportRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const rect = entry.contentRect;
+        // Check if the size has actually changed significantly to avoid micro-resizes
+        if (
+          lastViewportRect.current &&
+          Math.abs(rect.width - lastViewportRect.current.width) < 1 &&
+          Math.abs(rect.height - lastViewportRect.current.height) < 1
+        ) {
+          continue;
+        }
+        debouncedUpdateWebviewBounds();
+      }
+    });
+
+    observer.observe(viewportRef.current);
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeTab?.id, activeTab?.url]);
+
+  // Handle window movements (to make the child window follow parent)
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    
+    const setupWindowListener = async () => {
+      try {
+        const win = getCurrentWindow() as any;
+        const unsubscribe = await win.onMoved(async () => {
+          const winPos = await win.position();
+          // ONLY trigger update if the parent window has actually moved its screen position
+          if (
+            lastParentPos.current &&
+            winPos.x === lastParentPos.current.x &&
+            winPos.y === lastParentPos.current.y
+          ) {
+            return;
+          }
+          debouncedUpdateWebviewBounds();
+        });
+        unlisten = unsubscribe;
+      } catch (err) {
+        console.error("Failed to listen to window move:", err);
+      }
+    };
+
+    setupWindowListener();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [activeTab?.id, activeTab?.url]);
+
+  // Hide child webview on unmount
+  useEffect(() => {
+    return () => {
+      invoke("destroy_browser_webview").catch(() => {});
+    };
+  }, []);
 
   return (
     <div className="h-full w-full flex flex-col bg-[#08080a] font-sans min-w-0 select-none text-zinc-300">
@@ -149,7 +374,7 @@ export const BrowserPanel: React.FC = () => {
       <div className="flex items-center gap-2 px-3 py-1.5 bg-black/25 border-b border-border-glass flex-shrink-0">
         <div className="flex items-center gap-1 text-zinc-500">
           <button
-            disabled
+            disabled // Back/Forward disabled because of cross-origin iframe security limitations
             className="p-1 rounded opacity-35 cursor-not-allowed hover:bg-white/5 text-zinc-400"
             title="Back (Iframe limit)"
           >
@@ -218,12 +443,12 @@ export const BrowserPanel: React.FC = () => {
       </div>
 
       {/* 3. Browser Split Viewport & Element Picker Sidebar Area */}
-      <div className="flex-grow min-h-0 flex flex-row overflow-hidden relative">
+      <div className="flex-1 min-h-0 flex flex-row overflow-hidden relative">
         <div ref={viewportRef} className="flex-1 min-h-0 relative overflow-hidden bg-black/10">
           {!activeTab?.url ? (
             <BrowserNewTab onNavigate={(url) => activeTab ? navigateTab(activeTab.id, url) : addTab(url)} />
-          ) : (
-            /* Unified iframe viewer */
+          ) : isLocalUrl(activeTab.url) ? (
+            /* Local iframe viewer */
             <iframe
               key={`${activeTab?.id || "empty"}-${refreshKey}`}
               src={activeTab?.url}
@@ -231,9 +456,18 @@ export const BrowserPanel: React.FC = () => {
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               title="Browser Panel Viewport"
             />
+          ) : (
+            /* External webview placeholder */
+            <div className="w-full h-full bg-[#050508] flex flex-col items-center justify-center text-zinc-500 font-mono text-[10px] gap-2 select-none">
+              <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">Rendering Webview Overlay</span>
+              <span className="text-zinc-650 text-[8px] max-w-[200px] text-center leading-normal">
+                This external page is loaded in a native child window overlay for complete compatibility.
+              </span>
+            </div>
           )}
         </div>
-
+        
         {isElementPickerOpen && <ElementPickerPanel />}
       </div>
     </div>
