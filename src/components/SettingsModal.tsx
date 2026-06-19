@@ -1093,10 +1093,6 @@ export const SettingsModal: React.FC = () => {
                 {/* Sub Tab Contents */}
                 {activeAppearanceSubTab === 'theme' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Themes & Presets</h3>
-                      <p className="text-[10px] text-zinc-500 font-sans mt-0.5">Select a core theme stylesheet or apply preconfigured workspace layouts.</p>
-                    </div>
 
                     {/* Presets Subsection */}
                     <div 
@@ -1296,10 +1292,6 @@ export const SettingsModal: React.FC = () => {
 
                 {activeAppearanceSubTab === 'colors' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Color Accent Selection</h3>
-                      <p className="text-[10px] text-zinc-550 font-sans mt-0.5">Define core focal highlights and keyboard focus ring colors.</p>
-                    </div>
 
                     <div 
                       id="color-accent"
@@ -1394,10 +1386,6 @@ export const SettingsModal: React.FC = () => {
 
                 {activeAppearanceSubTab === 'typography' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Typography & Text Scaling</h3>
-                      <p className="text-[10px] text-zinc-550 font-sans mt-0.5">Configure general application text scales and editor spacing.</p>
-                    </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       {/* General UI Font */}
@@ -1573,10 +1561,6 @@ export const SettingsModal: React.FC = () => {
 
                 {activeAppearanceSubTab === 'layout' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Layout & Constraints</h3>
-                      <p className="text-[10px] text-zinc-555 font-sans mt-0.5">Control workspace division lines, panel boundaries, and layout behaviors.</p>
-                    </div>
 
                     <div 
                       id="layout-mode"
@@ -1665,10 +1649,6 @@ export const SettingsModal: React.FC = () => {
 
                 {activeAppearanceSubTab === 'workspace' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Workspace Interface</h3>
-                      <p className="text-[10px] text-zinc-555 font-sans mt-0.5">Toggle default activity panels, git indicators, and status items.</p>
-                    </div>
 
                     <div 
                       id="work-git"
@@ -1794,10 +1774,6 @@ export const SettingsModal: React.FC = () => {
 
                 {activeAppearanceSubTab === 'terminal' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Terminal Style</h3>
-                      <p className="text-[10px] text-zinc-555 font-sans mt-0.5">Customise active shell indicators, blink loops, and audio notifications.</p>
-                    </div>
 
                     <div 
                       id="term-cursor"
@@ -1883,10 +1859,6 @@ export const SettingsModal: React.FC = () => {
 
                 {activeAppearanceSubTab === 'agents' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Agent Dashboard</h3>
-                      <p className="text-[10px] text-zinc-555 font-sans mt-0.5">Tweak agent profile listings, active indicators, and transition speed.</p>
-                    </div>
 
                     <div 
                       id="agent-avatar"
@@ -1972,10 +1944,6 @@ export const SettingsModal: React.FC = () => {
 
                 {activeAppearanceSubTab === 'accessibility' && (
                   <div className="space-y-6 max-w-xl animate-in fade-in duration-150">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Accessibility & Contrast</h3>
-                      <p className="text-[10px] text-zinc-555 font-sans mt-0.5">Tune high contrast color matrices and accessibility properties.</p>
-                    </div>
 
                     <div 
                       id="acc-reader"
