@@ -489,7 +489,43 @@ export function WorkspaceExplorer({ repoPath }: Props) {
                     language={getLanguageFromPath(selectedFilePath)}
                     value={editedFileContent}
                     onChange={(val) => setEditedFileContent(val || '')}
-                    theme="vs-dark"
+                    theme="vscode-dark"
+                    beforeMount={(monaco) => {
+                      monaco.editor.defineTheme('vscode-dark', {
+                        base: 'vs-dark',
+                        inherit: true,
+                        rules: [
+                          { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+                          { token: 'keyword', foreground: 'C586C0' },
+                          { token: 'string', foreground: 'CE9178' },
+                          { token: 'number', foreground: 'B5CEA8' },
+                          { token: 'regexp', foreground: 'D16969' },
+                          { token: 'type', foreground: '4EC9B0' },
+                          { token: 'class', foreground: '4EC9B0' },
+                          { token: 'function', foreground: 'DCDCAA' },
+                          { token: 'variable', foreground: '9CDCFE' },
+                          { token: 'tag', foreground: '569CD6' },
+                          { token: 'tag.id', foreground: '9CDCFE' },
+                          { token: 'tag.class', foreground: '9CDCFE' },
+                          { token: 'attribute.name', foreground: '9CDCFE' },
+                          { token: 'attribute.value', foreground: 'CE9178' }
+                        ],
+                        colors: {
+                          'editor.background': '#08080a',
+                          'editor.foreground': '#D4D4D4',
+                          'editorCursor.foreground': '#AEAFAD',
+                          'editor.lineHighlightBackground': '#141416',
+                          'editorLineNumber.foreground': '#858585',
+                          'editorLineNumber.activeForeground': '#C6C6C6',
+                          'editor.selectionBackground': '#264F78',
+                          'minimap.background': '#08080a',
+                          'editorIndentGuide.background': '#2c2c2e',
+                          'editorIndentGuide.background1': '#2c2c2e',
+                          'editorIndentGuide.activeBackground': '#4e4e50',
+                          'editorIndentGuide.activeBackground1': '#4e4e50'
+                        }
+                      });
+                    }}
                     options={{
                       minimap: { enabled: true },
                       fontSize: 13,

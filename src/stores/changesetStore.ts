@@ -52,7 +52,7 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
   isLoading: false,
   error: null,
   isReviewCenterOpen: false,
-  isReviewPanelPinned: true,
+  isReviewPanelPinned: false,
   reviewPanelWidth: 640,
   selectedAgentIdForInspector: null,
   isAgentInspectorOpen: false,
