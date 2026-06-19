@@ -99,8 +99,6 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const runValidation = useChangesetStore(s => s.runValidation);
   const applyChangesetTransaction = useChangesetStore(s => s.applyChangesetTransaction);
   const rollbackChangeset = useChangesetStore(s => s.rollbackChangeset);
-  const isReviewPanelPinned = useChangesetStore(s => s.isReviewPanelPinned);
-  const toggleReviewPanelPinned = useChangesetStore(s => s.toggleReviewPanelPinned);
   const terminals = useOrchestratorStore(s => s.terminals);
 
   const activeTab = useChangesetStore(s => s.activeReviewTab);
