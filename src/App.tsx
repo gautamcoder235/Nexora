@@ -221,8 +221,8 @@ function App() {
         e.preventDefault();
         workspaceInputRef.current?.focus();
       }
-      // Ctrl+O -> Open Browse All Modal
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+      // Ctrl+D / Ctrl+O -> Open Browse All Modal
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'd' || e.key.toLowerCase() === 'o')) {
         e.preventDefault();
         setShowBrowseAllModal(true);
       }
@@ -776,7 +776,7 @@ function App() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                    <span className="text-[8px] font-mono px-1 py-0.5 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover/card:text-amber-500 group-hover/card:border-amber-500/20 transition-all">Ctrl+O</span>
+                    <span className="text-[8px] font-mono px-1 py-0.5 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover/card:text-amber-500 group-hover/card:border-amber-500/20 transition-all">Ctrl+D</span>
                     <ChevronRight size={14} className="text-zinc-500 group-hover/card:text-amber-400 group-hover/card:translate-x-0.5 transition-all" />
                   </div>
                 </div>
