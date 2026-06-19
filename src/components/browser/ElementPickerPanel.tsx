@@ -191,6 +191,7 @@ export const ElementPickerPanel: React.FC = () => {
           border-radius: var(--highlighter-radius, 0px);
           z-index: 2;
           background: rgba(5, 7, 13, 0.45);
+          backdrop-filter: blur(10px);
         }
 
         /* =========================
@@ -198,7 +199,7 @@ export const ElementPickerPanel: React.FC = () => {
         ========================= */
         .magic-overlay {
           position: absolute;
-          inset: 0;
+          inset: -10%;
           border-radius: inherit;
           background: conic-gradient(
             from var(--angle),
@@ -214,7 +215,7 @@ export const ElementPickerPanel: React.FC = () => {
           animation: spin 4s linear infinite;
           mix-blend-mode: screen;
           opacity: 0.75;
-          backdrop-filter: blur(10px);
+          filter: blur(var(--highlighter-blur, 30px));
           z-index: 2;
         }
 
