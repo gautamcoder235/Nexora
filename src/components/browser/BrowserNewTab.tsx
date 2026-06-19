@@ -311,29 +311,34 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
     <div className="browser-home-container select-none min-h-0 flex-grow">
       {/* Background Graphic Layers */}
       <div className="browser-home-noise" />
-      <div className="browser-home-lines" />
+      <div className="browser-home-grid" />
+      <div className="browser-home-glow-1" />
+      <div className="browser-home-glow-2" />
+      <div className="browser-home-glow-3" />
 
       <div className="browser-home-content">
         {/* Header/Hero Section */}
         <div className="text-center space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-[#0b0b14]/90 border border-purple-500/20 flex items-center justify-center text-purple-400 font-black text-base mx-auto shadow-[0_0_25px_rgba(168,85,247,0.15)] relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-            <span>NX</span>
+          <div className="browser-logo-wrapper group">
+            <div className="browser-logo-card">
+              <span className="browser-logo-text">NX</span>
+            </div>
+            <div className="browser-logo-glow" />
           </div>
 
-          <h1 className="text-2xl font-black tracking-tight text-white font-sans bg-clip-text text-transparent bg-gradient-to-r from-zinc-100 to-zinc-400">
+          <h1 className="browser-home-title">
             Nexora Browser
           </h1>
-          <p className="text-[11px] text-[#a1a1aa] max-w-sm mx-auto leading-relaxed font-sans">
+          <p className="browser-home-subtitle">
             Browse local development ports, documentation and the web alongside your terminal.
           </p>
         </div>
 
         {/* Search / Omnibox Form */}
-        <div className="space-y-3">
-          <form onSubmit={handleSearch} className="relative group w-full">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 flex items-center text-zinc-500 group-focus-within:text-purple-400 transition-colors">
-              <Search size={14} />
+        <div className="browser-search-container">
+          <form onSubmit={handleSearch} className="browser-search-form group">
+            <div className="browser-search-icon-wrapper">
+              <Search size={14} className="browser-search-icon" />
             </div>
             <input
               ref={inputRef}
@@ -344,15 +349,15 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
               onBlur={() => setIsFocused(false)}
               onKeyDown={handleKeyDown}
               placeholder="Search Google or enter web address..."
-              className="w-full h-11 px-4 pl-10 pr-24 rounded-xl bg-black/60 border border-white/[0.08] focus:border-purple-500/40 focus:outline-none text-[11px] text-zinc-100 transition-all placeholder-zinc-650 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] focus:shadow-[0_0_15px_rgba(168,85,247,0.08)]"
+              className="browser-search-input"
             />
             {/* Keyboard hint */}
-            <div className="absolute right-20 top-1/2 -translate-y-1/2 text-zinc-500 text-[9px] font-mono select-none pointer-events-none pr-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.06]">Ctrl + L</kbd>
+            <div className="browser-search-kbd-wrapper">
+              <kbd className="browser-search-kbd">Ctrl + L</kbd>
             </div>
             <button
               type="submit"
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-4 bg-gradient-to-r from-purple-650 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-500 rounded-lg text-[10px] font-bold text-white transition-all shadow-[0_0_12px_rgba(168,85,247,0.25)] hover:shadow-[0_0_18px_rgba(168,85,247,0.4)] cursor-pointer"
+              className="browser-search-btn"
             >
               Search
             </button>
@@ -371,28 +376,24 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
                   >
                     <div className="suggestion-indicator-line" />
                     
-                    <div className="p-1.5 rounded-lg bg-black/40 border border-white/[0.04] flex-shrink-0 suggestion-icon-wrapper flex items-center justify-center">
+                    <div className="suggestion-icon-container">
                       {suggestion.type === "search" && <Search size={12} className="text-purple-400" />}
                       {suggestion.type === "history" && <Clock size={12} className="text-amber-500" />}
                       {suggestion.type === "quicklink" && <Globe size={12} className="text-emerald-400" />}
                     </div>
                     
-                    <div className="flex-grow flex items-center justify-between min-w-0 gap-3">
-                      <span className="text-[11px] font-semibold text-zinc-200 truncate">
+                    <div className="suggestion-text-container">
+                      <span className="suggestion-title-text">
                         {suggestion.title}
                       </span>
                       
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="suggestion-meta-container">
                         {suggestion.type !== "search" && (
-                          <span className="text-[8px] text-[#8e8e9f] truncate font-mono bg-black/50 px-2 py-0.5 rounded border border-white/[0.02]">
+                          <span className="suggestion-url-badge">
                             {suggestion.url}
                           </span>
                         )}
-                        <span className={`text-[8px] uppercase tracking-wider font-bold font-mono px-1.5 py-0.5 rounded-md ${
-                          suggestion.type === "search" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" :
-                          suggestion.type === "history" ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
-                          "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        }`}>
+                        <span className={`suggestion-type-badge type-${suggestion.type}`}>
                           {suggestion.type}
                         </span>
                       </div>
@@ -405,43 +406,43 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
         </div>
 
         {/* Quick Links Section */}
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
+        <div className="quick-links-section">
+          <div className="section-header">
+            <span className="section-title">
               Quick Links
             </span>
             <button 
               onClick={() => setIsCustomizeOpen(true)}
-              className="text-[9px] font-bold text-zinc-500 hover:text-purple-400 transition-colors uppercase tracking-wider cursor-pointer"
+              className="customize-btn"
             >
               Customize
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="quick-links-grid">
             {quickLinks.map((link) => (
               <div
                 key={link.id}
-                className="quick-link-card p-3 flex items-start justify-between group"
+                className="quick-link-card group"
               >
                 <div 
                   onClick={() => onNavigate(link.url)}
-                  className="flex items-start gap-3 flex-grow cursor-pointer min-w-0"
+                  className="quick-link-card-content"
                 >
-                  <div className="p-2 rounded-lg bg-black border border-white/[0.04] group-hover:border-purple-500/20 transition-colors flex-shrink-0">
+                  <div className="quick-link-icon-container">
                     {getIconElement(link.iconType)}
                   </div>
-                  <div className="min-w-0 text-left">
-                    <div className="text-[11px] font-bold text-zinc-200 group-hover:text-purple-400 transition-colors truncate">
+                  <div className="quick-link-text">
+                    <div className="quick-link-title">
                       {link.title}
                     </div>
-                    <div className="text-[9px] text-[#71717a] truncate mt-0.5 font-medium">
+                    <div className="quick-link-description">
                       {link.description || link.url}
                     </div>
                   </div>
                 </div>
                 <button
                   onClick={() => onNavigate(link.url)}
-                  className="p-1 rounded text-[#71717a] hover:text-purple-400 transition-colors cursor-pointer flex-shrink-0"
+                  className="quick-link-external-btn"
                   title={`Launch ${link.title}`}
                 >
                   <ExternalLink size={12} />
@@ -453,31 +454,31 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
 
         {/* Recently Visited Section */}
         {history.length > 0 && (
-          <div className="space-y-3 pt-2">
-            <div className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider px-1">
+          <div className="recent-links-section">
+            <div className="section-title">
               Recently Visited
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="recent-links-grid">
               {history.map((item) => (
                 <div 
                   key={item.url}
-                  className="relative group p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04] hover:border-white/[0.08] flex flex-col justify-between h-[52px] min-w-0 text-left transition-all"
+                  className="recent-link-card group"
                 >
                   <div 
                     onClick={() => onNavigate(item.url)}
-                    className="cursor-pointer min-w-0 flex-grow"
+                    className="recent-link-card-content"
                   >
-                    <div className="text-[10px] font-semibold text-zinc-300 truncate pr-4" title={item.title}>
+                    <div className="recent-link-title" title={item.title}>
                       {item.title}
                     </div>
-                    <div className="text-[8px] text-[#71717a] flex items-center gap-1 mt-1 font-mono">
+                    <div className="recent-link-time">
                       <Clock size={8} />
                       <span>{formatTime(item.timestamp)}</span>
                     </div>
                   </div>
                   <button
                     onClick={() => clearHistoryItem(item.url)}
-                    className="absolute top-2 right-2 p-0.5 rounded-md text-zinc-650 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                    className="recent-link-delete-btn"
                     title="Remove from history"
                   >
                     <X size={8} />
