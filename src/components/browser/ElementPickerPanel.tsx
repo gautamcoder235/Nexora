@@ -54,7 +54,6 @@ export const ElementPickerPanel: React.FC = () => {
 
   const successTimeoutRef = useRef<number | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
-  const pickModeAnimationRef = useRef<number | null>(null);
 
   const showToast = (type: "success" | "error", title: string, message: string) => {
     setToast({ type, title, message });
@@ -74,13 +73,6 @@ export const ElementPickerPanel: React.FC = () => {
       }
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
-      }
-      if (pickModeAnimationRef.current) {
-        // Find iframe win to cancel the animation frame
-        const iframe = document.querySelector("iframe");
-        if (iframe && iframe.contentWindow) {
-          iframe.contentWindow.cancelAnimationFrame(pickModeAnimationRef.current);
-        }
       }
     };
   }, []);
@@ -108,203 +100,175 @@ export const ElementPickerPanel: React.FC = () => {
       styleEl = doc.createElement("style");
       styleEl.id = "nexora-highlighter-styles";
       styleEl.textContent = `
-        .electric-border {
-          --electric-border-color: #a855f7;
-          --electric-light-color: oklch(from var(--electric-border-color) l c h);
+        @property --angle {
+          syntax: "<angle>";
+          initial-value: 0deg;
+          inherits: false;
+        }
+
+        .magic-card {
+          --highlighter-radius: 8px;
+          --highlighter-outer-radius: 18px;
           position: absolute;
           pointer-events: none;
           z-index: 999999;
           display: none;
           box-sizing: border-box;
-          border-radius: 8px;
+          overflow: visible;
+          isolation: isolate;
           transition: left 80ms ease-out, top 80ms ease-out, width 80ms ease-out, height 80ms ease-out;
         }
 
-        .eb-canvas-container {
+        /* =========================
+           BORDER LIGHT REFLECTION
+        ========================= */
+        .magic-card::before {
+          content: "";
           position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          pointer-events: none;
-          z-index: 2;
-        }
-
-        .eb-canvas {
-          display: block;
-        }
-
-        .eb-layers {
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          pointer-events: none;
+          inset: -10px;
+          border-radius: var(--highlighter-outer-radius, 18px);
+          background: conic-gradient(
+            from var(--angle),
+            #4285f4,
+            #6b7cff,
+            #8b5cf6,
+            #d946ef,
+            #ff0080,
+            #ff8800,
+            #ffee00,
+            #00ff66,
+            #00ffff,
+            #0066ff,
+            #4285f4
+          );
+          animation: magic-spin 4s linear infinite;
+          filter: blur(14px);
+          opacity: 0.45;
           z-index: 0;
         }
 
-        .eb-glow-1,
-        .eb-glow-2,
-        .eb-background-glow {
+        /* =========================
+           MAIN BORDER
+        ========================= */
+        .magic-card::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          padding: 6px;
+          border-radius: var(--highlighter-radius, 8px);
+          background: conic-gradient(
+            from var(--angle),
+            #4285f4,
+            #6b7cff,
+            #8b5cf6,
+            #d946ef,
+            #ff0080,
+            #ff8800,
+            #ffee00,
+            #00ff66,
+            #00ffff,
+            #0066ff,
+            #4285f4
+          );
+          animation: magic-spin 4s linear infinite;
+          -webkit-mask:
+            linear-gradient(#fff 0 0) content-box,
+            linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
+          filter: blur(2px);
+          z-index: 5;
+        }
+
+        /* =========================
+           CONTENT
+        ========================= */
+        .magic-content {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+          border-radius: var(--highlighter-radius, 8px);
+          z-index: 2;
+        }
+
+        /* =========================
+           FULL COLOR OVERLAY
+        ========================= */
+        .magic-overlay {
           position: absolute;
           inset: 0;
           border-radius: inherit;
+          background: conic-gradient(
+            from var(--angle),
+            rgba(255,0,85,.32),
+            rgba(255,136,0,.30),
+            rgba(255,238,0,.25),
+            rgba(0,255,102,.25),
+            rgba(0,255,255,.30),
+            rgba(0,102,255,.30),
+            rgba(170,0,255,.32),
+            rgba(255,0,85,.32)
+          );
+          animation: magic-spin 4s linear infinite;
+          mix-blend-mode: screen;
+          opacity: 0.55;
+          backdrop-filter: blur(10px);
+          z-index: 2;
+        }
+
+        /* =========================
+           INNER LIGHT FLOW
+        ========================= */
+        .magic-overlay::before {
+          content: "";
+          position: absolute;
+          inset: -20%;
+          background: conic-gradient(
+            from calc(var(--angle) * -1),
+            #ff0055,
+            #ff8800,
+            #ffee00,
+            #00ff66,
+            #00ffff,
+            #0066ff,
+            #aa00ff,
+            #ff0055
+          );
+          animation: magic-spin 4s linear infinite;
+          filter: blur(120px);
+          opacity: 0.35;
+        }
+
+        /* =========================
+           GLASS HIGHLIGHT
+        ========================= */
+        .magic-overlay::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            135deg,
+            rgba(255,255,255,.08),
+            rgba(255,255,255,0) 40%
+          );
           pointer-events: none;
-          box-sizing: border-box;
         }
 
-        .eb-glow-1 {
-          border: 2px solid oklch(from var(--electric-border-color) l c h / 0.6);
-          filter: blur(1.5px);
-        }
-
-        .eb-glow-2 {
-          border: 2px solid var(--electric-light-color);
-          filter: blur(5px);
-        }
-
-        .eb-background-glow {
-          z-index: -1;
-          transform: scale(1.08);
-          filter: blur(28px);
-          opacity: 0.25;
-          background: linear-gradient(-30deg, var(--electric-light-color), transparent, var(--electric-border-color));
+        /* =========================
+           ANIMATION
+        ========================= */
+        @keyframes magic-spin {
+          from {
+            --angle: 0deg;
+          }
+          to {
+            --angle: 360deg;
+          }
         }
       `;
       doc.head.appendChild(styleEl);
     }
-  };
-
-  const randomNoise = (x: number) => {
-    return (Math.sin(x * 12.9898) * 43758.5453) % 1;
-  };
-
-  const noise2D = (x: number, y: number) => {
-    const i = Math.floor(x);
-    const j = Math.floor(y);
-    const fx = x - i;
-    const fy = y - j;
-
-    const a = randomNoise(i + j * 57);
-    const b = randomNoise(i + 1 + j * 57);
-    const c = randomNoise(i + (j + 1) * 57);
-    const d = randomNoise(i + 1 + (j + 1) * 57);
-
-    const ux = fx * fx * (3.0 - 2.0 * fx);
-    const uy = fy * fy * (3.0 - 2.0 * fy);
-
-    return a * (1 - ux) * (1 - uy) + b * ux * (1 - uy) + c * (1 - ux) * uy + d * ux * uy;
-  };
-
-  const octavedNoise = (
-    x: number,
-    octaves: number,
-    lacunarity: number,
-    gain: number,
-    baseAmplitude: number,
-    baseFrequency: number,
-    time: number,
-    seed: number,
-    baseFlatness: number
-  ) => {
-    let y = 0;
-    let amplitude = baseAmplitude;
-    let frequency = baseFrequency;
-
-    for (let i = 0; i < octaves; i++) {
-      let octaveAmplitude = amplitude;
-      if (i === 0) {
-        octaveAmplitude *= baseFlatness;
-      }
-      y += octaveAmplitude * noise2D(frequency * x + seed * 100, time * frequency * 0.3);
-      frequency *= lacunarity;
-      amplitude *= gain;
-    }
-
-    return y;
-  };
-
-  const getCornerPoint = (
-    centerX: number,
-    centerY: number,
-    radius: number,
-    startAngle: number,
-    arcLength: number,
-    progress: number
-  ) => {
-    const angle = startAngle + progress * arcLength;
-    return {
-      x: centerX + radius * Math.cos(angle),
-      y: centerY + radius * Math.sin(angle),
-    };
-  };
-
-  const getRoundedRectPoint = (
-    t: number,
-    left: number,
-    top: number,
-    width: number,
-    height: number,
-    radius: number
-  ) => {
-    const straightWidth = width - 2 * radius;
-    const straightHeight = height - 2 * radius;
-    const cornerArc = (Math.PI * radius) / 2;
-    const totalPerimeter = 2 * straightWidth + 2 * straightHeight + 4 * cornerArc;
-    const distance = t * totalPerimeter;
-
-    let accumulated = 0;
-
-    // Top edge
-    if (distance <= accumulated + straightWidth) {
-      const progress = (distance - accumulated) / straightWidth;
-      return { x: left + radius + progress * straightWidth, y: top };
-    }
-    accumulated += straightWidth;
-
-    // Top-right corner
-    if (distance <= accumulated + cornerArc) {
-      const progress = (distance - accumulated) / cornerArc;
-      return getCornerPoint(left + width - radius, top + radius, radius, -Math.PI / 2, Math.PI / 2, progress);
-    }
-    accumulated += cornerArc;
-
-    // Right edge
-    if (distance <= accumulated + straightHeight) {
-      const progress = (distance - accumulated) / straightHeight;
-      return { x: left + width, y: top + radius + progress * straightHeight };
-    }
-    accumulated += straightHeight;
-
-    // Bottom-right corner
-    if (distance <= accumulated + cornerArc) {
-      const progress = (distance - accumulated) / cornerArc;
-      return getCornerPoint(left + width - radius, top + height - radius, radius, 0, Math.PI / 2, progress);
-    }
-    accumulated += cornerArc;
-
-    // Bottom edge
-    if (distance <= accumulated + straightWidth) {
-      const progress = (distance - accumulated) / straightWidth;
-      return { x: left + width - radius - progress * straightWidth, y: top + height };
-    }
-    accumulated += straightWidth;
-
-    // Bottom-left corner
-    if (distance <= accumulated + cornerArc) {
-      const progress = (distance - accumulated) / cornerArc;
-      return getCornerPoint(left + radius, top + height - radius, radius, Math.PI / 2, Math.PI / 2, progress);
-    }
-    accumulated += cornerArc;
-
-    // Left edge
-    if (distance <= accumulated + straightHeight) {
-      const progress = (distance - accumulated) / straightHeight;
-      return { x: left, y: top + height - radius - progress * straightHeight };
-    }
-    accumulated += straightHeight;
-
-    // Top-left corner
-    const progress = (distance - accumulated) / cornerArc;
-    return getCornerPoint(left + radius, top + radius, radius, Math.PI, Math.PI / 2, progress);
   };
 
   const handleCopy = async (text: string, key: string) => {
@@ -428,169 +392,19 @@ export const ElementPickerPanel: React.FC = () => {
     if (!highlighter) {
       highlighter = doc.createElement("div");
       highlighter.id = "nexora-element-highlighter";
-      highlighter.className = "electric-border";
-
-      const canvasContainer = doc.createElement("div");
-      canvasContainer.className = "eb-canvas-container";
-
-      const canvas = doc.createElement("canvas");
-      canvas.className = "eb-canvas";
-      canvasContainer.appendChild(canvas);
-      highlighter.appendChild(canvasContainer);
-
-      const layers = doc.createElement("div");
-      layers.className = "eb-layers";
-
-      const glow1 = doc.createElement("div");
-      glow1.className = "eb-glow-1";
-      layers.appendChild(glow1);
-
-      const glow2 = doc.createElement("div");
-      glow2.className = "eb-glow-2";
-      layers.appendChild(glow2);
-
-      const bgGlow = doc.createElement("div");
-      bgGlow.className = "eb-background-glow";
-      layers.appendChild(bgGlow);
-
-      highlighter.appendChild(layers);
+      highlighter.className = "magic-card";
 
       const content = doc.createElement("div");
-      content.className = "eb-content";
-      content.style.position = "absolute";
-      content.style.inset = "0";
-      content.style.borderRadius = "inherit";
-      content.style.backgroundColor = "rgba(168, 85, 247, 0.04)";
-      content.style.border = "1px dashed rgba(168, 85, 247, 0.25)";
+      content.className = "magic-content";
+
+      const overlay = doc.createElement("div");
+      overlay.className = "magic-overlay";
+
+      content.appendChild(overlay);
       highlighter.appendChild(content);
 
       doc.body.appendChild(highlighter);
     }
-
-    // Canvas drawing parameters
-    const octaves = 10;
-    const lacunarity = 1.6;
-    const gain = 0.7;
-    const amplitude = 0.012; // chaos
-    const frequency = 10;
-    const baseFlatness = 0;
-    const displacement = 45; // displacement scale
-    const borderOffset = 45; // border offset for drawing canvas boundary
-    const speed = 2.2;
-    const borderRadius = 8;
-    const color = "#a855f7"; // theme purple
-
-    let lastFrameTime = 0;
-    let time = 0;
-    let lastWidth = 0;
-    let lastHeight = 0;
-    let lastDpr = 1;
-
-    const drawElectricBorder = (currentTime: number) => {
-      const highlighterEl = doc.getElementById("nexora-element-highlighter");
-      if (!highlighterEl) return;
-
-      const canvas = highlighterEl.querySelector("canvas") as HTMLCanvasElement | null;
-      if (!canvas) return;
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const rect = highlighterEl.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-
-      const dpr = Math.min(win.devicePixelRatio || 1, 2);
-      const canvasWidth = width + borderOffset * 2;
-      const canvasHeight = height + borderOffset * 2;
-
-      if (width !== lastWidth || height !== lastHeight || dpr !== lastDpr) {
-        lastWidth = width;
-        lastHeight = height;
-        lastDpr = dpr;
-
-        canvas.width = canvasWidth * dpr;
-        canvas.height = canvasHeight * dpr;
-        canvas.style.width = `${canvasWidth}px`;
-        canvas.style.height = `${canvasHeight}px`;
-        ctx.scale(dpr, dpr);
-      }
-
-      const deltaTime = (currentTime - lastFrameTime) / 1000;
-      if (lastFrameTime > 0) {
-        time += deltaTime * speed;
-      }
-      lastFrameTime = currentTime;
-
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.scale(dpr, dpr);
-
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-
-      const scale = displacement;
-      const left = borderOffset;
-      const top = borderOffset;
-      const borderWidth = width;
-      const borderHeight = height;
-      const maxRadius = Math.min(borderWidth, borderHeight) / 2;
-      const radius = Math.min(borderRadius, maxRadius);
-
-      const approximatePerimeter = 2 * (borderWidth + borderHeight) + 2 * Math.PI * radius;
-      const sampleCount = Math.floor(approximatePerimeter / 2);
-
-      ctx.beginPath();
-
-      for (let i = 0; i <= sampleCount; i++) {
-        const progress = i / sampleCount;
-
-        const point = getRoundedRectPoint(progress, left, top, borderWidth, borderHeight, radius);
-
-        const xNoise = octavedNoise(
-          progress * 8,
-          octaves,
-          lacunarity,
-          gain,
-          amplitude,
-          frequency,
-          time,
-          0,
-          baseFlatness
-        );
-
-        const yNoise = octavedNoise(
-          progress * 8,
-          octaves,
-          lacunarity,
-          gain,
-          amplitude,
-          frequency,
-          time,
-          1,
-          baseFlatness
-        );
-
-        const displacedX = point.x + xNoise * scale;
-        const displacedY = point.y + yNoise * scale;
-
-        if (i === 0) {
-          ctx.moveTo(displacedX, displacedY);
-        } else {
-          ctx.lineTo(displacedX, displacedY);
-        }
-      }
-
-      ctx.closePath();
-      ctx.stroke();
-
-      pickModeAnimationRef.current = win.requestAnimationFrame(drawElectricBorder);
-    };
-
-    // Start drawing loop
-    pickModeAnimationRef.current = win.requestAnimationFrame(drawElectricBorder);
 
     let activeHoveredEl: HTMLElement | null = null;
 
@@ -610,6 +424,25 @@ export const ElementPickerPanel: React.FC = () => {
         highlighter.style.width = `${rect.width}px`;
         highlighter.style.height = `${rect.height}px`;
         highlighter.style.display = "block";
+
+        // Dynamically compute and apply border radius
+        const computedStyle = win.getComputedStyle(target);
+        const borderRadius = computedStyle.borderRadius;
+        
+        highlighter.style.setProperty("--highlighter-radius", borderRadius || "0px");
+        
+        let outerRadius = "10px";
+        if (borderRadius && borderRadius !== "0px") {
+          if (borderRadius.includes("%")) {
+            outerRadius = borderRadius;
+          } else {
+            outerRadius = borderRadius.split(" ").map(val => {
+              const num = parseFloat(val);
+              return !isNaN(num) ? `${num + 10}px` : val;
+            }).join(" ");
+          }
+        }
+        highlighter.style.setProperty("--highlighter-outer-radius", outerRadius);
       }
     };
 
@@ -667,16 +500,11 @@ export const ElementPickerPanel: React.FC = () => {
     if (!iframe) return;
     try {
       const doc = iframe.contentDocument || iframe.contentWindow?.document as Document;
-      const win = iframe.contentWindow;
-      if (!doc || !win) return;
+      if (!doc) return;
 
       const highlighter = doc.getElementById("nexora-element-highlighter");
       if (highlighter) {
         highlighter.remove();
-      }
-      if (pickModeAnimationRef.current) {
-        win.cancelAnimationFrame(pickModeAnimationRef.current);
-        pickModeAnimationRef.current = null;
       }
     } catch (e) {}
   };
