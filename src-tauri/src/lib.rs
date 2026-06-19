@@ -550,6 +550,31 @@ fn open_browser_devtools(app_handle: AppHandle, label: String) -> Result<(), Str
 }
 
 #[tauri::command]
+fn inject_picker_into_webview(app_handle: AppHandle, script: String) -> Result<(), String> {
+    if let Some(browser_window) = app_handle.get_webview_window("browser") {
+        browser_window.eval(&script).map_err(|e| format!("Failed to inject picker script: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn remove_picker_from_webview(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(browser_window) = app_handle.get_webview_window("browser") {
+        browser_window.eval(
+            "if (window.__nexoraPickerCleanup) { window.__nexoraPickerCleanup(); }"
+        ).map_err(|e| format!("Failed to remove picker: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn relay_picked_element(app_handle: AppHandle, data: String) -> Result<(), String> {
+    app_handle.emit("nexora-element-picked", data)
+        .map_err(|e| format!("Failed to relay element data: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn check_cli_tool(command: String) -> bool {
     let check_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
     
@@ -691,6 +716,9 @@ pub fn run() {
             sync_browser_webview_layout,
             destroy_browser_webview,
             open_browser_devtools,
+            inject_picker_into_webview,
+            remove_picker_from_webview,
+            relay_picked_element,
             spawn_pty,
             write_pty,
             resize_pty,

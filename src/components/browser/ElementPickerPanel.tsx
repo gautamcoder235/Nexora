@@ -16,6 +16,7 @@ import {
 import { useBrowserStore } from "../../stores/browserStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "./BrowserHome.css";
 
 interface SelectedElementInfo {
@@ -94,126 +95,243 @@ export const ElementPickerPanel: React.FC = () => {
     }
   }
 
+  // Shared CSS for the magic-card highlighter effect
+  const HIGHLIGHTER_CSS = `
+    @property --angle {
+      syntax: "<angle>";
+      initial-value: 0deg;
+      inherits: false;
+    }
+
+    .magic-card {
+      --highlighter-radius: 0px;
+      --highlighter-outer-radius: 0px;
+      position: absolute;
+      pointer-events: none;
+      z-index: 999999;
+      display: none;
+      box-sizing: border-box;
+      overflow: visible;
+      isolation: isolate;
+      transition: left 80ms ease-out, top 80ms ease-out, width 80ms ease-out, height 80ms ease-out;
+    }
+
+    .magic-card::before {
+      content: "";
+      position: absolute;
+      inset: -10px;
+      border-radius: var(--highlighter-outer-radius, 0px);
+      background: conic-gradient(
+        from var(--angle),
+        #4285f4, #6b7cff, #8b5cf6, #d946ef, #ff0080,
+        #ff8800, #ffee00, #00ff66, #00ffff, #0066ff, #4285f4
+      );
+      animation: nexora-spin 4s linear infinite;
+      filter: blur(14px);
+      opacity: 0.45;
+      z-index: 0;
+    }
+
+    .magic-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      padding: 6px;
+      border-radius: var(--highlighter-radius, 0px);
+      background: conic-gradient(
+        from var(--angle),
+        #4285f4, #6b7cff, #8b5cf6, #d946ef, #ff0080,
+        #ff8800, #ffee00, #00ff66, #00ffff, #0066ff, #4285f4
+      );
+      animation: nexora-spin 4s linear infinite;
+      -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      filter: blur(2px);
+      z-index: 5;
+    }
+
+    .magic-content {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: var(--highlighter-radius, 0px);
+      z-index: 2;
+      background: transparent;
+    }
+
+    .magic-overlay {
+      display: none;
+    }
+
+    @keyframes nexora-spin {
+      from { --angle: 0deg; }
+      to { --angle: 360deg; }
+    }
+  `;
+
   const injectHighlighterStyles = (doc: Document) => {
     let styleEl = doc.getElementById("nexora-highlighter-styles");
     if (!styleEl) {
       styleEl = doc.createElement("style");
       styleEl.id = "nexora-highlighter-styles";
-      styleEl.textContent = `
-        @property --angle {
-          syntax: "<angle>";
-          initial-value: 0deg;
-          inherits: false;
-        }
-
-        .magic-card {
-          --highlighter-radius: 0px;
-          --highlighter-outer-radius: 0px;
-          position: absolute;
-          pointer-events: none;
-          z-index: 999999;
-          display: none;
-          box-sizing: border-box;
-          overflow: visible;
-          isolation: isolate;
-          transition: left 80ms ease-out, top 80ms ease-out, width 80ms ease-out, height 80ms ease-out;
-        }
-
-        /* =========================
-           BORDER LIGHT REFLECTION
-        ========================= */
-        .magic-card::before {
-          content: "";
-          position: absolute;
-          inset: -10px;
-          border-radius: var(--highlighter-outer-radius, 0px);
-          background: conic-gradient(
-            from var(--angle),
-            #4285f4,
-            #6b7cff,
-            #8b5cf6,
-            #d946ef,
-            #ff0080,
-            #ff8800,
-            #ffee00,
-            #00ff66,
-            #00ffff,
-            #0066ff,
-            #4285f4
-          );
-          animation: spin 4s linear infinite;
-          filter: blur(14px);
-          opacity: 0.45;
-          z-index: 0;
-        }
-
-        /* =========================
-           MAIN BORDER
-        ========================= */
-        .magic-card::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          padding: 6px;
-          border-radius: var(--highlighter-radius, 0px);
-          background: conic-gradient(
-            from var(--angle),
-            #4285f4,
-            #6b7cff,
-            #8b5cf6,
-            #d946ef,
-            #ff0080,
-            #ff8800,
-            #ffee00,
-            #00ff66,
-            #00ffff,
-            #0066ff,
-            #4285f4
-          );
-          animation: spin 4s linear infinite;
-          -webkit-mask:
-            linear-gradient(#fff 0 0) content-box,
-            linear-gradient(#fff 0 0);
-          -webkit-mask-composite: xor;
-          mask-composite: exclude;
-          filter: blur(2px);
-          z-index: 5;
-        }
-
-        /* =========================
-           CONTENT
-        ========================= */
-        .magic-content {
-          position: relative;
-          width: 100%;
-          height: 100%;
-          overflow: hidden;
-          border-radius: var(--highlighter-radius, 0px);
-          z-index: 2;
-          background: transparent;
-        }
-
-        /* =========================
-           FULL COLOR OVERLAY
-        ========================= */
-        .magic-overlay {
-          display: none;
-        }
-
-        /* =========================
-           ANIMATION
-        ========================= */
-        @keyframes spin {
-          from {
-            --angle: 0deg;
-          }
-          to {
-            --angle: 360deg;
-          }
-        }
-      `;
+      styleEl.textContent = HIGHLIGHTER_CSS;
       doc.head.appendChild(styleEl);
     }
+  };
+
+  // Generate self-contained picker script for injection into native WebView
+  const generatePickerScript = (): string => {
+    return `(function() {
+      if (window.__nexoraPickerActive) return;
+      window.__nexoraPickerActive = true;
+
+      // Inject styles
+      var existingStyle = document.getElementById('nexora-highlighter-styles');
+      if (existingStyle) existingStyle.remove();
+      var styleEl = document.createElement('style');
+      styleEl.id = 'nexora-highlighter-styles';
+      styleEl.textContent = ${JSON.stringify(HIGHLIGHTER_CSS)};
+      document.head.appendChild(styleEl);
+
+      // Create highlighter element
+      var existing = document.getElementById('nexora-element-highlighter');
+      if (existing) existing.remove();
+      var highlighter = document.createElement('div');
+      highlighter.id = 'nexora-element-highlighter';
+      highlighter.className = 'magic-card';
+      var content = document.createElement('div');
+      content.className = 'magic-content';
+      var overlay = document.createElement('div');
+      overlay.className = 'magic-overlay';
+      content.appendChild(overlay);
+      highlighter.appendChild(content);
+      document.body.appendChild(highlighter);
+
+      var activeEl = null;
+
+      function escapeIdent(str) {
+        if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(str);
+        return str.replace(/([!"#$$%&'()*+,.\\/:;<=>?@\\[\\\\\\]^\x60{|}~])/g, '\\\\$$1');
+      }
+
+      function getSelector(el) {
+        if (el.id) return '#' + escapeIdent(el.id);
+        var path = [];
+        var cur = el;
+        while (cur && cur.nodeType === 1) {
+          var sel = cur.nodeName.toLowerCase();
+          if (cur.id) { sel += '#' + escapeIdent(cur.id); path.unshift(sel); break; }
+          var cls = Array.from(cur.classList).filter(function(c) { return c !== 'nexora-highlight-outline'; }).map(escapeIdent).join('.');
+          if (cls) sel += '.' + cls;
+          var sib = cur, nth = 1;
+          while (sib.previousElementSibling) { sib = sib.previousElementSibling; if (sib.nodeName.toLowerCase() === cur.nodeName.toLowerCase()) nth++; }
+          if (nth > 1) sel += ':nth-of-type(' + nth + ')';
+          path.unshift(sel);
+          cur = cur.parentElement;
+        }
+        return path.join(' > ');
+      }
+
+      function getStandardRole(tag, el) {
+        var roleAttr = el.getAttribute('role');
+        if (roleAttr) return roleAttr;
+        var map = { button: 'button', a: 'link', select: 'combobox', textarea: 'textbox', form: 'form', table: 'table', img: 'img', h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', h5: 'heading', h6: 'heading' };
+        if (tag === 'input') return el.getAttribute('type') === 'checkbox' ? 'checkbox' : 'textbox';
+        return map[tag] || 'generic';
+      }
+
+      function handleMouseOver(e) {
+        e.stopPropagation();
+        var target = e.target;
+        if (!target || target === document.body || target.id === 'nexora-element-highlighter' || target.closest('#nexora-element-highlighter')) return;
+        activeEl = target;
+        var rect = target.getBoundingClientRect();
+        var scrollX = window.scrollX || document.documentElement.scrollLeft;
+        var scrollY = window.scrollY || document.documentElement.scrollTop;
+
+        highlighter.style.left = (rect.left + scrollX) + 'px';
+        highlighter.style.top = (rect.top + scrollY) + 'px';
+        highlighter.style.width = rect.width + 'px';
+        highlighter.style.height = rect.height + 'px';
+        highlighter.style.display = 'block';
+
+        var cs = window.getComputedStyle(target);
+        var tl = cs.borderTopLeftRadius || '0px';
+        var tr = cs.borderTopRightRadius || '0px';
+        var br = cs.borderBottomRightRadius || '0px';
+        var bl = cs.borderBottomLeftRadius || '0px';
+        var isZero = [tl, tr, br, bl].every(function(v) { var n = parseFloat(v); return isNaN(n) || n === 0; });
+        var normRadius = isZero ? '0px' : tl + ' ' + tr + ' ' + br + ' ' + bl;
+        var outerRadius = '0px';
+        if (!isZero) {
+          function addPx(v) { var n = parseFloat(v); if (isNaN(n)) return v; if (n === 0) return '0px'; if (v.includes('%')) return v; return (n + 10) + 'px'; }
+          outerRadius = addPx(tl) + ' ' + addPx(tr) + ' ' + addPx(br) + ' ' + addPx(bl);
+        }
+        highlighter.style.setProperty('--highlighter-radius', normRadius);
+        highlighter.style.setProperty('--highlighter-outer-radius', outerRadius);
+      }
+
+      function handleClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!activeEl) return;
+
+        var tag = activeEl.tagName.toLowerCase();
+        var rect = activeEl.getBoundingClientRect();
+        var cs = window.getComputedStyle(activeEl);
+        var data = {
+          tagName: tag,
+          id: activeEl.id || 'None',
+          classes: Array.from(activeEl.classList).join(' ') || 'None',
+          textContent: (activeEl.innerText || '').trim().slice(0, 200) || 'None',
+          outerHtml: activeEl.outerHTML.slice(0, 5000),
+          innerHtml: activeEl.innerHTML.slice(0, 3000),
+          selector: getSelector(activeEl),
+          computedStyles: {
+            display: cs.display,
+            position: cs.position,
+            width: cs.width && cs.width !== 'auto' ? cs.width : rect.width.toFixed(0) + 'px',
+            height: cs.height && cs.height !== 'auto' ? cs.height : rect.height.toFixed(0) + 'px',
+            color: cs.color,
+            background: cs.backgroundColor || cs.background,
+            'font-size': cs.fontSize
+          },
+          accessibility: {
+            role: getStandardRole(tag, activeEl),
+            label: activeEl.getAttribute('aria-label') || activeEl.getAttribute('placeholder') || (activeEl.innerText || '').trim().slice(0, 50) || 'None',
+            focusable: activeEl.tabIndex >= 0 || ['BUTTON','INPUT','SELECT','TEXTAREA','A'].indexOf(activeEl.tagName) !== -1
+          }
+        };
+
+        try {
+          if (window.__TAURI_INTERNALS__) {
+            window.__TAURI_INTERNALS__.invoke('relay_picked_element', { data: JSON.stringify(data) });
+          } else {
+            console.warn('[Nexora Picker] __TAURI_INTERNALS__ not available');
+          }
+        } catch (err) {
+          console.error('[Nexora Picker] IPC error:', err);
+        }
+      }
+
+      document.addEventListener('mouseover', handleMouseOver, true);
+      document.addEventListener('click', handleClick, true);
+
+      window.__nexoraPickerCleanup = function() {
+        document.removeEventListener('mouseover', handleMouseOver, true);
+        document.removeEventListener('click', handleClick, true);
+        var h = document.getElementById('nexora-element-highlighter');
+        if (h) h.remove();
+        var s = document.getElementById('nexora-highlighter-styles');
+        if (s) s.remove();
+        delete window.__nexoraPickerActive;
+        delete window.__nexoraPickerCleanup;
+      };
+    })();`;
   };
 
   const handleCopy = async (text: string, key: string) => {
@@ -301,174 +419,185 @@ export const ElementPickerPanel: React.FC = () => {
     return path.join(" > ");
   };
 
+  // ==============================
+  //  PICK MODE — Unified handler
+  // ==============================
   useEffect(() => {
-    if (!isPickMode || isExternal) {
-      cleanupListeners();
+    if (!isPickMode) {
+      cleanupPicker();
       return;
     }
 
     setHasCorsError(false);
-    const iframe = document.querySelector("iframe");
-    if (!iframe) {
-      setIsPickMode(false);
-      return;
-    }
+    let unlistenEvent: UnlistenFn | null = null;
+    let usingWebViewInjection = false;
 
-    let doc: Document;
-    let win: Window & typeof globalThis;
-    try {
-      doc = iframe.contentDocument || iframe.contentWindow?.document as Document;
-      win = iframe.contentWindow as Window & typeof globalThis;
-      if (!doc || !win) throw new Error("Blocked frame access");
-      // Read title just to test access
-      const _title = doc.title; 
-    } catch (e) {
-      console.warn("CORS block: Cannot access iframe DOM due to cross-origin policies", e);
-      setHasCorsError(true);
-      setIsPickMode(false);
-      return;
-    }
+    const activatePicker = async () => {
+      // === Branch A: Try iframe DOM access (for local URLs where CORS allows it) ===
+      if (!isExternal) {
+        const iframe = document.querySelector("iframe");
+        if (iframe) {
+          try {
+            const doc = iframe.contentDocument || iframe.contentWindow?.document as Document;
+            const win = iframe.contentWindow as Window & typeof globalThis;
+            if (!doc || !win) throw new Error("Blocked frame access");
+            const _title = doc.title; // Test access
 
-    // Inject styles for ElectricBorder
-    injectHighlighterStyles(doc);
+            // Iframe DOM access works — use direct approach
+            injectHighlighterStyles(doc);
 
-    // Create a highlighter overlay inside the iframe document
-    let highlighter = doc.getElementById("nexora-element-highlighter");
-    if (!highlighter) {
-      highlighter = doc.createElement("div");
-      highlighter.id = "nexora-element-highlighter";
-      highlighter.className = "magic-card";
+            let highlighter = doc.getElementById("nexora-element-highlighter");
+            if (!highlighter) {
+              highlighter = doc.createElement("div");
+              highlighter.id = "nexora-element-highlighter";
+              highlighter.className = "magic-card";
+              const content = doc.createElement("div");
+              content.className = "magic-content";
+              const overlay = doc.createElement("div");
+              overlay.className = "magic-overlay";
+              content.appendChild(overlay);
+              highlighter.appendChild(content);
+              doc.body.appendChild(highlighter);
+            }
 
-      const content = doc.createElement("div");
-      content.className = "magic-content";
+            let activeHoveredEl: HTMLElement | null = null;
 
-      const overlay = doc.createElement("div");
-      overlay.className = "magic-overlay";
+            const handleMouseOver = (e: MouseEvent) => {
+              e.stopPropagation();
+              const target = e.target as HTMLElement;
+              if (!target || target === doc.body || target.id === "nexora-element-highlighter" || target.closest?.("#nexora-element-highlighter")) return;
 
-      content.appendChild(overlay);
-      highlighter.appendChild(content);
+              activeHoveredEl = target;
+              const rect = target.getBoundingClientRect();
+              const scrollX = win.scrollX || doc.documentElement.scrollLeft;
+              const scrollY = win.scrollY || doc.documentElement.scrollTop;
 
-      doc.body.appendChild(highlighter);
-    }
+              if (highlighter) {
+                highlighter.style.left = `${rect.left + scrollX}px`;
+                highlighter.style.top = `${rect.top + scrollY}px`;
+                highlighter.style.width = `${rect.width}px`;
+                highlighter.style.height = `${rect.height}px`;
+                highlighter.style.display = "block";
 
-    let activeHoveredEl: HTMLElement | null = null;
+                const computedStyle = win.getComputedStyle(target);
+                const tl = computedStyle.borderTopLeftRadius || "0px";
+                const tr = computedStyle.borderTopRightRadius || "0px";
+                const br = computedStyle.borderBottomRightRadius || "0px";
+                const bl = computedStyle.borderBottomLeftRadius || "0px";
+                const isZeroRadius = [tl, tr, br, bl].every(val => {
+                  const num = parseFloat(val);
+                  return isNaN(num) || num === 0;
+                });
 
-    const handleMouseOver = (e: MouseEvent) => {
-      e.stopPropagation();
-      const target = e.target as HTMLElement;
-      if (!target || target === doc.body || target.id === "nexora-element-highlighter") return;
+                let normRadius = `${tl} ${tr} ${br} ${bl}`;
+                let outerRadius = "0px";
+                if (isZeroRadius) {
+                  normRadius = "0px";
+                } else {
+                  const pr = (val: string) => { const n = parseFloat(val); if (isNaN(n)) return val; if (n === 0) return "0px"; if (val.includes("%")) return val; return `${n + 10}px`; };
+                  outerRadius = `${pr(tl)} ${pr(tr)} ${pr(br)} ${pr(bl)}`;
+                }
+                highlighter.style.setProperty("--highlighter-radius", normRadius);
+                highlighter.style.setProperty("--highlighter-outer-radius", outerRadius);
 
-      activeHoveredEl = target;
-      const rect = target.getBoundingClientRect();
-      const scrollX = win.scrollX || doc.documentElement.scrollLeft;
-      const scrollY = win.scrollY || doc.documentElement.scrollTop;
+                const minDim = Math.min(rect.width, rect.height);
+                const blurVal = Math.max(12, Math.min(120, minDim * 0.4));
+                highlighter.style.setProperty("--highlighter-blur", `${blurVal}px`);
+              }
+            };
 
-      if (highlighter) {
-        highlighter.style.left = `${rect.left + scrollX}px`;
-        highlighter.style.top = `${rect.top + scrollY}px`;
-        highlighter.style.width = `${rect.width}px`;
-        highlighter.style.height = `${rect.height}px`;
-        highlighter.style.display = "block";
+            const handleClick = (e: MouseEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (activeHoveredEl) {
+                const rect = activeHoveredEl.getBoundingClientRect();
+                const styles = win.getComputedStyle(activeHoveredEl);
+                const tagName = activeHoveredEl.tagName.toLowerCase();
+                setSelectedEl({
+                  tagName,
+                  id: activeHoveredEl.id || "None",
+                  classes: Array.from(activeHoveredEl.classList).join(" ") || "None",
+                  textContent: activeHoveredEl.innerText?.trim() || "None",
+                  outerHtml: activeHoveredEl.outerHTML,
+                  innerHtml: activeHoveredEl.innerHTML,
+                  selector: getSelector(activeHoveredEl, doc),
+                  computedStyles: {
+                    display: styles.display,
+                    position: styles.position,
+                    width: styles.width && styles.width !== "auto" ? styles.width : `${rect.width.toFixed(0)}px`,
+                    height: styles.height && styles.height !== "auto" ? styles.height : `${rect.height.toFixed(0)}px`,
+                    color: styles.color,
+                    background: styles.backgroundColor || styles.background,
+                    "font-size": styles.fontSize,
+                  },
+                  accessibility: {
+                    role: getStandardRole(tagName, activeHoveredEl),
+                    label: activeHoveredEl.getAttribute("aria-label") || activeHoveredEl.getAttribute("placeholder") || activeHoveredEl.innerText?.trim().slice(0, 50) || "None",
+                    focusable: activeHoveredEl.tabIndex >= 0 || ["BUTTON", "INPUT", "SELECT", "TEXTAREA", "A"].includes(activeHoveredEl.tagName),
+                  },
+                });
+              }
+            };
 
-        // Dynamically compute and apply border radius for all corners separately
-        const computedStyle = win.getComputedStyle(target);
-        const tl = computedStyle.borderTopLeftRadius || "0px";
-        const tr = computedStyle.borderTopRightRadius || "0px";
-        const br = computedStyle.borderBottomRightRadius || "0px";
-        const bl = computedStyle.borderBottomLeftRadius || "0px";
-
-        // Check if it is a pure rectangle (all corner radii are effectively 0)
-        const isZeroRadius = [tl, tr, br, bl].every(val => {
-          const num = parseFloat(val);
-          return isNaN(num) || num === 0;
-        });
-
-        let normRadius = `${tl} ${tr} ${br} ${bl}`;
-        let outerRadius = "0px";
-
-        if (isZeroRadius) {
-          normRadius = "0px";
-          outerRadius = "0px";
-        } else {
-          const parseRadiusValue = (val: string) => {
-            const num = parseFloat(val);
-            if (isNaN(num)) return val;
-            if (num === 0) return "0px";
-            if (val.includes("%")) return val;
-            return `${num + 10}px`;
-          };
-          outerRadius = `${parseRadiusValue(tl)} ${parseRadiusValue(tr)} ${parseRadiusValue(br)} ${parseRadiusValue(bl)}`;
+            doc.addEventListener("mouseover", handleMouseOver, true);
+            doc.addEventListener("click", handleClick, true);
+            return; // Successfully set up iframe-based picker
+          } catch (e) {
+            console.warn("Iframe DOM access blocked, falling back to WebView injection", e);
+            // Fall through to WebView injection approach
+          }
         }
-
-        highlighter.style.setProperty("--highlighter-radius", normRadius);
-        highlighter.style.setProperty("--highlighter-outer-radius", outerRadius);
-
-        // Dynamically compute and apply blur radius for the inner glow
-        const minDim = Math.min(rect.width, rect.height);
-        const blurVal = Math.max(12, Math.min(120, minDim * 0.4));
-        highlighter.style.setProperty("--highlighter-blur", `${blurVal}px`);
       }
-    };
 
-    const handleClick = (e: MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+      // === Branch B: WebView injection (for external URLs or CORS-blocked iframes) ===
+      usingWebViewInjection = true;
+      try {
+        const pickerScript = generatePickerScript();
+        await invoke("inject_picker_into_webview", { script: pickerScript });
 
-      if (activeHoveredEl) {
-        const rect = activeHoveredEl.getBoundingClientRect();
-        const styles = win.getComputedStyle(activeHoveredEl);
-
-        const tagName = activeHoveredEl.tagName.toLowerCase();
-        const computedStyles = {
-          display: styles.display,
-          position: styles.position,
-          width: styles.width && styles.width !== "auto" ? styles.width : `${rect.width.toFixed(0)}px`,
-          height: styles.height && styles.height !== "auto" ? styles.height : `${rect.height.toFixed(0)}px`,
-          color: styles.color,
-          background: styles.backgroundColor || styles.background,
-          "font-size": styles.fontSize,
-        };
-
-        const accessibility = {
-          role: getStandardRole(tagName, activeHoveredEl),
-          label: activeHoveredEl.getAttribute("aria-label") || activeHoveredEl.getAttribute("placeholder") || activeHoveredEl.innerText?.trim().slice(0, 50) || "None",
-          focusable: activeHoveredEl.tabIndex >= 0 || ["BUTTON", "INPUT", "SELECT", "TEXTAREA", "A"].includes(activeHoveredEl.tagName),
-        };
-
-        setSelectedEl({
-          tagName,
-          id: activeHoveredEl.id || "None",
-          classes: Array.from(activeHoveredEl.classList).join(" ") || "None",
-          textContent: activeHoveredEl.innerText?.trim() || "None",
-          outerHtml: activeHoveredEl.outerHTML,
-          innerHtml: activeHoveredEl.innerHTML,
-          selector: getSelector(activeHoveredEl, doc),
-          computedStyles,
-          accessibility,
+        // Listen for element data relayed from the browser WebView via Rust
+        unlistenEvent = await listen<string>("nexora-element-picked", (event) => {
+          try {
+            const data = JSON.parse(event.payload) as SelectedElementInfo;
+            setSelectedEl(data);
+          } catch (err) {
+            console.error("Failed to parse relayed element data:", err);
+          }
         });
+      } catch (err) {
+        console.error("Failed to inject picker into WebView:", err);
+        setHasCorsError(true);
+        setIsPickMode(false);
       }
     };
 
-    doc.addEventListener("mouseover", handleMouseOver, true);
-    doc.addEventListener("click", handleClick, true);
+    activatePicker();
 
     return () => {
-      cleanupListeners();
+      if (unlistenEvent) {
+        unlistenEvent();
+        unlistenEvent = null;
+      }
+      cleanupPicker(usingWebViewInjection);
     };
   }, [isPickMode, isExternal]);
 
-  const cleanupListeners = () => {
+  const cleanupPicker = (wasWebViewInjection?: boolean) => {
+    // Clean up iframe-based picker
     const iframe = document.querySelector("iframe");
-    if (!iframe) return;
-    try {
-      const doc = iframe.contentDocument || iframe.contentWindow?.document as Document;
-      if (!doc) return;
-
-      const highlighter = doc.getElementById("nexora-element-highlighter");
-      if (highlighter) {
-        highlighter.remove();
-      }
-    } catch (e) {}
+    if (iframe) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document as Document;
+        if (doc) {
+          const highlighter = doc.getElementById("nexora-element-highlighter");
+          if (highlighter) highlighter.remove();
+        }
+      } catch (e) { /* CORS - ignore */ }
+    }
+    // Clean up WebView-injected picker
+    if (wasWebViewInjection !== false) {
+      invoke("remove_picker_from_webview").catch(() => {});
+    }
   };
 
   // Capture element screenshot and copy to clipboard
@@ -797,51 +926,48 @@ export const ElementPickerPanel: React.FC = () => {
         </p>
 
         {/* 2. Pick Mode Card */}
-        {isExternal ? (
-          <div className="p-3.5 rounded-xl border border-amber-500/10 bg-amber-500/[0.02] flex gap-3 items-start text-amber-500/90 leading-relaxed">
-            <ShieldAlert size={16} className="shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <div className="text-[10px] font-bold uppercase tracking-wider">CORS Limit Active</div>
-              <div className="text-[9px] text-zinc-500 font-sans">
-                Inspection is only available on local previews (localhost). Native WebView external pages cannot be inspected.
-              </div>
+        {/* Pick Mode Card — works for all URLs */}
+        <div 
+          onClick={() => {
+            if (hasCorsError) return;
+            setIsPickMode(!isPickMode);
+          }}
+          className={`p-3.5 rounded-xl border border-border-glass bg-white/[0.01] hover:bg-white/[0.03] active:bg-white/[0.05] transition-all cursor-pointer flex flex-col gap-2 relative ${
+            hasCorsError ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+        >
+          <div className="flex items-center justify-between select-none">
+            <div>
+              <span className="font-bold text-zinc-200 block text-[11px]">Pick mode</span>
+              <span className="text-[9px] text-zinc-500">
+                {isExternal ? "Click an element on the page (via WebView)" : "Click an element to capture it"}
+              </span>
+            </div>
+            <div
+              className={`w-9 h-5 rounded-full p-0.5 transition-all relative ${
+                isPickMode ? "bg-purple-650" : "bg-zinc-800"
+              }`}
+            >
+              <div 
+                className={`w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                  isPickMode ? "translate-x-4" : "translate-x-0"
+                }`} 
+              />
             </div>
           </div>
-        ) : (
-          <div 
-            onClick={() => {
-              if (hasCorsError) return;
-              setIsPickMode(!isPickMode);
-            }}
-            className={`p-3.5 rounded-xl border border-border-glass bg-white/[0.01] hover:bg-white/[0.03] active:bg-white/[0.05] transition-all cursor-pointer flex flex-col gap-2 relative ${
-              hasCorsError ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-          >
-            <div className="flex items-center justify-between select-none">
-              <div>
-                <span className="font-bold text-zinc-200 block text-[11px]">Pick mode</span>
-                <span className="text-[9px] text-zinc-500">Click an element to capture it</span>
-              </div>
-              <div
-                className={`w-9 h-5 rounded-full p-0.5 transition-all relative ${
-                  isPickMode ? "bg-purple-650" : "bg-zinc-800"
-                }`}
-              >
-                <div 
-                  className={`w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                    isPickMode ? "translate-x-4" : "translate-x-0"
-                  }`} 
-                />
-              </div>
+          {isExternal && isPickMode && (
+            <div className="text-[9px] text-purple-400 flex items-center gap-1.5 mt-1 bg-purple-500/5 px-2 py-1 rounded border border-purple-500/10">
+              <Info size={10} />
+              <span>Inspecting via native WebView injection</span>
             </div>
-            {hasCorsError && (
-              <div className="text-[9px] text-amber-500 flex items-center gap-1.5 mt-1 bg-amber-500/5 px-2 py-1 rounded border border-amber-500/10">
-                <Info size={10} />
-                <span>CORS Block: access to iframe DOM denied.</span>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+          {hasCorsError && (
+            <div className="text-[9px] text-amber-500 flex items-center gap-1.5 mt-1 bg-amber-500/5 px-2 py-1 rounded border border-amber-500/10">
+              <Info size={10} />
+              <span>Failed to inject picker — try reloading the page.</span>
+            </div>
+          )}
+        </div>
 
         {/* 3. Empty state vs Captured Details */}
         {!selectedEl ? (
