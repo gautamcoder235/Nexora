@@ -54,6 +54,7 @@ export const ElementPickerPanel: React.FC = () => {
 
   const successTimeoutRef = useRef<number | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
+  const pickModeAnimationRef = useRef<number | null>(null);
 
   const showToast = (type: "success" | "error", title: string, message: string) => {
     setToast({ type, title, message });
@@ -74,6 +75,13 @@ export const ElementPickerPanel: React.FC = () => {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
       }
+      if (pickModeAnimationRef.current) {
+        // Find iframe win to cancel the animation frame
+        const iframe = document.querySelector("iframe");
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.cancelAnimationFrame(pickModeAnimationRef.current);
+        }
+      }
     };
   }, []);
 
@@ -93,6 +101,211 @@ export const ElementPickerPanel: React.FC = () => {
       return trimmed.startsWith("localhost") || trimmed.startsWith("127.0.0.1");
     }
   }
+
+  const injectHighlighterStyles = (doc: Document) => {
+    let styleEl = doc.getElementById("nexora-highlighter-styles");
+    if (!styleEl) {
+      styleEl = doc.createElement("style");
+      styleEl.id = "nexora-highlighter-styles";
+      styleEl.textContent = `
+        .electric-border {
+          --electric-border-color: #a855f7;
+          --electric-light-color: oklch(from var(--electric-border-color) l c h);
+          position: absolute;
+          pointer-events: none;
+          z-index: 999999;
+          display: none;
+          box-sizing: border-box;
+          border-radius: 8px;
+          transition: left 80ms ease-out, top 80ms ease-out, width 80ms ease-out, height 80ms ease-out;
+        }
+
+        .eb-canvas-container {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+          z-index: 2;
+        }
+
+        .eb-canvas {
+          display: block;
+        }
+
+        .eb-layers {
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        .eb-glow-1,
+        .eb-glow-2,
+        .eb-background-glow {
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          pointer-events: none;
+          box-sizing: border-box;
+        }
+
+        .eb-glow-1 {
+          border: 2px solid oklch(from var(--electric-border-color) l c h / 0.6);
+          filter: blur(1.5px);
+        }
+
+        .eb-glow-2 {
+          border: 2px solid var(--electric-light-color);
+          filter: blur(5px);
+        }
+
+        .eb-background-glow {
+          z-index: -1;
+          transform: scale(1.08);
+          filter: blur(28px);
+          opacity: 0.25;
+          background: linear-gradient(-30deg, var(--electric-light-color), transparent, var(--electric-border-color));
+        }
+      `;
+      doc.head.appendChild(styleEl);
+    }
+  };
+
+  const randomNoise = (x: number) => {
+    return (Math.sin(x * 12.9898) * 43758.5453) % 1;
+  };
+
+  const noise2D = (x: number, y: number) => {
+    const i = Math.floor(x);
+    const j = Math.floor(y);
+    const fx = x - i;
+    const fy = y - j;
+
+    const a = randomNoise(i + j * 57);
+    const b = randomNoise(i + 1 + j * 57);
+    const c = randomNoise(i + (j + 1) * 57);
+    const d = randomNoise(i + 1 + (j + 1) * 57);
+
+    const ux = fx * fx * (3.0 - 2.0 * fx);
+    const uy = fy * fy * (3.0 - 2.0 * fy);
+
+    return a * (1 - ux) * (1 - uy) + b * ux * (1 - uy) + c * (1 - ux) * uy + d * ux * uy;
+  };
+
+  const octavedNoise = (
+    x: number,
+    octaves: number,
+    lacunarity: number,
+    gain: number,
+    baseAmplitude: number,
+    baseFrequency: number,
+    time: number,
+    seed: number,
+    baseFlatness: number
+  ) => {
+    let y = 0;
+    let amplitude = baseAmplitude;
+    let frequency = baseFrequency;
+
+    for (let i = 0; i < octaves; i++) {
+      let octaveAmplitude = amplitude;
+      if (i === 0) {
+        octaveAmplitude *= baseFlatness;
+      }
+      y += octaveAmplitude * noise2D(frequency * x + seed * 100, time * frequency * 0.3);
+      frequency *= lacunarity;
+      amplitude *= gain;
+    }
+
+    return y;
+  };
+
+  const getCornerPoint = (
+    centerX: number,
+    centerY: number,
+    radius: number,
+    startAngle: number,
+    arcLength: number,
+    progress: number
+  ) => {
+    const angle = startAngle + progress * arcLength;
+    return {
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle),
+    };
+  };
+
+  const getRoundedRectPoint = (
+    t: number,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+    radius: number
+  ) => {
+    const straightWidth = width - 2 * radius;
+    const straightHeight = height - 2 * radius;
+    const cornerArc = (Math.PI * radius) / 2;
+    const totalPerimeter = 2 * straightWidth + 2 * straightHeight + 4 * cornerArc;
+    const distance = t * totalPerimeter;
+
+    let accumulated = 0;
+
+    // Top edge
+    if (distance <= accumulated + straightWidth) {
+      const progress = (distance - accumulated) / straightWidth;
+      return { x: left + radius + progress * straightWidth, y: top };
+    }
+    accumulated += straightWidth;
+
+    // Top-right corner
+    if (distance <= accumulated + cornerArc) {
+      const progress = (distance - accumulated) / cornerArc;
+      return getCornerPoint(left + width - radius, top + radius, radius, -Math.PI / 2, Math.PI / 2, progress);
+    }
+    accumulated += cornerArc;
+
+    // Right edge
+    if (distance <= accumulated + straightHeight) {
+      const progress = (distance - accumulated) / straightHeight;
+      return { x: left + width, y: top + radius + progress * straightHeight };
+    }
+    accumulated += straightHeight;
+
+    // Bottom-right corner
+    if (distance <= accumulated + cornerArc) {
+      const progress = (distance - accumulated) / cornerArc;
+      return getCornerPoint(left + width - radius, top + height - radius, radius, 0, Math.PI / 2, progress);
+    }
+    accumulated += cornerArc;
+
+    // Bottom edge
+    if (distance <= accumulated + straightWidth) {
+      const progress = (distance - accumulated) / straightWidth;
+      return { x: left + width - radius - progress * straightWidth, y: top + height };
+    }
+    accumulated += straightWidth;
+
+    // Bottom-left corner
+    if (distance <= accumulated + cornerArc) {
+      const progress = (distance - accumulated) / cornerArc;
+      return getCornerPoint(left + radius, top + height - radius, radius, Math.PI / 2, Math.PI / 2, progress);
+    }
+    accumulated += cornerArc;
+
+    // Left edge
+    if (distance <= accumulated + straightHeight) {
+      const progress = (distance - accumulated) / straightHeight;
+      return { x: left, y: top + height - radius - progress * straightHeight };
+    }
+    accumulated += straightHeight;
+
+    // Top-left corner
+    const progress = (distance - accumulated) / cornerArc;
+    return getCornerPoint(left + radius, top + radius, radius, Math.PI, Math.PI / 2, progress);
+  };
 
   const handleCopy = async (text: string, key: string) => {
     if (!text) return;
@@ -189,7 +402,7 @@ export const ElementPickerPanel: React.FC = () => {
     try {
       doc = iframe.contentDocument || iframe.contentWindow?.document as Document;
       win = iframe.contentWindow as Window & typeof globalThis;
-      if (!doc) throw new Error("Blocked frame access");
+      if (!doc || !win) throw new Error("Blocked frame access");
       // Read title just to test access
       const _title = doc.title; 
     } catch (e) {
@@ -199,30 +412,177 @@ export const ElementPickerPanel: React.FC = () => {
       return;
     }
 
+    // Inject styles for ElectricBorder
+    injectHighlighterStyles(doc);
+
     // Create a highlighter overlay inside the iframe document
     let highlighter = doc.getElementById("nexora-element-highlighter");
     if (!highlighter) {
       highlighter = doc.createElement("div");
       highlighter.id = "nexora-element-highlighter";
-      highlighter.style.position = "absolute";
-      highlighter.style.pointerEvents = "none";
-      highlighter.style.zIndex = "999999";
-      highlighter.style.border = "1px solid rgba(168, 85, 247, 0.75)";
-      highlighter.style.backgroundColor = "rgba(168, 85, 247, 0.15)";
-      highlighter.style.boxShadow = "0 0 10px rgba(168, 85, 247, 0.1)";
-      highlighter.style.transition = "all 80ms ease-out";
-      highlighter.style.display = "none";
-      
-      // Nested padding container
-      const paddingBox = doc.createElement("div");
-      paddingBox.style.width = "100%";
-      paddingBox.style.height = "100%";
-      paddingBox.style.backgroundColor = "rgba(16, 185, 129, 0.08)";
-      paddingBox.style.border = "1px dashed rgba(16, 185, 129, 0.2)";
-      highlighter.appendChild(paddingBox);
+      highlighter.className = "electric-border";
+
+      const canvasContainer = doc.createElement("div");
+      canvasContainer.className = "eb-canvas-container";
+
+      const canvas = doc.createElement("canvas");
+      canvas.className = "eb-canvas";
+      canvasContainer.appendChild(canvas);
+      highlighter.appendChild(canvasContainer);
+
+      const layers = doc.createElement("div");
+      layers.className = "eb-layers";
+
+      const glow1 = doc.createElement("div");
+      glow1.className = "eb-glow-1";
+      layers.appendChild(glow1);
+
+      const glow2 = doc.createElement("div");
+      glow2.className = "eb-glow-2";
+      layers.appendChild(glow2);
+
+      const bgGlow = doc.createElement("div");
+      bgGlow.className = "eb-background-glow";
+      layers.appendChild(bgGlow);
+
+      highlighter.appendChild(layers);
+
+      const content = doc.createElement("div");
+      content.className = "eb-content";
+      content.style.position = "absolute";
+      content.style.inset = "0";
+      content.style.borderRadius = "inherit";
+      content.style.backgroundColor = "rgba(168, 85, 247, 0.04)";
+      content.style.border = "1px dashed rgba(168, 85, 247, 0.25)";
+      highlighter.appendChild(content);
 
       doc.body.appendChild(highlighter);
     }
+
+    // Canvas drawing parameters
+    const octaves = 10;
+    const lacunarity = 1.6;
+    const gain = 0.7;
+    const amplitude = 0.012; // chaos
+    const frequency = 10;
+    const baseFlatness = 0;
+    const displacement = 45; // displacement scale
+    const borderOffset = 45; // border offset for drawing canvas boundary
+    const speed = 2.2;
+    const borderRadius = 8;
+    const color = "#a855f7"; // theme purple
+
+    let lastFrameTime = 0;
+    let time = 0;
+    let lastWidth = 0;
+    let lastHeight = 0;
+    let lastDpr = 1;
+
+    const drawElectricBorder = (currentTime: number) => {
+      const highlighterEl = doc.getElementById("nexora-element-highlighter");
+      if (!highlighterEl) return;
+
+      const canvas = highlighterEl.querySelector("canvas") as HTMLCanvasElement | null;
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const rect = highlighterEl.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+
+      const dpr = Math.min(win.devicePixelRatio || 1, 2);
+      const canvasWidth = width + borderOffset * 2;
+      const canvasHeight = height + borderOffset * 2;
+
+      if (width !== lastWidth || height !== lastHeight || dpr !== lastDpr) {
+        lastWidth = width;
+        lastHeight = height;
+        lastDpr = dpr;
+
+        canvas.width = canvasWidth * dpr;
+        canvas.height = canvasHeight * dpr;
+        canvas.style.width = `${canvasWidth}px`;
+        canvas.style.height = `${canvasHeight}px`;
+        ctx.scale(dpr, dpr);
+      }
+
+      const deltaTime = (currentTime - lastFrameTime) / 1000;
+      if (lastFrameTime > 0) {
+        time += deltaTime * speed;
+      }
+      lastFrameTime = currentTime;
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(dpr, dpr);
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      const scale = displacement;
+      const left = borderOffset;
+      const top = borderOffset;
+      const borderWidth = width;
+      const borderHeight = height;
+      const maxRadius = Math.min(borderWidth, borderHeight) / 2;
+      const radius = Math.min(borderRadius, maxRadius);
+
+      const approximatePerimeter = 2 * (borderWidth + borderHeight) + 2 * Math.PI * radius;
+      const sampleCount = Math.floor(approximatePerimeter / 2);
+
+      ctx.beginPath();
+
+      for (let i = 0; i <= sampleCount; i++) {
+        const progress = i / sampleCount;
+
+        const point = getRoundedRectPoint(progress, left, top, borderWidth, borderHeight, radius);
+
+        const xNoise = octavedNoise(
+          progress * 8,
+          octaves,
+          lacunarity,
+          gain,
+          amplitude,
+          frequency,
+          time,
+          0,
+          baseFlatness
+        );
+
+        const yNoise = octavedNoise(
+          progress * 8,
+          octaves,
+          lacunarity,
+          gain,
+          amplitude,
+          frequency,
+          time,
+          1,
+          baseFlatness
+        );
+
+        const displacedX = point.x + xNoise * scale;
+        const displacedY = point.y + yNoise * scale;
+
+        if (i === 0) {
+          ctx.moveTo(displacedX, displacedY);
+        } else {
+          ctx.lineTo(displacedX, displacedY);
+        }
+      }
+
+      ctx.closePath();
+      ctx.stroke();
+
+      pickModeAnimationRef.current = win.requestAnimationFrame(drawElectricBorder);
+    };
+
+    // Start drawing loop
+    pickModeAnimationRef.current = win.requestAnimationFrame(drawElectricBorder);
 
     let activeHoveredEl: HTMLElement | null = null;
 
@@ -299,15 +659,17 @@ export const ElementPickerPanel: React.FC = () => {
     if (!iframe) return;
     try {
       const doc = iframe.contentDocument || iframe.contentWindow?.document as Document;
-      if (!doc) return;
+      const win = iframe.contentWindow;
+      if (!doc || !win) return;
 
       const highlighter = doc.getElementById("nexora-element-highlighter");
       if (highlighter) {
         highlighter.remove();
       }
-      // We don't have direct references to mouseover/click listener handles here,
-      // so we let the browser clean up or we reload the frame if needed. But standard
-      // practice is to save the reference. Let's make sure listeners are detached.
+      if (pickModeAnimationRef.current) {
+        win.cancelAnimationFrame(pickModeAnimationRef.current);
+        pickModeAnimationRef.current = null;
+      }
     } catch (e) {}
   };
 
