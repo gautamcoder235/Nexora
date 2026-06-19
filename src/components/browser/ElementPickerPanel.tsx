@@ -107,8 +107,8 @@ export const ElementPickerPanel: React.FC = () => {
         }
 
         .magic-card {
-          --highlighter-radius: 8px;
-          --highlighter-outer-radius: 18px;
+          --highlighter-radius: 0px;
+          --highlighter-outer-radius: 0px;
           position: absolute;
           pointer-events: none;
           z-index: 999999;
@@ -126,7 +126,7 @@ export const ElementPickerPanel: React.FC = () => {
           content: "";
           position: absolute;
           inset: -10px;
-          border-radius: var(--highlighter-outer-radius, 18px);
+          border-radius: var(--highlighter-outer-radius, 0px);
           background: conic-gradient(
             from var(--angle),
             #4285f4,
@@ -141,7 +141,7 @@ export const ElementPickerPanel: React.FC = () => {
             #0066ff,
             #4285f4
           );
-          animation: magic-spin 4s linear infinite;
+          animation: spin 4s linear infinite;
           filter: blur(14px);
           opacity: 0.45;
           z-index: 0;
@@ -155,7 +155,7 @@ export const ElementPickerPanel: React.FC = () => {
           position: absolute;
           inset: 0;
           padding: 6px;
-          border-radius: var(--highlighter-radius, 8px);
+          border-radius: var(--highlighter-radius, 0px);
           background: conic-gradient(
             from var(--angle),
             #4285f4,
@@ -170,7 +170,7 @@ export const ElementPickerPanel: React.FC = () => {
             #0066ff,
             #4285f4
           );
-          animation: magic-spin 4s linear infinite;
+          animation: spin 4s linear infinite;
           -webkit-mask:
             linear-gradient(#fff 0 0) content-box,
             linear-gradient(#fff 0 0);
@@ -188,7 +188,7 @@ export const ElementPickerPanel: React.FC = () => {
           width: 100%;
           height: 100%;
           overflow: hidden;
-          border-radius: var(--highlighter-radius, 8px);
+          border-radius: var(--highlighter-radius, 0px);
           z-index: 2;
         }
 
@@ -210,7 +210,7 @@ export const ElementPickerPanel: React.FC = () => {
             rgba(170,0,255,.32),
             rgba(255,0,85,.32)
           );
-          animation: magic-spin 4s linear infinite;
+          animation: spin 4s linear infinite;
           mix-blend-mode: screen;
           opacity: 0.55;
           backdrop-filter: blur(10px);
@@ -235,7 +235,7 @@ export const ElementPickerPanel: React.FC = () => {
             #aa00ff,
             #ff0055
           );
-          animation: magic-spin 4s linear infinite;
+          animation: spin 4s linear infinite;
           filter: blur(120px);
           opacity: 0.35;
         }
@@ -258,7 +258,7 @@ export const ElementPickerPanel: React.FC = () => {
         /* =========================
            ANIMATION
         ========================= */
-        @keyframes magic-spin {
+        @keyframes spin {
           from {
             --angle: 0deg;
           }
@@ -425,23 +425,37 @@ export const ElementPickerPanel: React.FC = () => {
         highlighter.style.height = `${rect.height}px`;
         highlighter.style.display = "block";
 
-        // Dynamically compute and apply border radius
+        // Dynamically compute and apply border radius for all corners separately
         const computedStyle = win.getComputedStyle(target);
-        const borderRadius = computedStyle.borderRadius;
-        
-        highlighter.style.setProperty("--highlighter-radius", borderRadius || "0px");
-        
-        let outerRadius = "10px";
-        if (borderRadius && borderRadius !== "0px") {
-          if (borderRadius.includes("%")) {
-            outerRadius = borderRadius;
-          } else {
-            outerRadius = borderRadius.split(" ").map(val => {
-              const num = parseFloat(val);
-              return !isNaN(num) ? `${num + 10}px` : val;
-            }).join(" ");
-          }
+        const tl = computedStyle.borderTopLeftRadius || "0px";
+        const tr = computedStyle.borderTopRightRadius || "0px";
+        const br = computedStyle.borderBottomRightRadius || "0px";
+        const bl = computedStyle.borderBottomLeftRadius || "0px";
+
+        // Check if it is a pure rectangle (all corner radii are effectively 0)
+        const isZeroRadius = [tl, tr, br, bl].every(val => {
+          const num = parseFloat(val);
+          return isNaN(num) || num === 0;
+        });
+
+        let normRadius = `${tl} ${tr} ${br} ${bl}`;
+        let outerRadius = "0px";
+
+        if (isZeroRadius) {
+          normRadius = "0px";
+          outerRadius = "0px";
+        } else {
+          const parseRadiusValue = (val: string) => {
+            const num = parseFloat(val);
+            if (isNaN(num)) return val;
+            if (num === 0) return "0px";
+            if (val.includes("%")) return val;
+            return `${num + 10}px`;
+          };
+          outerRadius = `${parseRadiusValue(tl)} ${parseRadiusValue(tr)} ${parseRadiusValue(br)} ${parseRadiusValue(bl)}`;
         }
+
+        highlighter.style.setProperty("--highlighter-radius", normRadius);
         highlighter.style.setProperty("--highlighter-outer-radius", outerRadius);
       }
     };
