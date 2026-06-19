@@ -190,6 +190,7 @@ export const ElementPickerPanel: React.FC = () => {
           overflow: hidden;
           border-radius: var(--highlighter-radius, 0px);
           z-index: 2;
+          background: rgba(5, 7, 13, 0.45);
         }
 
         /* =========================
@@ -201,18 +202,18 @@ export const ElementPickerPanel: React.FC = () => {
           border-radius: inherit;
           background: conic-gradient(
             from var(--angle),
-            rgba(255,0,85,.32),
-            rgba(255,136,0,.30),
-            rgba(255,238,0,.25),
-            rgba(0,255,102,.25),
-            rgba(0,255,255,.30),
-            rgba(0,102,255,.30),
-            rgba(170,0,255,.32),
-            rgba(255,0,85,.32)
+            rgba(255,0,85,.45),
+            rgba(255,136,0,.40),
+            rgba(255,238,0,.35),
+            rgba(0,255,102,.35),
+            rgba(0,255,255,.40),
+            rgba(0,102,255,.40),
+            rgba(170,0,255,.45),
+            rgba(255,0,85,.45)
           );
           animation: spin 4s linear infinite;
           mix-blend-mode: screen;
-          opacity: 0.55;
+          opacity: 0.75;
           backdrop-filter: blur(10px);
           z-index: 2;
         }
@@ -236,8 +237,8 @@ export const ElementPickerPanel: React.FC = () => {
             #ff0055
           );
           animation: spin 4s linear infinite;
-          filter: blur(120px);
-          opacity: 0.35;
+          filter: blur(var(--highlighter-blur, 40px));
+          opacity: 0.45;
         }
 
         /* =========================
@@ -457,6 +458,11 @@ export const ElementPickerPanel: React.FC = () => {
 
         highlighter.style.setProperty("--highlighter-radius", normRadius);
         highlighter.style.setProperty("--highlighter-outer-radius", outerRadius);
+
+        // Dynamically compute and apply blur radius for the inner glow
+        const minDim = Math.min(rect.width, rect.height);
+        const blurVal = Math.max(12, Math.min(120, minDim * 0.4));
+        highlighter.style.setProperty("--highlighter-blur", `${blurVal}px`);
       }
     };
 

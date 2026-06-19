@@ -667,6 +667,7 @@ fn exit_app(app_handle: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::env::set_var("TAURI_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-web-security");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
