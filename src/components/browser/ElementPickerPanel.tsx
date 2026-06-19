@@ -348,19 +348,27 @@ export const ElementPickerPanel: React.FC = () => {
 
   // Generate clean CSS selector recursively
   const getSelector = (el: HTMLElement, doc: Document): string => {
-    if (el.id) return `#${el.id}`;
+    const escapeIdentifier = (str: string): string => {
+      if (typeof CSS !== "undefined" && CSS.escape) {
+        return CSS.escape(str);
+      }
+      return str.replace(/([!"#$%&'()*+,.\/:;<=>?@\[\\\]^`{|}~])/g, "\\$1");
+    };
+
+    if (el.id) return `#${escapeIdentifier(el.id)}`;
     let path: string[] = [];
     let current: HTMLElement | null = el;
     
     while (current && current.nodeType === Node.ELEMENT_NODE) {
       let selector = current.nodeName.toLowerCase();
       if (current.id) {
-        selector += `#${current.id}`;
+        selector += `#${escapeIdentifier(current.id)}`;
         path.unshift(selector);
         break;
       } else {
         const classes = Array.from(current.classList)
           .filter(c => c !== "nexora-highlight-outline") // exclude highlighter styling classes
+          .map(c => escapeIdentifier(c))
           .join(".");
         if (classes) {
           selector += `.${classes}`;
