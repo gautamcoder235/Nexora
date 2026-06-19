@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useChangesetStore } from '../../stores/changesetStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { Pin, PinOff, X, ChevronRight, ChevronDown, Folder, FolderOpen, File } from 'lucide-react';
+import { X, ChevronRight, ChevronDown, Folder, FolderOpen, File } from 'lucide-react';
 import { PatchDiffViewer } from './PatchDiffViewer';
 import { getLanguageFromPath } from '../../utils/language';
 import { ChangesetFile, FileChangeStatus, CommentSeverity } from '../../types/changeset';
@@ -399,36 +399,6 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
         <div className="px-4 border-b border-zinc-800 flex justify-between items-center bg-[#0c0c0e]/60 shrink-0 h-11">
           <h2 className="text-xs font-semibold tracking-wide uppercase text-zinc-400">Agent Review Center</h2>
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => {
-                if (terminals.length <= 8) {
-                  toggleReviewPanelPinned();
-                  setTimeout(() => {
-                    useOrchestratorStore.getState().saveSnapshot();
-                  }, 0);
-                }
-              }}
-              title={
-                terminals.length > 8
-                  ? "Docking disabled (> 8 terminals)"
-                  : isReviewPanelPinned
-                  ? "Float Panel"
-                  : "Dock Panel"
-              }
-              className={`p-1 rounded transition-all cursor-pointer ${
-                terminals.length > 8
-                  ? "opacity-35 cursor-not-allowed text-zinc-500"
-                  : isReviewPanelPinned
-                  ? "bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20"
-                  : "text-zinc-500 hover:text-zinc-350 hover:bg-white/5"
-              }`}
-            >
-              {isReviewPanelPinned ? (
-                <Pin size={11} className="fill-amber-500" />
-              ) : (
-                <PinOff size={11} />
-              )}
-            </button>
             <button 
               onClick={onClose} 
               title="Close Review Center"
@@ -477,36 +447,6 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
         <div className="px-4 border-b border-border-glass flex justify-between items-center bg-[#0c0c0e]/60 shrink-0 h-11">
           <h2 className="text-xs font-semibold tracking-wide uppercase text-zinc-400">Agent Review Center</h2>
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => {
-                if (terminals.length <= 8) {
-                  toggleReviewPanelPinned();
-                  setTimeout(() => {
-                    useOrchestratorStore.getState().saveSnapshot();
-                  }, 0);
-                }
-              }}
-              title={
-                terminals.length > 8
-                  ? "Docking disabled (> 8 terminals)"
-                  : isReviewPanelPinned
-                  ? "Float Panel"
-                  : "Dock Panel"
-              }
-              className={`p-1 rounded transition-all cursor-pointer ${
-                terminals.length > 8
-                  ? "opacity-35 cursor-not-allowed text-zinc-500"
-                  : isReviewPanelPinned
-                  ? "bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20"
-                  : "text-zinc-500 hover:text-zinc-350 hover:bg-white/5"
-              }`}
-            >
-              {isReviewPanelPinned ? (
-                <Pin size={11} className="fill-amber-500" />
-              ) : (
-                <PinOff size={11} />
-              )}
-            </button>
             <button 
               onClick={onClose} 
               title="Close Review Center"

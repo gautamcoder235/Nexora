@@ -435,14 +435,19 @@
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.03);
   border-radius: 16px;
-  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: 
+    background 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 
     0 4px 20px rgba(0, 0, 0, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transform-style: preserve-3d;
+  will-change: transform;
 }
 
 .quick-link-card:hover {
-  transform: translateY(-4px) scale(1.005);
   background: rgba(20, 20, 30, 0.6);
   border-color: rgba(168, 85, 247, 0.35);
   box-shadow: 
@@ -965,5 +970,92 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* ============================================================
+ * Interactive Spotlight & Ripple Effects (Bento Patterns)
+ * ============================================================ */
+
+/* Spotlight glow overlay on quick link cards */
+.quick-link-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px; /* border thickness */
+  background: radial-gradient(
+    140px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(168, 85, 247, 0.45) 0%,
+    rgba(236, 72, 153, 0.15) 40%,
+    transparent 70%
+  );
+  border-radius: inherit;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  z-index: 1;
+}
+
+.quick-link-card:hover::before {
+  opacity: 1;
+}
+
+/* Spotlight glow overlay on search form input container */
+.browser-search-form::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px; /* border thickness */
+  background: radial-gradient(
+    180px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(168, 85, 247, 0.45) 0%,
+    rgba(236, 72, 153, 0.18) 45%,
+    transparent 70%
+  );
+  border-radius: 16px; /* matches .browser-search-input */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  z-index: 4;
+}
+
+.browser-search-form:hover::before,
+.browser-search-form:focus-within::before {
+  opacity: 1;
+}
+
+/* Click Ripple effect inside quick link cards */
+.quick-link-card .card-click-ripple {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.5) 0%, rgba(236, 72, 153, 0.25) 45%, transparent 70%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  animation: rippleEffect 600ms cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  z-index: 2;
+}
+
+@keyframes rippleEffect {
+  to {
+    transform: translate(-50%, -50%) scale(60);
+    opacity: 0;
   }
 }

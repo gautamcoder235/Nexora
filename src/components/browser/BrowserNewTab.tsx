@@ -176,6 +176,69 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
     return "Yesterday";
   };
 
+  // Spotlight and 3D Tilt handlers for Quick Links
+  const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Set CSS variables for cursor tracking
+    card.style.setProperty("--mouse-x", `${x}px`);
+    card.style.setProperty("--mouse-y", `${y}px`);
+
+    // 3D Tilt calculation
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const rotateX = ((y - centerY) / centerY) * -6; // Max 6deg
+    const rotateY = ((x - centerX) / centerX) * 6; // Max 6deg
+
+    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-4px) scale(1.01)`;
+  };
+
+  const handleCardMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+    const card = e.currentTarget;
+    card.style.transform = "";
+    card.style.setProperty("--mouse-x", "50%");
+    card.style.setProperty("--mouse-y", "50%");
+  };
+
+  const handleCardClick = (e: React.MouseEvent<HTMLDivElement>, url: string) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Spawn a temporary ripple element
+    const ripple = document.createElement("span");
+    ripple.className = "card-click-ripple";
+    ripple.style.left = `${x}px`;
+    ripple.style.top = `${y}px`;
+    card.appendChild(ripple);
+
+    setTimeout(() => {
+      ripple.remove();
+    }, 600);
+
+    onNavigate(url);
+  };
+
+  // Spotlight tracking for Search Omnibox Form
+  const handleSearchMouseMove = (e: React.MouseEvent<HTMLFormElement>) => {
+    const form = e.currentTarget;
+    const rect = form.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    form.style.setProperty("--mouse-x", `${x}px`);
+    form.style.setProperty("--mouse-y", `${y}px`);
+  };
+
+  const handleSearchMouseLeave = (e: React.MouseEvent<HTMLFormElement>) => {
+    const form = e.currentTarget;
+    form.style.setProperty("--mouse-x", "50%");
+    form.style.setProperty("--mouse-y", "50%");
+  };
+
   // Construct suggestions list based on query
   const suggestions = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
@@ -336,7 +399,12 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
 
         {/* Search / Omnibox Form */}
         <div className="browser-search-container">
-          <form onSubmit={handleSearch} className="browser-search-form group">
+          <form 
+            onSubmit={handleSearch} 
+            className="browser-search-form group"
+            onMouseMove={handleSearchMouseMove}
+            onMouseLeave={handleSearchMouseLeave}
+          >
             <div className="browser-search-icon-wrapper">
               <Search size={14} className="browser-search-icon" />
             </div>
@@ -423,11 +491,11 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
               <div
                 key={link.id}
                 className="quick-link-card group"
+                onMouseMove={handleCardMouseMove}
+                onMouseLeave={handleCardMouseLeave}
+                onClick={(e) => handleCardClick(e, link.url)}
               >
-                <div 
-                  onClick={() => onNavigate(link.url)}
-                  className="quick-link-card-content"
-                >
+                <div className="quick-link-card-content">
                   <div className="quick-link-icon-container">
                     {getIconElement(link.iconType)}
                   </div>
@@ -441,7 +509,10 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
                   </div>
                 </div>
                 <button
-                  onClick={() => onNavigate(link.url)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate(link.url);
+                  }}
                   className="quick-link-external-btn"
                   title={`Launch ${link.title}`}
                 >

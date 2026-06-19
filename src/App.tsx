@@ -111,8 +111,7 @@ function App() {
     setReviewCenterOpen, 
     isReviewPanelPinned, 
     reviewPanelWidth, 
-    setReviewPanelWidth,
-    toggleReviewPanelPinned
+    setReviewPanelWidth
   } = useChangesetStore();
 
   // Enforce Max 8 Terminals Docking Rule
@@ -120,9 +119,8 @@ function App() {
     if (terminals.length > 8) {
       if (isAgentPanelPinned) setAgentPanelPinned(false);
       if (isTaskPanelPinned) setTaskPanelPinned(false);
-      if (isReviewPanelPinned) toggleReviewPanelPinned();
     }
-  }, [terminals.length, isAgentPanelPinned, isTaskPanelPinned, setAgentPanelPinned, setTaskPanelPinned, isReviewPanelPinned, toggleReviewPanelPinned]);
+  }, [terminals.length, isAgentPanelPinned, isTaskPanelPinned, setAgentPanelPinned, setTaskPanelPinned]);
 
   const [initName, setInitName] = useState("");
   const [showRenameWsModal, setShowRenameWsModal] = useState(false);
@@ -1285,13 +1283,6 @@ function App() {
               />
             )}
 
-            {/* Backdrop overlay for unpinned review center panel */}
-            {isReviewCenterOpen && !isReviewPanelPinned && (
-              <div 
-                className="absolute inset-0 z-20 bg-black/20 cursor-default"
-                onClick={() => setReviewCenterOpen(false)}
-              />
-            )}
 
             {isBrowserPanelVisible && isBrowserPanelPinned && (
               <>
@@ -1381,35 +1372,7 @@ function App() {
               </>
             )}
 
-            {/* Agent Review Center Panel (Unpinned/Popup) */}
-            {isReviewCenterOpen && !isReviewPanelPinned && activeWs && (
-              <>
-                {/* Floating Resizer Handle */}
-                <div
-                  onMouseDown={startReviewResize}
-                  className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-45"
-                  style={{ right: 'var(--review-panel-width)' }}
-                >
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                  </div>
-                </div>
 
-                <div
-                  className={`!absolute right-0 top-0 bottom-0 z-30 overflow-hidden glass-panel shadow-2xl bg-[#08080a] backdrop-blur-xl border border-border-glass rounded-lg ${
-                    isReviewDragging ? '' : 'transition-[width] duration-300 ease-out'
-                  }`}
-                  style={{ width: 'var(--review-panel-width)' }}
-                >
-                  <AgentReviewCenter
-                    repoPath={projects.find(p => p.id === selectedProjectId)?.path || activeWs.rootPath}
-                    onClose={() => setReviewCenterOpen(false)}
-                  />
-                </div>
-              </>
-            )}
           </div>
         </div>
       </div>
