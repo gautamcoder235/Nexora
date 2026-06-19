@@ -419,6 +419,19 @@ export const ElementPickerPanel: React.FC = () => {
     return path.join(" > ");
   };
 
+  // Reset all inspector states when the active tab switches or its URL changes
+  useEffect(() => {
+    setIsPickMode(false);
+    setSelectedEl(null);
+    setIsStylesExpanded(false);
+    setCopiedKey(null);
+    setHasCorsError(false);
+    setScreenshotSuccess(false);
+    setScreenshotError(null);
+    setIsCapturingScreenshot(false);
+    setToast(null);
+  }, [activeTabId, activeTab?.url]);
+
   // ==============================
   //  PICK MODE — Unified handler
   // ==============================
