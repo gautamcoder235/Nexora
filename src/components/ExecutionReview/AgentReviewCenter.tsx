@@ -760,214 +760,209 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
 
       {/* Main Diff Editor Viewport */}
       <div className="flex-grow flex-1 flex flex-col min-w-0 overflow-hidden bg-transparent relative">
-        {activeChangeset ? (
+        {selectedFilePath ? (
           <div className="flex-grow flex flex-col h-full overflow-hidden">
             
-            {/* Changeset Title / Meta Bar */}
-            <div className="px-4 border-b border-zinc-800 bg-[#0c0c0e]/40 flex justify-between items-center shrink-0 text-zinc-100 h-11">
-              <div className="min-w-0 flex-1 mr-4">
-                <h3 className="text-sm font-bold text-white truncate leading-none mb-0.5" title={activeChangeset.title}>{activeChangeset.title}</h3>
-                <p className="text-[10px] text-zinc-400 max-w-xl truncate leading-normal" title={activeChangeset.explanation}>{activeChangeset.explanation}</p>
+            {/* Changeset Title / Meta Bar (only when viewing a changeset file) */}
+            {activeChangeset && activeChangeset.files.some(f => f.path === selectedFilePath) && (
+              <div className="px-4 border-b border-zinc-800 bg-[#0c0c0e]/40 flex justify-between items-center shrink-0 text-zinc-100 h-11">
+                <div className="min-w-0 flex-1 mr-4">
+                  <h3 className="text-sm font-bold text-white truncate leading-none mb-0.5" title={activeChangeset.title}>{activeChangeset.title}</h3>
+                  <p className="text-[10px] text-zinc-400 max-w-xl truncate leading-normal" title={activeChangeset.explanation}>{activeChangeset.explanation}</p>
+                </div>
+                
+                <div className="flex items-center gap-3 shrink-0">
+                  {activeChangeset.status === 'applied' ? (
+                    <button
+                      onClick={handleRollback}
+                      className="bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-medium text-[11px] px-3 h-7 flex items-center justify-center rounded cursor-pointer transition-colors"
+                    >
+                      Rollback Changeset
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleApply}
+                      disabled={activeChangeset.files.filter(f => f.status !== 'rejected').length === 0}
+                      className="bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white font-medium text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors"
+                    >
+                      Apply Changeset Transaction
+                    </button>
+                  )}
+                </div>
               </div>
-              
-              <div className="flex items-center gap-3 shrink-0">
-                {activeChangeset.status === 'applied' ? (
-                  <button
-                    onClick={handleRollback}
-                    className="bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-medium text-[11px] px-3 h-7 flex items-center justify-center rounded cursor-pointer transition-colors"
-                  >
-                    Rollback Changeset
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleApply}
-                    disabled={activeChangeset.files.filter(f => f.status !== 'rejected').length === 0}
-                    className="bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white font-medium text-[11px] px-3 h-7 flex items-center justify-center rounded cursor-pointer transition-colors"
-                  >
-                    Apply Changeset Transaction
-                  </button>
-                )}
-              </div>
-            </div>
+            )}
 
             {/* Monaco Viewport */}
             <div className="flex-grow overflow-hidden bg-[#08080a]">
-              {selectedFilePath ? (
-                (() => {
-                  const changesetFile = activeChangeset?.files.find(f => f.path === selectedFilePath);
-                  if (changesetFile) {
-                    return (
-                      <PatchDiffViewer
-                        originalContent={changesetFile.old_content}
-                        proposedContent={changesetFile.new_content}
-                        filePath={changesetFile.path}
-                      />
-                    );
-                  } else if (isFileLoading) {
-                    return (
-                      <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
-                        <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-amber-500 mr-2"></div>
-                        Loading file content...
-                      </div>
-                    );
-                  } else {
-                    const isMarkdown = selectedFilePath?.toLowerCase().endsWith('.md');
-                    return (
-                      <div className="flex flex-col h-full bg-[#08080a]">
-                        <style dangerouslySetInnerHTML={{ __html: MARKDOWN_STYLES }} />
-                        <div className="bg-[#0c0c0e]/80 border-b border-border-glass px-4 flex justify-between items-center select-none h-11 shrink-0">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="font-mono text-xs text-zinc-350 truncate" title={selectedFilePath}>{selectedFilePath}</span>
-                            {isMarkdown ? (
-                              <div className="flex bg-[#121215] border border-border-glass rounded p-0.5 h-7 items-center shrink-0">
-                                <button
-                                  onClick={() => setEditorTab('preview')}
-                                  className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${
-                                    editorTab === 'preview'
-                                      ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
-                                      : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
-                                  }`}
-                                >
-                                  Preview
-                                </button>
-                                <button
-                                  onClick={() => setEditorTab('edit')}
-                                  className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${
-                                    editorTab === 'edit'
-                                      ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
-                                      : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
-                                  }`}
-                                >
-                                  Edit Source
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-[9px] text-zinc-500 font-mono bg-[#101014] px-1.5 py-0.5 rounded border border-border-glass uppercase shrink-0">
-                                {getLanguageFromPath(selectedFilePath)} (Editable)
-                              </span>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center gap-3 shrink-0">
-                            {saveStatus === 'saving' && <span className="text-xs text-zinc-500 animate-pulse">Saving...</span>}
-                            {saveStatus === 'saved' && <span className="text-xs text-emerald-400">Saved!</span>}
-                            {saveStatus === 'error' && <span className="text-xs text-rose-400">Failed to save!</span>}
-                            {editedFileContent !== workspaceFileContent && (
+              {(() => {
+                const changesetFile = activeChangeset?.files.find(f => f.path === selectedFilePath);
+                if (changesetFile) {
+                  return (
+                    <PatchDiffViewer
+                      originalContent={changesetFile.old_content}
+                      proposedContent={changesetFile.new_content}
+                      filePath={changesetFile.path}
+                    />
+                  );
+                } else if (isFileLoading) {
+                  return (
+                    <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-amber-500 mr-2"></div>
+                      Loading file content...
+                    </div>
+                  );
+                } else {
+                  const isMarkdown = selectedFilePath?.toLowerCase().endsWith('.md');
+                  return (
+                    <div className="flex flex-col h-full bg-[#08080a]">
+                      <style dangerouslySetInnerHTML={{ __html: MARKDOWN_STYLES }} />
+                      <div className="bg-[#0c0c0e]/80 border-b border-border-glass px-4 flex justify-between items-center select-none h-11 shrink-0">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="font-mono text-xs text-zinc-350 truncate" title={selectedFilePath}>{selectedFilePath}</span>
+                          {isMarkdown ? (
+                            <div className="flex bg-[#121215] border border-border-glass rounded p-0.5 h-7 items-center shrink-0">
                               <button
-                                onClick={handleSave}
-                                disabled={saveStatus === 'saving'}
-                                className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black font-bold text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors cursor-pointer"
+                                onClick={() => setEditorTab('preview')}
+                                className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${
+                                  editorTab === 'preview'
+                                    ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
+                                    : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
+                                }`}
                               >
-                                Save Changes
+                                Preview
                               </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex-grow w-full bg-[#08080a] min-h-0 relative">
-                          {isMarkdown && editorTab === 'preview' ? (
-                            <div 
-                              className="markdown-preview h-full overflow-y-auto px-8 py-6 text-[#ccccdd] text-sm leading-7 font-sans"
-                              dangerouslySetInnerHTML={{ __html: renderMarkdown(editedFileContent) }}
-                            />
+                              <button
+                                onClick={() => setEditorTab('edit')}
+                                className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${
+                                  editorTab === 'edit'
+                                    ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
+                                    : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
+                                }`}
+                              >
+                                Edit Source
+                              </button>
+                            </div>
                           ) : (
-                            <Editor
-                              height="100%"
-                              language={getLanguageFromPath(selectedFilePath)}
-                              value={editedFileContent}
-                              onChange={(val) => setEditedFileContent(val || '')}
-                              theme="vscode-dark"
-                              onMount={(editor, monaco) => {
-                                setEditorRef(editor);
-                                setMonacoRef(monaco);
-                              }}
-                              beforeMount={(monaco) => {
-                                monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-                                  noSemanticValidation: true,
-                                  noSyntaxValidation: true,
-                                });
-                                monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
-                                  noSemanticValidation: true,
-                                  noSyntaxValidation: true,
-                                });
-                                monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-                                  jsx: 1, // React
-                                  allowNonTsExtensions: true,
-                                });
-
-                                monaco.editor.defineTheme('vscode-dark', {
-                                  base: 'vs-dark',
-                                  inherit: true,
-                                  rules: [
-                                    { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
-                                    { token: 'keyword', foreground: 'C586C0' },
-                                    { token: 'string', foreground: 'CE9178' },
-                                    { token: 'number', foreground: 'B5CEA8' },
-                                    { token: 'regexp', foreground: 'D16969' },
-                                    { token: 'type', foreground: '4EC9B0' },
-                                    { token: 'class', foreground: '4EC9B0' },
-                                    { token: 'function', foreground: 'DCDCAA' },
-                                    { token: 'variable', foreground: '9CDCFE' },
-                                    { token: 'tag', foreground: '569CD6' },
-                                    { token: 'tag.id', foreground: '9CDCFE' },
-                                    { token: 'tag.class', foreground: '9CDCFE' },
-                                    { token: 'attribute.name', foreground: '9CDCFE' },
-                                    { token: 'attribute.value', foreground: 'CE9178' }
-                                  ],
-                                  colors: {
-                                    'editor.background': '#08080a',
-                                    'editor.foreground': '#D4D4D4',
-                                    'editorCursor.foreground': '#AEAFAD',
-                                    'editor.lineHighlightBackground': '#141416',
-                                    'editorLineNumber.foreground': '#858585',
-                                    'editorLineNumber.activeForeground': '#C6C6C6',
-                                    'editor.selectionBackground': '#264F78',
-                                    'minimap.background': '#08080a',
-                                    'editorIndentGuide.background': '#2c2c2e',
-                                    'editorIndentGuide.background1': '#2c2c2e',
-                                    'editorIndentGuide.activeBackground': '#4e4e50',
-                                    'editorIndentGuide.activeBackground1': '#4e4e50'
-                                  }
-                                });
-                              }}
-                              options={{
-                                readOnly: false,
-                                minimap: { enabled: true },
-                                fontSize: 13,
-                                fontFamily: 'Consolas, "Courier New", monospace',
-                                lineNumbers: 'on',
-                                folding: true,
-                                scrollBeyondLastLine: false,
-                                automaticLayout: true,
-                                renderIndentGuides: true,
-                                guides: {
-                                  indentation: true
-                                },
-                                scrollbar: {
-                                  vertical: 'visible',
-                                  horizontal: 'visible',
-                                  useShadows: false,
-                                  verticalScrollbarSize: 10,
-                                  horizontalScrollbarSize: 10
-                                }
-                              }}
-                            />
+                            <span className="text-[9px] text-zinc-500 font-mono bg-[#101014] px-1.5 py-0.5 rounded border border-border-glass uppercase shrink-0">
+                              {getLanguageFromPath(selectedFilePath)} (Editable)
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-3 shrink-0">
+                          {saveStatus === 'saving' && <span className="text-xs text-zinc-500 animate-pulse">Saving...</span>}
+                          {saveStatus === 'saved' && <span className="text-xs text-emerald-400">Saved!</span>}
+                          {saveStatus === 'error' && <span className="text-xs text-rose-400">Failed to save!</span>}
+                          {editedFileContent !== workspaceFileContent && (
+                            <button
+                              onClick={handleSave}
+                              disabled={saveStatus === 'saving'}
+                              className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black font-bold text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors cursor-pointer"
+                            >
+                              Save Changes
+                            </button>
                           )}
                         </div>
                       </div>
-                    );
-                  }
-                })()
-              ) : (
-                <div className="flex h-full w-full items-center justify-center border border-zinc-800 rounded-lg text-zinc-500 font-mono text-xs">
-                  Select a file from the explorer sidebar to view.
-                </div>
-              )}
-            </div>
+                      <div className="flex-grow w-full bg-[#08080a] min-h-0 relative">
+                        {isMarkdown && editorTab === 'preview' ? (
+                          <div 
+                            className="markdown-preview h-full overflow-y-auto px-8 py-6 text-[#ccccdd] text-sm leading-7 font-sans"
+                            dangerouslySetInnerHTML={{ __html: renderMarkdown(editedFileContent) }}
+                          />
+                        ) : (
+                          <Editor
+                            height="100%"
+                            language={getLanguageFromPath(selectedFilePath)}
+                            value={editedFileContent}
+                            onChange={(val) => setEditedFileContent(val || '')}
+                            theme="vscode-dark"
+                            onMount={(editor, monaco) => {
+                              setEditorRef(editor);
+                              setMonacoRef(monaco);
+                            }}
+                            beforeMount={(monaco) => {
+                              monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+                                noSemanticValidation: true,
+                                noSyntaxValidation: true,
+                              });
+                              monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+                                noSemanticValidation: true,
+                                noSyntaxValidation: true,
+                              });
+                              monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+                                jsx: 1, // React
+                                allowNonTsExtensions: true,
+                              });
 
+                              monaco.editor.defineTheme('vscode-dark', {
+                                base: 'vs-dark',
+                                inherit: true,
+                                rules: [
+                                  { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+                                  { token: 'keyword', foreground: 'C586C0' },
+                                  { token: 'string', foreground: 'CE9178' },
+                                  { token: 'number', foreground: 'B5CEA8' },
+                                  { token: 'regexp', foreground: 'D16969' },
+                                  { token: 'type', foreground: '4EC9B0' },
+                                  { token: 'class', foreground: '4EC9B0' },
+                                  { token: 'function', foreground: 'DCDCAA' },
+                                  { token: 'variable', foreground: '9CDCFE' },
+                                  { token: 'tag', foreground: '569CD6' },
+                                  { token: 'tag.id', foreground: '9CDCFE' },
+                                  { token: 'tag.class', foreground: '9CDCFE' },
+                                  { token: 'attribute.name', foreground: '9CDCFE' },
+                                  { token: 'attribute.value', foreground: 'CE9178' }
+                                ],
+                                colors: {
+                                  'editor.background': '#08080a',
+                                  'editor.foreground': '#D4D4D4',
+                                  'editorCursor.foreground': '#AEAFAD',
+                                  'editor.lineHighlightBackground': '#141416',
+                                  'editorLineNumber.foreground': '#858585',
+                                  'editorLineNumber.activeForeground': '#C6C6C6',
+                                  'editor.selectionBackground': '#264F78',
+                                  'minimap.background': '#08080a',
+                                  'editorIndentGuide.background': '#2c2c2e',
+                                  'editorIndentGuide.background1': '#2c2c2e',
+                                  'editorIndentGuide.activeBackground': '#4e4e50',
+                                  'editorIndentGuide.activeBackground1': '#4e4e50'
+                                }
+                              });
+                            }}
+                            options={{
+                              readOnly: false,
+                              minimap: { enabled: true },
+                              fontSize: 13,
+                              fontFamily: 'Consolas, "Courier New", monospace',
+                              lineNumbers: 'on',
+                              folding: true,
+                              scrollBeyondLastLine: false,
+                              automaticLayout: true,
+                              renderIndentGuides: true,
+                              guides: {
+                                indentation: true
+                              },
+                              scrollbar: {
+                                vertical: 'visible',
+                                horizontal: 'visible',
+                                useShadows: false,
+                                verticalScrollbarSize: 10,
+                                horizontalScrollbarSize: 10
+                              }
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+              })()}
+            </div>
           </div>
         ) : (
           <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs">
-            Select or load a changeset in the tree sidebar.
+            {activeTab === 'workspace' ? 'Select a file from the explorer sidebar to view.' : 'Select or load a changeset in the tree sidebar.'}
           </div>
         )}
       </div>
