@@ -10,11 +10,13 @@ import {
   Check, 
   Code,
   ShieldAlert,
-  Camera
+  Camera,
+  Loader2
 } from "lucide-react";
 import { useBrowserStore } from "../../stores/browserStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import "./BrowserHome.css";
 
 interface SelectedElementInfo {
   tagName: string;
@@ -47,13 +49,30 @@ export const ElementPickerPanel: React.FC = () => {
 
   const [screenshotSuccess, setScreenshotSuccess] = useState(false);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
+  const [toast, setToast] = useState<{ type: "success" | "error"; title: string; message: string } | null>(null);
+
   const successTimeoutRef = useRef<number | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
+
+  const showToast = (type: "success" | "error", title: string, message: string) => {
+    setToast({ type, title, message });
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
 
   // Cleanup screenshot timeout on unmount
   useEffect(() => {
     return () => {
       if (successTimeoutRef.current) {
         clearTimeout(successTimeoutRef.current);
+      }
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
       }
     };
   }, []);
@@ -296,33 +315,42 @@ export const ElementPickerPanel: React.FC = () => {
   const captureElementScreenshot = async () => {
     if (!selectedEl) {
       setScreenshotError("No element selected");
+      showToast("error", "Capture Failed", "No element selected");
       return;
     }
 
     const iframe = document.querySelector("iframe");
     if (!iframe) {
       setScreenshotError("No preview frame found");
+      showToast("error", "Capture Failed", "No preview frame found");
       return;
     }
 
     try {
+      setIsCapturingScreenshot(true);
       setScreenshotError(null);
       const iframeWindow = iframe.contentWindow;
       const doc = iframe.contentDocument || iframeWindow?.document;
       if (!doc || !iframeWindow) {
         setScreenshotError("Access to preview frame denied");
+        showToast("error", "Capture Failed", "Access to preview frame denied");
+        setIsCapturingScreenshot(false);
         return;
       }
 
       const element = doc.querySelector(selectedEl.selector) as HTMLElement | null;
       if (!element) {
         setScreenshotError(`Element not found in DOM: ${selectedEl.selector}`);
+        showToast("error", "Capture Failed", `Element not found in DOM: ${selectedEl.selector}`);
+        setIsCapturingScreenshot(false);
         return;
       }
 
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) {
         setScreenshotError("Element has zero width or height");
+        showToast("error", "Capture Failed", "Element has zero width or height");
+        setIsCapturingScreenshot(false);
         return;
       }
 
@@ -513,6 +541,8 @@ export const ElementPickerPanel: React.FC = () => {
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         setScreenshotError("Failed to get 2D canvas context");
+        showToast("error", "Capture Failed", "Failed to get 2D canvas context");
+        setIsCapturingScreenshot(false);
         return;
       }
 
@@ -540,6 +570,8 @@ export const ElementPickerPanel: React.FC = () => {
         async (blob) => {
           if (!blob) {
             setScreenshotError("Failed to create PNG blob");
+            showToast("error", "Capture Failed", "Failed to create PNG blob");
+            setIsCapturingScreenshot(false);
             return;
           }
 
@@ -551,6 +583,7 @@ export const ElementPickerPanel: React.FC = () => {
             ]);
 
             setScreenshotSuccess(true);
+            showToast("success", "Screenshot Copied", "Element PNG copied to clipboard!");
             if (successTimeoutRef.current) {
               clearTimeout(successTimeoutRef.current);
             }
@@ -564,6 +597,9 @@ export const ElementPickerPanel: React.FC = () => {
             setScreenshotError(
               `Failed to write to clipboard: ${errName}: ${errMsg}`
             );
+            showToast("error", "Clipboard Error", `Failed to write: ${errName}: ${errMsg}`);
+          } finally {
+            setIsCapturingScreenshot(false);
           }
         },
         "image/png",
@@ -574,11 +610,13 @@ export const ElementPickerPanel: React.FC = () => {
       const errMsg = err?.message || String(err);
       const errName = err?.name || "Error";
       setScreenshotError(`Capture failed: ${errName}: ${errMsg}`);
+      showToast("error", "Capture Failed", `Capture failed: ${errName}: ${errMsg}`);
+      setIsCapturingScreenshot(false);
     }
   };
 
   return (
-    <div className="w-[330px] border-l border-border-glass bg-[#08080a]/90 backdrop-blur-xl h-full flex flex-col min-w-0 select-none text-zinc-350 text-xs font-sans overflow-hidden">
+    <div className="relative w-[330px] border-l border-border-glass bg-[#08080a]/90 backdrop-blur-xl h-full flex flex-col min-w-0 select-none text-zinc-350 text-xs font-sans overflow-hidden">
       {/* 1. Header */}
       <div className="px-4 py-3 border-b border-border-glass flex items-center justify-between flex-shrink-0 bg-black/10">
         <div className="flex items-center gap-2 font-bold text-zinc-200">
@@ -785,21 +823,29 @@ export const ElementPickerPanel: React.FC = () => {
                 </button>
                 <button
                   onClick={captureElementScreenshot}
-                  disabled={isExternal}
+                  disabled={isExternal || isCapturingScreenshot}
                   title={
                     isExternal
                       ? "Screenshot only works with same-origin iframe previews"
+                      : isCapturingScreenshot
+                      ? "Capturing element screenshot..."
                       : "Copy element screenshot to clipboard"
                   }
-                  className={`w-full flex items-center justify-between p-2.5 hover:bg-white/5 transition-colors text-left cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 hover:bg-white/5 transition-all text-left cursor-pointer ${
                     isExternal ? "opacity-35 cursor-not-allowed text-zinc-550" : "text-zinc-400 hover:text-zinc-200"
-                  }`}
+                  } ${isCapturingScreenshot ? "opacity-60 cursor-wait text-purple-455 bg-purple-500/5" : ""}`}
                 >
-                  <span>» Copy Element Screenshot</span>
-                  {screenshotSuccess ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className={isCapturingScreenshot ? "text-purple-400 animate-pulse font-semibold" : ""}>
+                      » {isCapturingScreenshot ? "Capturing Element..." : "Copy Element Screenshot"}
+                    </span>
+                  </span>
+                  {isCapturingScreenshot ? (
+                    <Loader2 size={11} className="animate-spin text-purple-400" />
+                  ) : screenshotSuccess ? (
                     <Check size={11} className="text-emerald-400" />
                   ) : (
-                    <Camera size={11} className={isExternal ? "text-zinc-550" : "text-zinc-400"} />
+                    <Camera size={11} className={isExternal ? "text-zinc-555" : "text-zinc-400"} />
                   )}
                 </button>
                 <button
@@ -832,6 +878,33 @@ export const ElementPickerPanel: React.FC = () => {
           Element Picker
         </button>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`picker-toast ${toast.type === "error" ? "toast-error" : ""}`}>
+          <div className={`p-1.5 rounded-lg border flex items-center justify-center shrink-0 ${
+            toast.type === "success" 
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+              : "bg-rose-500/10 border-rose-500/20 text-rose-455"
+          }`}>
+            {toast.type === "success" ? <Check size={12} /> : <ShieldAlert size={12} />}
+          </div>
+          <div className="flex-grow min-w-0 text-left">
+            <div className="text-[10px] font-extrabold text-zinc-200 uppercase tracking-wider">
+              {toast.title}
+            </div>
+            <div className="text-[9px] text-zinc-400 mt-0.5 leading-normal max-h-[36px] overflow-hidden text-ellipsis line-clamp-2 break-words">
+              {toast.message}
+            </div>
+          </div>
+          <button 
+            onClick={() => setToast(null)}
+            className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors cursor-pointer shrink-0"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

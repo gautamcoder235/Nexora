@@ -359,7 +359,7 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
 
             {/* Autocomplete Dropdown */}
             {isFocused && suggestions.length > 0 && (
-              <div className="search-suggestions-dropdown">
+              <div className="search-suggestions-dropdown animate-suggestion-fade">
                 {suggestions.map((suggestion, index) => (
                   <div
                     key={index}
@@ -369,19 +369,33 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
                       index === activeSuggestionIndex ? "active" : ""
                     }`}
                   >
-                    {suggestion.type === "search" && <Search size={12} className="text-purple-400 flex-shrink-0" />}
-                    {suggestion.type === "history" && <Clock size={12} className="text-zinc-500 flex-shrink-0" />}
-                    {suggestion.type === "quicklink" && <Globe size={12} className="text-emerald-400 flex-shrink-0" />}
+                    <div className="suggestion-indicator-line" />
                     
-                    <div className="flex-grow flex items-center justify-between min-w-0">
-                      <span className="text-[11px] text-zinc-200 truncate pr-2">
+                    <div className="p-1.5 rounded-lg bg-black/40 border border-white/[0.04] flex-shrink-0 suggestion-icon-wrapper flex items-center justify-center">
+                      {suggestion.type === "search" && <Search size={12} className="text-purple-400" />}
+                      {suggestion.type === "history" && <Clock size={12} className="text-amber-500" />}
+                      {suggestion.type === "quicklink" && <Globe size={12} className="text-emerald-400" />}
+                    </div>
+                    
+                    <div className="flex-grow flex items-center justify-between min-w-0 gap-3">
+                      <span className="text-[11px] font-semibold text-zinc-200 truncate">
                         {suggestion.title}
                       </span>
-                      {suggestion.type !== "search" && (
-                        <span className="text-[9px] text-[#71717a] truncate font-mono">
-                          {suggestion.url}
+                      
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {suggestion.type !== "search" && (
+                          <span className="text-[8px] text-[#8e8e9f] truncate font-mono bg-black/50 px-2 py-0.5 rounded border border-white/[0.02]">
+                            {suggestion.url}
+                          </span>
+                        )}
+                        <span className={`text-[8px] uppercase tracking-wider font-bold font-mono px-1.5 py-0.5 rounded-md ${
+                          suggestion.type === "search" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" :
+                          suggestion.type === "history" ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                          "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        }`}>
+                          {suggestion.type}
                         </span>
-                      )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -477,20 +491,24 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
 
       {/* Customize Modal Overlay */}
       {isCustomizeOpen && (
-        <div className="customize-modal-overlay">
-          <div className="customize-modal w-full max-w-md rounded-2xl flex flex-col max-h-[80vh] overflow-hidden">
+        <div className="customize-modal-overlay animate-fade-in">
+          <div className="customize-modal w-full max-w-md rounded-2xl flex flex-col max-h-[80vh] overflow-hidden border border-purple-500/25 shadow-[0_0_50px_rgba(168,85,247,0.2)] animate-scale-up">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-white/[0.08]">
+            <div className="flex items-center justify-between p-4 border-b border-white/[0.08] bg-black/20">
               <div className="flex items-center gap-2">
-                <Sparkles size={14} className="text-purple-400" />
-                <h2 className="text-[11px] font-bold text-white font-sans uppercase tracking-wider">Customize Quick Links</h2>
+                <div className="p-1 rounded bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                  <Sparkles size={13} className="text-purple-400 animate-pulse" />
+                </div>
+                <h2 className="text-[11px] font-extrabold text-white font-sans uppercase tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400">
+                  Customize Start Page
+                </h2>
               </div>
               <button 
                 onClick={() => {
                   setIsCustomizeOpen(false);
                   resetForm();
                 }}
-                className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
               >
                 <X size={14} />
               </button>
@@ -505,42 +523,42 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
                   </h3>
                   
                   <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Title</label>
+                    <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider ml-0.5">Title</label>
                     <input
                       type="text"
                       required
                       value={formTitle}
                       onChange={(e) => setFormTitle(e.target.value)}
                       placeholder="e.g. Google"
-                      className="customize-input"
+                      className="customize-input focus:border-purple-500/50"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">URL</label>
+                    <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider ml-0.5">URL</label>
                     <input
                       type="text"
                       required
                       value={formUrl}
                       onChange={(e) => setFormUrl(e.target.value)}
                       placeholder="e.g. https://google.com"
-                      className="customize-input"
+                      className="customize-input focus:border-purple-500/50"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Description</label>
+                    <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider ml-0.5">Description</label>
                     <input
                       type="text"
                       value={formDesc}
                       onChange={(e) => setFormDesc(e.target.value)}
                       placeholder="e.g. Web search engine"
-                      className="customize-input"
+                      className="customize-input focus:border-purple-500/50"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider block">Icon Type</label>
+                    <label className="text-[9px] font-bold text-zinc-450 uppercase tracking-wider block ml-0.5">Icon Type</label>
                     <div className="grid grid-cols-5 gap-2">
                       {(["Terminal", "Cpu", "BookOpen", "Github", "Globe"] as const).map((type) => (
                         <button
@@ -550,7 +568,7 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
                           className={`icon-select-btn ${formIconType === type ? "selected" : ""}`}
                         >
                           {getIconElement(type)}
-                          <span className="text-[9px] font-bold">{type}</span>
+                          <span className="text-[9px] font-extrabold">{type}</span>
                         </button>
                       ))}
                     </div>
@@ -577,32 +595,32 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
                   {quickLinks.map((link) => (
                     <div
                       key={link.id}
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04]"
+                      className="flex items-center justify-between p-3 rounded-xl bg-white/[0.01] border border-white/[0.04] hover:border-purple-500/20 hover:bg-white/[0.02] transition-all duration-200 group"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="p-2 rounded-lg bg-black border border-white/[0.04] flex-shrink-0">
+                        <div className="p-2 rounded-lg bg-black border border-white/[0.04] group-hover:border-purple-500/20 transition-colors flex-shrink-0">
                           {getIconElement(link.iconType)}
                         </div>
                         <div className="min-w-0 text-left">
-                          <div className="text-[11px] font-bold text-zinc-200 truncate">
+                          <div className="text-[11px] font-bold text-zinc-200 truncate group-hover:text-purple-400 transition-colors">
                             {link.title}
                           </div>
-                          <div className="text-[9px] text-zinc-500 truncate mt-0.5">
+                          <div className="text-[9px] text-zinc-500 truncate mt-0.5 font-mono bg-black/30 px-1.5 py-0.5 rounded border border-white/[0.01]">
                             {link.url}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleStartEdit(link)}
-                          className="p-1.5 rounded text-zinc-400 hover:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer"
                           title="Edit"
                         >
                           <Edit2 size={12} />
                         </button>
                         <button
                           onClick={() => handleDeleteLink(link.id)}
-                          className="p-1.5 rounded text-zinc-400 hover:text-rose-455 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-455 hover:bg-rose-500/10 transition-colors cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 size={12} />
@@ -611,7 +629,7 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
                     </div>
                   ))}
                   {quickLinks.length === 0 && (
-                    <div className="text-center py-6 text-[10px] text-zinc-500 font-sans">
+                    <div className="text-center py-6 text-[10px] text-zinc-555 font-sans">
                       No custom quick links yet. Add one or restore defaults!
                     </div>
                   )}
