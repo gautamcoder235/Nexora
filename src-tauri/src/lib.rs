@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
+    AppHandle, Emitter, Manager, LogicalPosition, LogicalSize, Position, Size, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder,
 };
 
@@ -57,14 +57,19 @@ fn browser_webview_bounds(
 ) -> (Position, Size) {
     let scale_factor = main_window.scale_factor().unwrap_or(1.0);
     let inner_pos = main_window.inner_position().unwrap_or_default();
+    
+    // Convert physical screen coordinates of parent client area to logical coordinates
+    let logical_inner_x = inner_pos.x as f64 / scale_factor;
+    let logical_inner_y = inner_pos.y as f64 / scale_factor;
+
     (
-        Position::Physical(PhysicalPosition::new(
-            inner_pos.x + (x * scale_factor).round() as i32,
-            inner_pos.y + (y * scale_factor).round() as i32,
+        Position::Logical(LogicalPosition::new(
+            logical_inner_x + x,
+            logical_inner_y + y,
         )),
-        Size::Physical(PhysicalSize::new(
-            (width * scale_factor).round().max(1.0) as u32,
-            (height * scale_factor).round().max(1.0) as u32,
+        Size::Logical(LogicalSize::new(
+            width,
+            height,
         )),
     )
 }
