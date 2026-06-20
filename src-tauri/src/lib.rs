@@ -57,18 +57,10 @@ fn browser_webview_bounds(
 ) -> (Position, Size) {
     let scale_factor = main_window.scale_factor().unwrap_or(1.0);
     let inner_pos = main_window.inner_position().unwrap_or_default();
-    let outer_pos = main_window.outer_position().unwrap_or_default();
-
-    // The child window's position is relative to the parent window's outer top-left frame corner.
-    // To align it with the client area DOM coordinates (which are relative to inner_position),
-    // we must offset by the window decoration size (border width and title bar height):
-    let dx = inner_pos.x - outer_pos.x;
-    let dy = inner_pos.y - outer_pos.y;
-
     (
         Position::Physical(PhysicalPosition::new(
-            dx + (x * scale_factor).round() as i32,
-            dy + (y * scale_factor).round() as i32,
+            inner_pos.x + (x * scale_factor).round() as i32,
+            inner_pos.y + (y * scale_factor).round() as i32,
         )),
         Size::Physical(PhysicalSize::new(
             (width * scale_factor).round().max(1.0) as u32,
