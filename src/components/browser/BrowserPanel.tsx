@@ -214,10 +214,8 @@ export const BrowserPanel: React.FC = () => {
       spawnOrNavigate(activeTab.url);
     } else {
       // No external URL — destroy the child webview
-      if (isWebviewSpawned.current) {
-        invoke("destroy_browser_webview").catch(() => {});
-        isWebviewSpawned.current = false;
-      }
+      invoke("destroy_browser_webview").catch(() => {});
+      isWebviewSpawned.current = false;
     }
   }, [activeTab?.id, activeTab?.url, refreshKey]);
 

@@ -703,8 +703,15 @@ async fn sync_browser_webview_layout(
 
 #[tauri::command]
 async fn destroy_browser_webview(app_handle: AppHandle) -> Result<(), String> {
+    println!("DEBUG: destroy_browser_webview called");
     if let Some(browser_window) = app_handle.get_webview_window(BROWSER_WEBVIEW_LABEL) {
-        browser_window.close().map_err(|e| e.to_string())?;
+        println!("DEBUG: Found browser window, calling destroy()");
+        match browser_window.destroy() {
+            Ok(_) => println!("DEBUG: browser_window.destroy() returned Ok"),
+            Err(e) => println!("DEBUG: browser_window.destroy() returned Err: {}", e),
+        }
+    } else {
+        println!("DEBUG: Browser window not found under label '{}'", BROWSER_WEBVIEW_LABEL);
     }
     // Update managed state
     if let Some(state) = app_handle.try_state::<BrowserStateWrapper>() {
