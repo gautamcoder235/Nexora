@@ -1,21 +1,24 @@
+use crate::swarm_db::{self, DbState};
+use crate::swarm_events::transition_execution_state;
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
-use lazy_static::lazy_static;
-use crate::swarm_db::{self, DbState};
-use crate::swarm_events::transition_execution_state;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 static MERGE_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn gen_unique_id(prefix: &str) -> String {
-    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     let counter = MERGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("{}-{}-{}", prefix, ms, counter)
 }
@@ -42,7 +45,7 @@ pub async fn apply_merge_candidate(
     transition_execution_state(&app_handle, &execution_id, "merging", None)?;
 
     let db_state: State<'_, DbState> = app_handle.state();
-    
+
     {
         let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
         swarm_db::insert_execution_event(
@@ -50,21 +53,27 @@ pub async fn apply_merge_candidate(
             &gen_unique_id("evt"),
             &execution_id,
             "merge_started",
-            None
-        ).ok();
+            None,
+        )
+        .ok();
     }
-    
+
     // Fetch info needed for merge
     let (repo_path, patch_file_path, expected_checksum, expected_size, snapshot_head) = {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         // Verify candidate is approved
-        let status: String = conn.query_row(
-            "SELECT status FROM merge_candidates WHERE execution_id = ?1",
-            rusqlite::params![&execution_id],
-            |row| row.get(0)
-        ).map_err(|_| "Merge candidate not found".to_string())?;
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM merge_candidates WHERE execution_id = ?1",
+                rusqlite::params![&execution_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Merge candidate not found".to_string())?;
 
         if status != "approved" && status != "merging" {
             let err = format!("Candidate is in {} state, must be approved", status);
@@ -86,24 +95,30 @@ pub async fn apply_merge_candidate(
         ).map_err(|_| "Patch artifact not found".to_string())?;
 
         // Get Snapshot HEAD
-        let snapshot_head: String = conn.query_row(
-            "SELECT head_commit FROM execution_snapshots WHERE execution_id = ?1",
-            rusqlite::params![&execution_id],
-            |row| row.get(0)
-        ).map_err(|_| "Execution snapshot not found".to_string())?;
+        let snapshot_head: String = conn
+            .query_row(
+                "SELECT head_commit FROM execution_snapshots WHERE execution_id = ?1",
+                rusqlite::params![&execution_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Execution snapshot not found".to_string())?;
 
-        (repo_path, patch_file_path, checksum, size_bytes, snapshot_head)
+        (
+            repo_path,
+            patch_file_path,
+            checksum,
+            size_bytes,
+            snapshot_head,
+        )
     };
 
     // Helper to fail the merge from here
     macro_rules! fail_merge_step {
-        ($err:expr) => {
-            {
-                let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
-                let conn = conn_guard.as_ref().unwrap();
-                return fail_merge(&app_handle, &execution_id, $err, conn);
-            }
-        }
+        ($err:expr) => {{
+            let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
+            let conn = conn_guard.as_ref().unwrap();
+            return fail_merge(&app_handle, &execution_id, $err, conn);
+        }};
     }
 
     let repo_dir = Path::new(&repo_path);
@@ -114,7 +129,7 @@ pub async fn apply_merge_candidate(
         .current_dir(repo_dir)
         .output()
         .map_err(|e| e.to_string())?;
-    
+
     let is_clean = status_output.stdout.is_empty();
     let precheck_report = json!({
         "clean": is_clean,
@@ -122,7 +137,13 @@ pub async fn apply_merge_candidate(
     });
     {
         let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
-        save_merge_artifact(conn_guard.as_ref().unwrap(), repo_dir, &execution_id, "merge_precheck_report", &serde_json::to_string(&precheck_report).unwrap_or_default());
+        save_merge_artifact(
+            conn_guard.as_ref().unwrap(),
+            repo_dir,
+            &execution_id,
+            "merge_precheck_report",
+            &serde_json::to_string(&precheck_report).unwrap_or_default(),
+        );
     }
 
     if !is_clean {
@@ -135,10 +156,15 @@ pub async fn apply_merge_candidate(
         .current_dir(repo_dir)
         .output()
         .map_err(|e| e.to_string())?;
-    
-    let current_head_str = String::from_utf8_lossy(&current_head.stdout).trim().to_string();
+
+    let current_head_str = String::from_utf8_lossy(&current_head.stdout)
+        .trim()
+        .to_string();
     if current_head_str != snapshot_head {
-        fail_merge_step!(&format!("Gate B Failed: HEAD drifted. Snapshot was {}, now {}", snapshot_head, current_head_str));
+        fail_merge_step!(&format!(
+            "Gate B Failed: HEAD drifted. Snapshot was {}, now {}",
+            snapshot_head, current_head_str
+        ));
     }
 
     // Gate B.5: Patch Integrity Check
@@ -185,7 +211,10 @@ pub async fn apply_merge_candidate(
 
     if !dry_run.status.success() {
         let err = String::from_utf8_lossy(&dry_run.stderr);
-        fail_merge_step!(&format!("Gate C Failed: Dry run rejected the patch: {}", err));
+        fail_merge_step!(&format!(
+            "Gate C Failed: Dry run rejected the patch: {}",
+            err
+        ));
     }
 
     // Create Transactional Snapshot before applying patch
@@ -227,7 +256,13 @@ pub async fn apply_merge_candidate(
     });
     {
         let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
-        save_merge_artifact(conn_guard.as_ref().unwrap(), repo_dir, &execution_id, "merge_apply_report", &serde_json::to_string(&apply_report).unwrap_or_default());
+        save_merge_artifact(
+            conn_guard.as_ref().unwrap(),
+            repo_dir,
+            &execution_id,
+            "merge_apply_report",
+            &serde_json::to_string(&apply_report).unwrap_or_default(),
+        );
     }
 
     if !apply_run.status.success() {
@@ -243,10 +278,10 @@ pub async fn apply_merge_candidate(
         .current_dir(repo_dir)
         .output()
         .map_err(|e| e.to_string())?;
-    
+
     let diff_str = String::from_utf8_lossy(&diff_output.stdout);
     let mut actual_files: Vec<String> = diff_str.lines().map(|s| s.to_string()).collect();
-    
+
     expected_files.sort();
     actual_files.sort();
 
@@ -255,7 +290,10 @@ pub async fn apply_merge_candidate(
         rollback_snapshot(repo_dir, &snapshot_dir, &expected_files);
         let _ = fs::remove_dir_all(&snapshot_dir);
 
-        fail_merge_step!(&format!("Gate E Failed: File integrity mismatch. Expected: {:?}, Actual: {:?}", expected_files, actual_files));
+        fail_merge_step!(&format!(
+            "Gate E Failed: File integrity mismatch. Expected: {:?}, Actual: {:?}",
+            expected_files, actual_files
+        ));
     }
 
     // Gate F: Exact-File Commit
@@ -281,7 +319,10 @@ pub async fn apply_merge_candidate(
 
     if !commit_run.status.success() {
         rollback_snapshot(repo_dir, &snapshot_dir, &expected_files);
-        let _ = Command::new("git").arg("reset").current_dir(repo_dir).status();
+        let _ = Command::new("git")
+            .arg("reset")
+            .current_dir(repo_dir)
+            .status();
         let _ = fs::remove_dir_all(&snapshot_dir);
         fail_merge_step!("Gate F Failed: Failed to commit files");
     }
@@ -308,7 +349,13 @@ pub async fn apply_merge_candidate(
             "files_staged": expected_files,
         });
 
-        save_merge_artifact(conn, repo_dir, &execution_id, "merge_commit_report", &serde_json::to_string(&commit_report).unwrap_or_default());
+        save_merge_artifact(
+            conn,
+            repo_dir,
+            &execution_id,
+            "merge_commit_report",
+            &serde_json::to_string(&commit_report).unwrap_or_default(),
+        );
 
         let merge_manifest = json!({
             "execution_id": execution_id,
@@ -319,41 +366,74 @@ pub async fn apply_merge_candidate(
             "commit_hash": current_head_after_commit
         });
 
-        save_merge_artifact(conn, repo_dir, &execution_id, "merge_manifest", &serde_json::to_string(&merge_manifest).unwrap_or_default());
-        
+        save_merge_artifact(
+            conn,
+            repo_dir,
+            &execution_id,
+            "merge_manifest",
+            &serde_json::to_string(&merge_manifest).unwrap_or_default(),
+        );
+
         conn.execute(
             "UPDATE merge_candidates SET status = 'merged' WHERE execution_id = ?1",
-            rusqlite::params![&execution_id]
-        ).ok();
+            rusqlite::params![&execution_id],
+        )
+        .ok();
 
-        swarm_db::insert_execution_event(conn, &gen_unique_id("evt"), &execution_id, "merge_completed", None).ok();
+        swarm_db::insert_execution_event(
+            conn,
+            &gen_unique_id("evt"),
+            &execution_id,
+            "merge_completed",
+            None,
+        )
+        .ok();
     }
 
     transition_execution_state(&app_handle, &execution_id, "completed", Some("merged"))?;
 
-    Ok(MergeResult { success: true, error: None })
+    Ok(MergeResult {
+        success: true,
+        error: None,
+    })
 }
 
-fn fail_merge(app_handle: &AppHandle, execution_id: &str, error_msg: &str, conn: &rusqlite::Connection) -> Result<MergeResult, String> {
+fn fail_merge(
+    app_handle: &AppHandle,
+    execution_id: &str,
+    error_msg: &str,
+    conn: &rusqlite::Connection,
+) -> Result<MergeResult, String> {
     conn.execute(
         "UPDATE merge_candidates SET status = 'merge_failed' WHERE execution_id = ?1",
-        rusqlite::params![execution_id]
-    ).ok();
+        rusqlite::params![execution_id],
+    )
+    .ok();
 
     swarm_db::insert_execution_event(
-        conn, 
-        &gen_unique_id("evt"), 
-        execution_id, 
-        "merge_failed", 
-        Some(error_msg)
-    ).ok();
+        conn,
+        &gen_unique_id("evt"),
+        execution_id,
+        "merge_failed",
+        Some(error_msg),
+    )
+    .ok();
 
     let _ = transition_execution_state(app_handle, execution_id, "completed", Some("merge_failed"));
 
-    Ok(MergeResult { success: false, error: Some(error_msg.to_string()) })
+    Ok(MergeResult {
+        success: false,
+        error: Some(error_msg.to_string()),
+    })
 }
 
-fn save_merge_artifact(conn: &rusqlite::Connection, repo_dir: &Path, execution_id: &str, artifact_type: &str, content: &str) {
+fn save_merge_artifact(
+    conn: &rusqlite::Connection,
+    repo_dir: &Path,
+    execution_id: &str,
+    artifact_type: &str,
+    content: &str,
+) {
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
     let checksum = format!("{:x}", hasher.finish());
@@ -363,10 +443,10 @@ fn save_merge_artifact(conn: &rusqlite::Connection, repo_dir: &Path, execution_i
     if !multivibe_dir.exists() {
         let _ = fs::create_dir_all(&multivibe_dir);
     }
-    
+
     let file_name = format!("{}_{}.json", artifact_type, execution_id);
     let file_path = multivibe_dir.join(&file_name);
-    
+
     if fs::write(&file_path, content).is_ok() {
         conn.execute(
             "INSERT INTO artifacts (id, execution_id, artifact_type, file_path, size_bytes, checksum) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -377,7 +457,10 @@ fn save_merge_artifact(conn: &rusqlite::Connection, repo_dir: &Path, execution_i
 
 fn rollback_snapshot(repo_dir: &Path, snapshot_dir: &Path, expected_files: &[String]) {
     // 1. Unstage any changes in git to avoid index mismatch
-    let _ = Command::new("git").arg("reset").current_dir(repo_dir).status();
+    let _ = Command::new("git")
+        .arg("reset")
+        .current_dir(repo_dir)
+        .status();
 
     // 2. Restore file contents
     for file_path in expected_files {

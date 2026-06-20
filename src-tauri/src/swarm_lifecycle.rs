@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State, Emitter};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::swarm_db::{self, DbState};
 use crate::swarm_worktrees::{self};
@@ -19,7 +19,10 @@ pub struct LifecycleStartResult {
 }
 
 fn generate_id(prefix: &str) -> String {
-    let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     let counter = LIFECYCLE_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("{}-{}-{}", prefix, millis, counter)
 }
@@ -35,7 +38,10 @@ pub fn start_task_execution(
     allowed_patterns: Vec<String>,
 ) -> Result<LifecycleStartResult, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     // Generate UUIDs
@@ -47,9 +53,16 @@ pub fn start_task_execution(
     // 1. Persist Repository & Task
     swarm_db::insert_repository_if_missing(conn, &repo_id, &repo_name, &repo_path)
         .map_err(|e| format!("DB Repo Error: {}", e))?;
-        
-    swarm_db::insert_task(conn, &task_id, &repo_id, &task_title, &task_description, "running")
-        .map_err(|e| format!("DB Task Error: {}", e))?;
+
+    swarm_db::insert_task(
+        conn,
+        &task_id,
+        &repo_id,
+        &task_title,
+        &task_description,
+        "running",
+    )
+    .map_err(|e| format!("DB Task Error: {}", e))?;
 
     // 2. Persist Execution (State: created)
     swarm_db::insert_execution(conn, &exec_id, &task_id, &agent_id, &worktree_id, "created")
@@ -67,16 +80,21 @@ pub fn start_task_execution(
 
     // 3. Create Git Worktree & Contract
     let wt_result = match swarm_worktrees::create_worktree(
-        repo_path.clone(), 
-        task_id.clone(), 
+        repo_path.clone(),
+        task_id.clone(),
         exec_id.clone(),
         task_title.clone(),
         task_description.clone(),
-        allowed_patterns.clone()
+        allowed_patterns.clone(),
     ) {
         Ok(res) => res,
         Err(e) => {
-            let _ = crate::swarm_events::transition_execution_state(&app_handle, &exec_id, "failed", Some(&format!("Worktree error: {}", e)));
+            let _ = crate::swarm_events::transition_execution_state(
+                &app_handle,
+                &exec_id,
+                "failed",
+                Some(&format!("Worktree error: {}", e)),
+            );
             return Ok(LifecycleStartResult {
                 success: false,
                 task_id,
@@ -90,7 +108,12 @@ pub fn start_task_execution(
 
     if !wt_result.success {
         // Rollback status if creation fails
-        let _ = crate::swarm_events::transition_execution_state(&app_handle, &exec_id, "failed", wt_result.error.as_deref());
+        let _ = crate::swarm_events::transition_execution_state(
+            &app_handle,
+            &exec_id,
+            "failed",
+            wt_result.error.as_deref(),
+        );
         return Ok(LifecycleStartResult {
             success: false,
             task_id,
@@ -101,24 +124,38 @@ pub fn start_task_execution(
         });
     }
 
-    crate::swarm_events::transition_execution_state(&app_handle, &exec_id, "worktree_created", None)?;
-    crate::swarm_events::transition_execution_state(&app_handle, &exec_id, "context_injected", None)?;
+    crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &exec_id,
+        "worktree_created",
+        None,
+    )?;
+    crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &exec_id,
+        "context_injected",
+        None,
+    )?;
 
     // Re-acquire lock for remaining inserts
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     // 4. Persist Worktree state
     swarm_db::insert_worktree(
-        conn, 
-        &worktree_id, 
-        &task_id, 
-        &exec_id, 
-        &repo_id, 
-        &wt_result.path, 
-        &wt_result.branch_name, 
-        "active"
-    ).map_err(|e| format!("DB Worktree Error: {}", e))?;
+        conn,
+        &worktree_id,
+        &task_id,
+        &exec_id,
+        &repo_id,
+        &wt_result.path,
+        &wt_result.branch_name,
+        "active",
+    )
+    .map_err(|e| format!("DB Worktree Error: {}", e))?;
 
     // 5. Persist Ownership Rules
     for pattern in &allowed_patterns {
@@ -145,10 +182,13 @@ pub fn finish_task_execution(
     repo_path: String,
     worktree_path: String,
     branch_name: String,
-    success: bool
+    success: bool,
 ) -> Result<bool, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let _conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let final_status = if success { "completed" } else { "failed" };
@@ -157,12 +197,15 @@ pub fn finish_task_execution(
     drop(conn_guard);
     crate::swarm_events::transition_execution_state(&app_handle, &execution_id, final_status, None)
         .map_err(|e| format!("State Error: {}", e))?;
-        
+
     // 2. Remove Git Worktree
     swarm_worktrees::remove_worktree(repo_path, worktree_path, branch_name)?;
 
     // 3. Mark Worktree deleted in DB
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
     swarm_db::mark_worktree_deleted(conn, &worktree_id)
         .map_err(|e| format!("DB Worktree Error: {}", e))?;
@@ -183,12 +226,19 @@ pub struct RecoveryReport {
 }
 
 #[tauri::command]
-pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Result<RecoveryReport, String> {
+pub fn recover_swarm_state(
+    app_handle: AppHandle,
+    project_root: String,
+) -> Result<RecoveryReport, String> {
     let active_execs = {
         let db_state: State<DbState> = app_handle.state();
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
-        swarm_db::get_active_executions(conn).map_err(|e| format!("Failed to query active executions: {}", e))?
+        swarm_db::get_active_executions(conn)
+            .map_err(|e| format!("Failed to query active executions: {}", e))?
     };
 
     let mut valid_execs = Vec::new();
@@ -201,8 +251,13 @@ pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Resul
         if worktree_dir.exists() && contract_dir.exists() {
             valid_execs.push(exec);
         } else {
-            let _ = crate::swarm_events::transition_execution_state(&app_handle, &exec.execution_id, "failed", Some("Worktree missing on recovery"));
-            
+            let _ = crate::swarm_events::transition_execution_state(
+                &app_handle,
+                &exec.execution_id,
+                "failed",
+                Some("Worktree missing on recovery"),
+            );
+
             let db_state: State<DbState> = app_handle.state();
             if let Ok(conn_guard) = db_state.0.lock() {
                 if let Some(conn) = conn_guard.as_ref() {
@@ -242,8 +297,13 @@ pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Resul
         let conn = conn_guard.as_mut().unwrap();
 
         let merging_candidates: Vec<String> = {
-            let mut stmt = conn.prepare("SELECT execution_id FROM merge_candidates WHERE status = 'merging'").unwrap();
-            stmt.query_map([], |row| row.get(0)).unwrap().filter_map(|r| r.ok()).collect()
+            let mut stmt = conn
+                .prepare("SELECT execution_id FROM merge_candidates WHERE status = 'merging'")
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
         };
 
         for exec_id in merging_candidates {
@@ -261,7 +321,7 @@ pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Resul
                     .current_dir(&repo_path)
                     .output()
                     .ok();
-                
+
                 let commit_exists = if let Some(out) = log_output {
                     let log_str = String::from_utf8_lossy(&out.stdout);
                     log_str.contains(&format!("Swarm: Merged Execution {}", exec_id))
@@ -270,15 +330,35 @@ pub fn recover_swarm_state(app_handle: AppHandle, project_root: String) -> Resul
                 };
 
                 if commit_exists {
-                    conn.execute("UPDATE merge_candidates SET status = 'merged' WHERE execution_id = ?1", rusqlite::params![&exec_id]).ok();
-                    let _ = crate::swarm_events::transition_execution_state(&app_handle, &exec_id, "completed", Some("merged"));
+                    conn.execute(
+                        "UPDATE merge_candidates SET status = 'merged' WHERE execution_id = ?1",
+                        rusqlite::params![&exec_id],
+                    )
+                    .ok();
+                    let _ = crate::swarm_events::transition_execution_state(
+                        &app_handle,
+                        &exec_id,
+                        "completed",
+                        Some("merged"),
+                    );
                 } else {
                     // Reset half-applied patches
-                    let _ = std::process::Command::new("git").args(["reset", "--hard"]).current_dir(&repo_path).status();
-                    let _ = std::process::Command::new("git").args(["clean", "-fd"]).current_dir(&repo_path).status();
-                    
+                    let _ = std::process::Command::new("git")
+                        .args(["reset", "--hard"])
+                        .current_dir(&repo_path)
+                        .status();
+                    let _ = std::process::Command::new("git")
+                        .args(["clean", "-fd"])
+                        .current_dir(&repo_path)
+                        .status();
+
                     conn.execute("UPDATE merge_candidates SET status = 'merge_failed' WHERE execution_id = ?1", rusqlite::params![&exec_id]).ok();
-                    let _ = crate::swarm_events::transition_execution_state(&app_handle, &exec_id, "completed", Some("merge_failed"));
+                    let _ = crate::swarm_events::transition_execution_state(
+                        &app_handle,
+                        &exec_id,
+                        "completed",
+                        Some("merge_failed"),
+                    );
                 }
                 recovered_merges += 1;
             }
@@ -301,7 +381,10 @@ pub fn spawn_agent_session(
     execution_id: String,
 ) -> Result<(), String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     // 1. Fetch Execution details (Worktree path and Agent ID)
@@ -311,32 +394,51 @@ pub fn spawn_agent_session(
         JOIN worktrees w ON e.worktree_id = w.id 
         WHERE e.id = ?1 AND e.status = 'running'
     ";
-    let (agent_id, cwd): (String, String) = conn.query_row(exec_query, [&execution_id], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    }).map_err(|e| format!("Execution not found: {}", e))?;
+    let (agent_id, cwd): (String, String) = conn
+        .query_row(exec_query, [&execution_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .map_err(|e| format!("Execution not found: {}", e))?;
 
     // 2. Fetch Agent Command
-    let agent_cmd: String = conn.query_row(
-        "SELECT command FROM agents WHERE id = ?1", 
-        [&agent_id], 
-        |row| row.get(0)
-    ).map_err(|e| format!("Agent not found: {}", e))?;
+    let agent_cmd: String = conn
+        .query_row(
+            "SELECT command FROM agents WHERE id = ?1",
+            [&agent_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Agent not found: {}", e))?;
 
     // 3. Agent Pre-Flight Validation
     let pre_flight = std::process::Command::new(&agent_cmd)
         .arg("--version")
         .output();
-    
+
     if pre_flight.is_err() {
         drop(conn_guard);
-        let _ = crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "failed", Some("Agent pre-flight failed"));
-        return Err(format!("Pre-flight validation failed: Agent '{}' is not installed or accessible.", agent_cmd));
+        let _ = crate::swarm_events::transition_execution_state(
+            &app_handle,
+            &execution_id,
+            "failed",
+            Some("Agent pre-flight failed"),
+        );
+        return Err(format!(
+            "Pre-flight validation failed: Agent '{}' is not installed or accessible.",
+            agent_cmd
+        ));
     }
 
     // Insert Agent Process into DB (Status: starting)
     let process_id_db = generate_id("proc");
-    swarm_db::insert_agent_process(conn, &process_id_db, &execution_id, None, &agent_cmd, "starting")
-        .map_err(|e| format!("DB Proc Error: {}", e))?;
+    swarm_db::insert_agent_process(
+        conn,
+        &process_id_db,
+        &execution_id,
+        None,
+        &agent_cmd,
+        "starting",
+    )
+    .map_err(|e| format!("DB Proc Error: {}", e))?;
 
     // Drop DB lock before spawning PTY to prevent blocking
     drop(conn_guard);
@@ -354,7 +456,10 @@ pub fn spawn_agent_session(
     )?;
 
     // 5. Re-acquire DB to update PID and State
-    let conn_guard_post = db_state.0.lock().map_err(|_| "Failed to lock DB post-spawn".to_string())?;
+    let conn_guard_post = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB post-spawn".to_string())?;
     if let Some(conn_post) = conn_guard_post.as_ref() {
         if let Some(pid) = pid_opt {
             let _ = conn_post.execute(
@@ -362,13 +467,19 @@ pub fn spawn_agent_session(
                 rusqlite::params![pid, process_id_db],
             );
         } else {
-            let _ = swarm_db::update_agent_process_status(conn_post, &process_id_db, "running", None);
+            let _ =
+                swarm_db::update_agent_process_status(conn_post, &process_id_db, "running", None);
         }
     }
-    
+
     // Drop lock before emitting running event
     drop(conn_guard_post);
-    let _ = crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "running", None);
+    let _ = crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &execution_id,
+        "running",
+        None,
+    );
 
     Ok(())
 }
@@ -377,45 +488,66 @@ pub fn start_agent_watchdog(app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-            
+
             {
                 if let Ok(conn_guard) = app_handle.state::<DbState>().0.lock() {
                     if let Some(conn) = conn_guard.as_ref() {
                         // Find running processes older than max_runtime_seconds (e.g. 1 hour = 3600 secs)
                         let timeout_secs = 3600;
-                        
+
                         let stalled_agents: Vec<(String, String, Option<u32>)> = {
-                            let mut stmt = conn.prepare("
+                            let mut stmt = conn
+                                .prepare(
+                                    "
                                 SELECT id, execution_id, pid FROM agent_processes 
                                 WHERE status = 'running' 
                                 AND strftime('%s', 'now') - strftime('%s', started_at) > ?1
-                            ").unwrap();
-                            
+                            ",
+                                )
+                                .unwrap();
+
                             stmt.query_map([timeout_secs], |row| {
                                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                            }).unwrap().filter_map(|r| r.ok()).collect()
+                            })
+                            .unwrap()
+                            .filter_map(|r| r.ok())
+                            .collect()
                         };
-                        
+
                         drop(conn_guard);
 
                         for (proc_id, exec_id, pid_opt) in stalled_agents {
                             // Kill the stalled process
                             if let Some(pid) = pid_opt {
                                 #[cfg(unix)]
-                                unsafe { libc::kill(pid as i32, libc::SIGKILL); }
-                                
+                                unsafe {
+                                    libc::kill(pid as i32, libc::SIGKILL);
+                                }
+
                                 #[cfg(windows)]
-                                let _ = std::process::Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).output();
+                                let _ = std::process::Command::new("taskkill")
+                                    .args(["/T", "/F", "/PID", &pid.to_string()])
+                                    .output();
                             }
-                            
+
                             // Re-acquire lock to update process status
                             if let Ok(cg) = app_handle.state::<DbState>().0.lock() {
                                 if let Some(c) = cg.as_ref() {
-                                    let _ = swarm_db::update_agent_process_status(c, &proc_id, "terminated", Some(-1));
+                                    let _ = swarm_db::update_agent_process_status(
+                                        c,
+                                        &proc_id,
+                                        "terminated",
+                                        Some(-1),
+                                    );
                                 }
                             }
-                            
-                            let _ = crate::swarm_events::transition_execution_state(&app_handle, &exec_id, "terminated", Some("Watchdog timeout limit exceeded"));
+
+                            let _ = crate::swarm_events::transition_execution_state(
+                                &app_handle,
+                                &exec_id,
+                                "terminated",
+                                Some("Watchdog timeout limit exceeded"),
+                            );
                         }
                     }
                 }
@@ -431,9 +563,12 @@ pub async fn debug_simulate_agent_completion(
 ) -> Result<bool, String> {
     let (repo_path, worktree_path_opt, allowed_patterns) = {
         let db_state: tauri::State<'_, DbState> = app_handle.state();
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
-        
+
         let exec_query = "
             SELECT r.root_path, e.worktree_id
             FROM executions e
@@ -441,19 +576,28 @@ pub async fn debug_simulate_agent_completion(
             JOIN repositories r ON t.repository_id = r.id
             WHERE e.id = ?1
         ";
-        let (r_path, wt_id_opt): (String, Option<String>) = conn.query_row(exec_query, [&execution_id], |row| {
-            Ok((row.get(0)?, row.get::<_, Option<String>>(1)?))
-        }).map_err(|e| format!("Exec missing: {}", e))?;
+        let (r_path, wt_id_opt): (String, Option<String>) = conn
+            .query_row(exec_query, [&execution_id], |row| {
+                Ok((row.get(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|e| format!("Exec missing: {}", e))?;
 
         let w_path = if let Some(wt_id) = wt_id_opt {
-            let path: Option<String> = conn.query_row("SELECT path FROM worktrees WHERE id = ?1", [&wt_id], |row| row.get(0)).ok();
+            let path: Option<String> = conn
+                .query_row(
+                    "SELECT path FROM worktrees WHERE id = ?1",
+                    [&wt_id],
+                    |row| row.get(0),
+                )
+                .ok();
             path
         } else {
             None
         };
 
         let mut stmt = conn.prepare("SELECT pattern FROM ownership_rules WHERE task_id = (SELECT task_id FROM executions WHERE id = ?1)").map_err(|e| format!("DB Prepare Error: {}", e))?;
-        let patterns: Vec<String> = stmt.query_map([&execution_id], |row| row.get(0))
+        let patterns: Vec<String> = stmt
+            .query_map([&execution_id], |row| row.get(0))
             .map_err(|e| format!("DB Query Error: {}", e))?
             .filter_map(|r| r.ok())
             .collect();
@@ -461,18 +605,32 @@ pub async fn debug_simulate_agent_completion(
         (r_path, w_path, patterns)
     };
 
-    let worktree_path = match worktree_path_opt {
-        Some(p) => p,
-        None => return Err("The Git worktree was never created for this execution. Please create a new task!".to_string()),
-    };
+    let worktree_path =
+        match worktree_path_opt {
+            Some(p) => p,
+            None => return Err(
+                "The Git worktree was never created for this execution. Please create a new task!"
+                    .to_string(),
+            ),
+        };
 
     // Simulate agent creating a file
     let dummy_file = std::path::Path::new(&worktree_path).join("swarm_test.js");
     std::fs::write(&dummy_file, "console.log('Swarm generated patch');").ok();
 
     // Satisfy the strict DB state machine constraints
-    let _ = crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "running", None);
-    let _ = crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "validating", None);
+    let _ = crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &execution_id,
+        "running",
+        None,
+    );
+    let _ = crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &execution_id,
+        "validating",
+        None,
+    );
     crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "completed", None)?;
 
     // Start validation in background
@@ -482,11 +640,11 @@ pub async fn debug_simulate_agent_completion(
         repo_path,
         worktree_path,
         allowed_patterns,
-    ).await;
+    )
+    .await;
 
     Ok(true)
 }
-
 
 #[tauri::command]
 pub async fn pause_execution(
@@ -495,7 +653,10 @@ pub async fn pause_execution(
 ) -> Result<(), String> {
     let db_state: tauri::State<'_, DbState> = app_handle.state();
     let (proc_id_opt, pid_opt): (Option<String>, Option<u32>) = {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         conn.query_row(
@@ -506,7 +667,10 @@ pub async fn pause_execution(
     };
 
     if let Some(proc_id) = proc_id_opt {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
         swarm_db::update_agent_process_status(conn, &proc_id, "paused", None)
             .map_err(|e| format!("Failed to update agent process status: {}", e))?;
@@ -522,7 +686,11 @@ pub async fn pause_execution(
         {
             #[link(name = "kernel32")]
             extern "system" {
-                fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+                fn OpenProcess(
+                    dwDesiredAccess: u32,
+                    bInheritHandle: i32,
+                    dwProcessId: u32,
+                ) -> *mut std::ffi::c_void;
                 fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
             }
             #[link(name = "ntdll")]
@@ -539,7 +707,12 @@ pub async fn pause_execution(
         }
     }
 
-    crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "paused", Some("Execution paused by user"))?;
+    crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &execution_id,
+        "paused",
+        Some("Execution paused by user"),
+    )?;
     Ok(())
 }
 
@@ -550,7 +723,10 @@ pub async fn resume_execution(
 ) -> Result<(), String> {
     let db_state: tauri::State<'_, DbState> = app_handle.state();
     let (proc_id_opt, pid_opt): (Option<String>, Option<u32>) = {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         conn.query_row(
@@ -561,7 +737,10 @@ pub async fn resume_execution(
     };
 
     if let Some(proc_id) = proc_id_opt {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
         swarm_db::update_agent_process_status(conn, &proc_id, "running", None)
             .map_err(|e| format!("Failed to update agent process status: {}", e))?;
@@ -577,7 +756,11 @@ pub async fn resume_execution(
         {
             #[link(name = "kernel32")]
             extern "system" {
-                fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+                fn OpenProcess(
+                    dwDesiredAccess: u32,
+                    bInheritHandle: i32,
+                    dwProcessId: u32,
+                ) -> *mut std::ffi::c_void;
                 fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
             }
             #[link(name = "ntdll")]
@@ -594,7 +777,12 @@ pub async fn resume_execution(
         }
     }
 
-    crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "running", Some("Execution resumed by user"))?;
+    crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &execution_id,
+        "running",
+        Some("Execution resumed by user"),
+    )?;
     Ok(())
 }
 
@@ -608,12 +796,12 @@ pub fn start_lock_watchdog(app_handle: AppHandle) {
                     Some(state) => state,
                     None => continue,
                 };
-                
+
                 let conn_guard = match db_state.0.lock() {
                     Ok(guard) => guard,
                     Err(_) => continue,
                 };
-                
+
                 let conn = match conn_guard.as_ref() {
                     Some(c) => c,
                     None => continue,
@@ -630,7 +818,11 @@ pub fn start_lock_watchdog(app_handle: AppHandle) {
                 };
 
                 let rows = match stmt.query_map([now], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
                 }) {
                     Ok(r) => r,
                     Err(_) => continue,

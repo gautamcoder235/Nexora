@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use nexora_lib::swarm_db;
+use rusqlite::Connection;
 
 #[test]
 fn test_database_initialization() {
@@ -10,8 +10,11 @@ fn test_database_initialization() {
     swarm_db::run_migrations(&conn).expect("Failed to run migrations");
 
     // 3. Queries `sqlite_master` to list all created tables.
-    let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table'").unwrap();
-    let table_names: Vec<String> = stmt.query_map([], |row| row.get(0))
+    let mut stmt = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .unwrap();
+    let table_names: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
         .unwrap()
         .map(|r| r.unwrap())
         .collect();
@@ -29,7 +32,11 @@ fn test_database_initialization() {
     ];
 
     for expected in &expected_tables {
-        assert!(table_names.contains(&expected.to_string()), "Table '{}' is missing!", expected);
+        assert!(
+            table_names.contains(&expected.to_string()),
+            "Table '{}' is missing!",
+            expected
+        );
     }
 
     println!("All {} tables created successfully!", expected_tables.len());

@@ -1,12 +1,12 @@
-use serde::{Deserialize, Serialize};
-use std::process::Command;
-use std::path::Path;
 use globset::{Glob, GlobSetBuilder};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::process::Command;
 
+use crate::swarm_db::DbState;
+use rusqlite::OptionalExtension;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
-use rusqlite::OptionalExtension;
-use crate::swarm_db::DbState;
 
 #[derive(Serialize, Deserialize)]
 pub struct OwnershipValidationResult {
@@ -16,7 +16,10 @@ pub struct OwnershipValidationResult {
 }
 
 #[tauri::command]
-pub fn validate_ownership(worktree_path: String, allowed_patterns: Vec<String>) -> Result<OwnershipValidationResult, String> {
+pub fn validate_ownership(
+    worktree_path: String,
+    allowed_patterns: Vec<String>,
+) -> Result<OwnershipValidationResult, String> {
     let root = Path::new(&worktree_path);
 
     if !root.exists() {
@@ -33,7 +36,10 @@ pub fn validate_ownership(worktree_path: String, allowed_patterns: Vec<String>) 
         .map_err(|e| format!("Failed to run git status: {}", e))?;
 
     if !output.status.success() {
-        return Err(format!("git status failed: {}", String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "git status failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
 
     let status_output = String::from_utf8_lossy(&output.stdout);
@@ -60,15 +66,18 @@ pub fn validate_ownership(worktree_path: String, allowed_patterns: Vec<String>) 
     // 2. Compile glob patterns
     let mut builder = GlobSetBuilder::new();
     for pattern in allowed_patterns {
-        let glob = Glob::new(&pattern).map_err(|e| format!("Invalid glob pattern '{}': {}", pattern, e))?;
+        let glob = Glob::new(&pattern)
+            .map_err(|e| format!("Invalid glob pattern '{}': {}", pattern, e))?;
         builder.add(glob);
     }
-    
-    let globset = builder.build().map_err(|e| format!("Failed to compile globset: {}", e))?;
+
+    let globset = builder
+        .build()
+        .map_err(|e| format!("Failed to compile globset: {}", e))?;
 
     // 3. Match modified files against patterns
     let mut violated_files = Vec::new();
-    
+
     for file in &modified_files {
         // If the globset is empty, ANY modification is a violation.
         // If it's not empty, check if it matches.
@@ -100,7 +109,10 @@ pub fn acquire_lock(
     ttl_seconds: Option<i64>,
 ) -> Result<bool, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let now = SystemTime::now()
@@ -112,12 +124,14 @@ pub fn acquire_lock(
     let expires_at = now + ttl;
 
     // Check if lock exists and who owns it
-    let mut stmt = conn.prepare("SELECT agent_id, expires_at FROM resource_locks WHERE file_path = ?1")
+    let mut stmt = conn
+        .prepare("SELECT agent_id, expires_at FROM resource_locks WHERE file_path = ?1")
         .map_err(|e| e.to_string())?;
-    
-    let existing: Option<(String, i64)> = stmt.query_row([&file_path], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    }).optional().map_err(|e| e.to_string())?;
+
+    let existing: Option<(String, i64)> = stmt
+        .query_row([&file_path], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()
+        .map_err(|e| e.to_string())?;
 
     if let Some((existing_agent_id, existing_expires_at)) = existing {
         // Check if expired, or if it is owned by the same agent
@@ -149,13 +163,18 @@ pub fn release_lock(
     file_path: String,
 ) -> Result<bool, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-    let deleted = conn.execute(
-        "DELETE FROM resource_locks WHERE file_path = ?1 AND agent_id = ?2",
-        rusqlite::params![file_path, agent_id],
-    ).map_err(|e| e.to_string())?;
+    let deleted = conn
+        .execute(
+            "DELETE FROM resource_locks WHERE file_path = ?1 AND agent_id = ?2",
+            rusqlite::params![file_path, agent_id],
+        )
+        .map_err(|e| e.to_string())?;
 
     Ok(deleted > 0)
 }
@@ -167,7 +186,10 @@ pub fn heartbeat_lock(
     file_path: String,
 ) -> Result<bool, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let now = SystemTime::now()
@@ -189,20 +211,26 @@ pub fn heartbeat_lock(
 #[tauri::command]
 pub fn get_resource_locks(app_handle: AppHandle) -> Result<Vec<ResourceLockInfo>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-    let mut stmt = conn.prepare("SELECT file_path, agent_id, expires_at, heartbeat_at FROM resource_locks")
+    let mut stmt = conn
+        .prepare("SELECT file_path, agent_id, expires_at, heartbeat_at FROM resource_locks")
         .map_err(|e| e.to_string())?;
-    
-    let rows = stmt.query_map([], |row| {
-        Ok(ResourceLockInfo {
-            file_path: row.get(0)?,
-            agent_id: row.get(1)?,
-            expires_at: row.get(2)?,
-            heartbeat_at: row.get(3)?,
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ResourceLockInfo {
+                file_path: row.get(0)?,
+                agent_id: row.get(1)?,
+                expires_at: row.get(2)?,
+                heartbeat_at: row.get(3)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut result = Vec::new();
     for row in rows {
@@ -210,4 +238,3 @@ pub fn get_resource_locks(app_handle: AppHandle) -> Result<Vec<ResourceLockInfo>
     }
     Ok(result)
 }
-

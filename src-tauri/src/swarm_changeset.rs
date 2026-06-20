@@ -1,9 +1,9 @@
+use crate::swarm_db::{self, DbState};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
-use tauri::{AppHandle, Manager, State};
-use crate::swarm_db::{self, DbState};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tauri::{AppHandle, Manager, State};
 
 static CHANGESET_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -27,7 +27,10 @@ pub async fn create_changeset_draft(
     affected_symbols: Option<String>,
 ) -> Result<String, String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let id = generate_id("cset");
@@ -58,7 +61,10 @@ pub async fn add_file_to_changeset(
     change_source: String,
 ) -> Result<(), String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let file_change_id = generate_id("cfile");
@@ -89,7 +95,10 @@ pub async fn add_review_comment(
     severity: String,
 ) -> Result<(), String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let comment_id = generate_id("ccmt");
@@ -116,7 +125,10 @@ pub async fn update_file_status(
     status: String,
 ) -> Result<(), String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     swarm_db::update_changeset_file_status(conn, &changeset_id, &path, &status)
@@ -131,7 +143,10 @@ pub async fn get_changeset_details(
     changeset_id: String,
 ) -> Result<serde_json::Value, String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     // Get changeset metadata
@@ -183,13 +198,18 @@ pub async fn get_changeset_details(
 }
 
 #[tauri::command]
-pub async fn get_all_changesets(app_handle: AppHandle) -> Result<Vec<swarm_db::DbChangeset>, String> {
+pub async fn get_all_changesets(
+    app_handle: AppHandle,
+) -> Result<Vec<swarm_db::DbChangeset>, String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-    let results = swarm_db::get_changesets(conn)
-        .map_err(|e| format!("Failed to get changesets: {}", e))?;
+    let results =
+        swarm_db::get_changesets(conn).map_err(|e| format!("Failed to get changesets: {}", e))?;
 
     Ok(results)
 }
@@ -201,10 +221,13 @@ pub async fn apply_changeset_transaction(
     repo_path: String,
 ) -> Result<bool, String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    
+
     // 1. Fetch files associated with this changeset
     let files = {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
         swarm_db::get_changeset_files(conn, &changeset_id)
             .map_err(|e| format!("Failed to get changeset files: {}", e))?
@@ -217,7 +240,10 @@ pub async fn apply_changeset_transaction(
 
     // 2. Capture snapshot backup of current files
     {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         for file in &files {
@@ -235,8 +261,14 @@ pub async fn apply_changeset_transaction(
             };
 
             let snapshot_id = generate_id("snap");
-            swarm_db::insert_changeset_snapshot(conn, &snapshot_id, &changeset_id, &file.path, &backup_content)
-                .map_err(|e| format!("Failed to insert changeset snapshot: {}", e))?;
+            swarm_db::insert_changeset_snapshot(
+                conn,
+                &snapshot_id,
+                &changeset_id,
+                &file.path,
+                &backup_content,
+            )
+            .map_err(|e| format!("Failed to insert changeset snapshot: {}", e))?;
         }
     }
 
@@ -248,7 +280,7 @@ pub async fn apply_changeset_transaction(
         }
 
         let file_full_path = base_dir.join(&file.path);
-        
+
         // Ensure parent directory exists
         if let Some(parent) = file_full_path.parent() {
             fs::create_dir_all(parent)
@@ -261,7 +293,10 @@ pub async fn apply_changeset_transaction(
 
     // 4. Update status in database
     {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
         swarm_db::update_changeset_status(conn, &changeset_id, "applied")
             .map_err(|e| format!("Failed to update changeset status: {}", e))?;
@@ -277,10 +312,13 @@ pub async fn rollback_changeset(
     repo_path: String,
 ) -> Result<bool, String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    
+
     // 1. Fetch snapshots associated with this changeset
     let snapshots = {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
         swarm_db::get_changeset_snapshots(conn, &changeset_id)
             .map_err(|e| format!("Failed to get snapshots: {}", e))?
@@ -311,7 +349,10 @@ pub async fn rollback_changeset(
 
     // 3. Update status in database
     {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
         swarm_db::update_changeset_status(conn, &changeset_id, "rolled_back")
             .map_err(|e| format!("Failed to update changeset status: {}", e))?;
@@ -322,7 +363,12 @@ pub async fn rollback_changeset(
 
 fn copy_dir_filtered(src: &Path, dst: &Path) -> std::io::Result<()> {
     let name = src.file_name().unwrap_or_default().to_string_lossy();
-    if name == "node_modules" || name == ".git" || name == "dist" || name == "target" || name == "build" {
+    if name == "node_modules"
+        || name == ".git"
+        || name == "dist"
+        || name == "target"
+        || name == "build"
+    {
         return Ok(());
     }
     if src.is_dir() {
@@ -347,7 +393,10 @@ fn insert_tester_comment(
     severity: &str,
 ) -> Result<(), String> {
     let db_state: State<'_, DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let comment_id = generate_id("ccmt");
@@ -380,9 +429,12 @@ pub async fn validate_changeset_shadow(
 
     // 1. Fetch changeset details and files and clear previous Tester Agent comments
     let files = {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
-        
+
         conn.execute(
             "DELETE FROM review_comments WHERE changeset_id = ?1 AND agent_name = 'Tester Agent'",
             [&changeset_id],
@@ -431,7 +483,10 @@ pub async fn validate_changeset_shadow(
 
     // Check DB profile if repository id can be retrieved
     {
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         if let Ok(repo_id) = conn.query_row::<String, _, _>(
@@ -514,7 +569,7 @@ pub async fn validate_changeset_shadow(
         let is_windows = cfg!(target_os = "windows");
         let shell = if is_windows { "powershell" } else { "sh" };
         let arg_prefix = if is_windows { "-Command" } else { "-c" };
-        
+
         let output = std::process::Command::new(shell)
             .args([arg_prefix, cmd_str])
             .current_dir(shadow_dir_path)
@@ -526,7 +581,7 @@ pub async fn validate_changeset_shadow(
         let success = output.status.success();
         let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
-        
+
         let combined = format!("{}{}", stdout_str, stderr_str);
         Ok((success, combined))
     };
@@ -535,9 +590,16 @@ pub async fn validate_changeset_shadow(
         match exec_cmd(cmd, &shadow_dir) {
             Ok((success, output)) => {
                 typecheck_passed = success;
-                validation_logs.push(json!({ "step": "Typecheck", "success": success, "output": output }));
+                validation_logs
+                    .push(json!({ "step": "Typecheck", "success": success, "output": output }));
                 if !success {
-                    insert_tester_comment(&app_handle, &changeset_id, "Typecheck", &output, "ERROR")?;
+                    insert_tester_comment(
+                        &app_handle,
+                        &changeset_id,
+                        "Typecheck",
+                        &output,
+                        "ERROR",
+                    )?;
                 }
             }
             Err(e) => {
@@ -552,9 +614,16 @@ pub async fn validate_changeset_shadow(
             Ok((success, output)) => {
                 let lint_actual_passed = success;
                 lint_passed = lint_actual_passed;
-                validation_logs.push(json!({ "step": "Linter", "success": success, "output": output }));
+                validation_logs
+                    .push(json!({ "step": "Linter", "success": success, "output": output }));
                 if !success {
-                    insert_tester_comment(&app_handle, &changeset_id, "Linter", &output, "WARNING")?;
+                    insert_tester_comment(
+                        &app_handle,
+                        &changeset_id,
+                        "Linter",
+                        &output,
+                        "WARNING",
+                    )?;
                 }
             }
             Err(e) => {
@@ -568,14 +637,22 @@ pub async fn validate_changeset_shadow(
         match exec_cmd(cmd, &shadow_dir) {
             Ok((success, output)) => {
                 test_passed = success;
-                validation_logs.push(json!({ "step": "Unit Tests", "success": success, "output": output }));
+                validation_logs
+                    .push(json!({ "step": "Unit Tests", "success": success, "output": output }));
                 if !success {
-                    insert_tester_comment(&app_handle, &changeset_id, "Unit Tests", &output, "BLOCKER")?;
+                    insert_tester_comment(
+                        &app_handle,
+                        &changeset_id,
+                        "Unit Tests",
+                        &output,
+                        "BLOCKER",
+                    )?;
                 }
             }
             Err(e) => {
                 test_passed = false;
-                validation_logs.push(json!({ "step": "Unit Tests", "success": false, "output": e }));
+                validation_logs
+                    .push(json!({ "step": "Unit Tests", "success": false, "output": e }));
             }
         }
     }
@@ -584,14 +661,23 @@ pub async fn validate_changeset_shadow(
         match exec_cmd(cmd, &shadow_dir) {
             Ok((success, output)) => {
                 build_passed = success;
-                validation_logs.push(json!({ "step": "Build Validation", "success": success, "output": output }));
+                validation_logs.push(
+                    json!({ "step": "Build Validation", "success": success, "output": output }),
+                );
                 if !success {
-                    insert_tester_comment(&app_handle, &changeset_id, "Build Validation", &output, "BLOCKER")?;
+                    insert_tester_comment(
+                        &app_handle,
+                        &changeset_id,
+                        "Build Validation",
+                        &output,
+                        "BLOCKER",
+                    )?;
                 }
             }
             Err(e) => {
                 build_passed = false;
-                validation_logs.push(json!({ "step": "Build Validation", "success": false, "output": e }));
+                validation_logs
+                    .push(json!({ "step": "Build Validation", "success": false, "output": e }));
             }
         }
     }

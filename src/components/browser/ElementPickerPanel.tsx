@@ -443,6 +443,7 @@ export const ElementPickerPanel: React.FC = () => {
 
     setHasCorsError(false);
     let unlistenEvent: UnlistenFn | null = null;
+    let unlistenNavEvent: UnlistenFn | null = null;
     let usingWebViewInjection = false;
     let iframeCleanup: (() => void) | null = null;
 
@@ -609,6 +610,17 @@ export const ElementPickerPanel: React.FC = () => {
             console.error("Failed to parse relayed element data:", err);
           }
         });
+
+        // Listen for page navigation finished to re-inject the picker script
+        unlistenNavEvent = await listen("browser-webview-navigation-finished", async () => {
+          console.log("[Nexora Picker] Webview page navigation finished, re-injecting picker...");
+          try {
+            const freshScript = generatePickerScript();
+            await invoke("inject_picker_into_webview", { script: freshScript });
+          } catch (err) {
+            console.error("Failed to re-inject picker into WebView:", err);
+          }
+        });
       } catch (err) {
         console.error("Failed to inject picker into WebView:", err);
         setHasCorsError(true);
@@ -622,6 +634,10 @@ export const ElementPickerPanel: React.FC = () => {
       if (unlistenEvent) {
         unlistenEvent();
         unlistenEvent = null;
+      }
+      if (unlistenNavEvent) {
+        unlistenNavEvent();
+        unlistenNavEvent = null;
       }
       if (iframeCleanup) {
         iframeCleanup();
@@ -1204,17 +1220,7 @@ export const ElementPickerPanel: React.FC = () => {
         )}
       </div>
 
-      {/* 4. Footer */}
-      <div className="px-4 py-3 border-t border-border-glass bg-black/10 flex items-center gap-1.5 flex-shrink-0 text-[10px] text-zinc-500 font-sans">
-        <Info size={11} />
-        <span>Learn more about </span>
-        <button 
-          onClick={handleOpenDevTools} 
-          className="text-purple-400 hover:underline cursor-pointer"
-        >
-          Element Picker
-        </button>
-      </div>
+
 
       {/* Toast Notification */}
       {toast && (

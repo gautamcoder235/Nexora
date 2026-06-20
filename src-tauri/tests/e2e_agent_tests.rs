@@ -10,7 +10,10 @@ async fn test_scenario_1_success_path() {
     // Agent: Claude Code
     // Expected: Patch generated -> Validation Passes -> Review UI shows "Pending Review" -> Approved
     println!("Running Scenario 1: E2E Success Path");
-    assert!(true, "Agent launches, modifies file, ownership passes, validations pass, patch generated.");
+    assert!(
+        true,
+        "Agent launches, modifies file, ownership passes, validations pass, patch generated."
+    );
 }
 
 #[tokio::test]
@@ -19,7 +22,10 @@ async fn test_scenario_2_ownership_violation() {
     // Agent modifies unauthorized file outside contract.
     // Expected: Validation pipeline GATE B fails -> Patch rejected -> Execution marked 'failed'.
     println!("Running Scenario 2: Ownership Violation");
-    assert!(true, "Agent modifies unauthorized file. Validation returns Ownership Violation.");
+    assert!(
+        true,
+        "Agent modifies unauthorized file. Validation returns Ownership Violation."
+    );
 }
 
 #[tokio::test]
@@ -28,7 +34,10 @@ async fn test_scenario_3_lint_failure() {
     // Agent leaves syntax error.
     // Expected: Ownership passes -> Typecheck/Lint fails -> Patch generated anyway for review -> Status failed.
     println!("Running Scenario 3: Lint Failure");
-    assert!(true, "Validation catches lint error, execution marked failed.");
+    assert!(
+        true,
+        "Validation catches lint error, execution marked failed."
+    );
 }
 
 #[tokio::test]
@@ -36,7 +45,10 @@ async fn test_scenario_4_crash_recovery() {
     // Process OOMs or User hard-kills Nexora.
     // Expected: `recover_swarm_state` identifies dead agent, cleans worktree, and resets execution state.
     println!("Running Scenario 4: Crash Recovery");
-    assert!(true, "Orphaned worktrees cleaned up and execution state reset.");
+    assert!(
+        true,
+        "Orphaned worktrees cleaned up and execution state reset."
+    );
 }
 
 #[tokio::test]
@@ -44,7 +56,10 @@ async fn test_scenario_5_validation_timeout() {
     // Test: `npm test` hangs.
     // Expected: `wait_timeout` kicks in -> Process killed -> Step marked 'failed' -> Execution 'failed'.
     println!("Running Scenario 5: Validation Timeout");
-    assert!(true, "Validation subprocess hangs, wait_timeout kills it and logs failure.");
+    assert!(
+        true,
+        "Validation subprocess hangs, wait_timeout kills it and logs failure."
+    );
 }
 
 #[tokio::test]

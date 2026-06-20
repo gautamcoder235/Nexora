@@ -3,22 +3,25 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter, Manager, Position, Size, LogicalPosition, LogicalSize, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder,
+};
 
-pub mod swarm_db;
-pub mod swarm_worktrees;
-pub mod swarm_ownership;
-pub mod swarm_lifecycle;
 pub mod swarm_agents;
-pub mod swarm_validation;
-pub mod swarm_queries;
-pub mod swarm_events;
-pub mod swarm_merge;
 pub mod swarm_changeset;
-use portable_pty::{PtySystem, NativePtySystem, PtySize, CommandBuilder, Child, MasterPty};
-use sysinfo::System;
-use std::time::{Instant, Duration};
+pub mod swarm_db;
+pub mod swarm_events;
+pub mod swarm_lifecycle;
+pub mod swarm_merge;
+pub mod swarm_ownership;
+pub mod swarm_queries;
+pub mod swarm_validation;
+pub mod swarm_worktrees;
+use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::Serialize;
+use std::time::{Duration, Instant};
+use sysinfo::System;
 
 #[derive(Serialize, Clone, Default)]
 pub struct BackendMetrics {
@@ -33,6 +36,60 @@ pub struct BackendMetrics {
 lazy_static::lazy_static! {
     static ref TERMINAL_METRICS: Mutex<HashMap<String, BackendMetrics>> = Mutex::new(HashMap::new());
 }
+
+// ==========================================
+// Browser Webview State
+// ==========================================
+const BROWSER_WEBVIEW_LABEL: &str = "browser";
+
+#[derive(Default)]
+struct BrowserState {
+    created: bool,
+    current_url: String,
+}
+
+fn browser_webview_bounds(
+    main_window: &WebviewWindow,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> (Position, Size) {
+    let scale_factor = main_window.scale_factor().unwrap_or(1.0);
+    let inner_pos = main_window.inner_position().unwrap_or_default();
+    (
+        Position::Physical(PhysicalPosition::new(
+            inner_pos.x + (x * scale_factor).round() as i32,
+            inner_pos.y + (y * scale_factor).round() as i32,
+        )),
+        Size::Physical(PhysicalSize::new(
+            (width * scale_factor).round().max(1.0) as u32,
+            (height * scale_factor).round().max(1.0) as u32,
+        )),
+    )
+}
+
+fn log_debug_pos(
+    tag: &str,
+    main_window: &WebviewWindow,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    pos: Position,
+    size: Size,
+) {
+    let scale_factor = main_window.scale_factor().unwrap_or(1.0);
+    let inner_pos = main_window.inner_position().unwrap_or_default();
+    let outer_pos = main_window.outer_position().unwrap_or_default();
+    let msg = format!(
+        "[{}] dom_x={}, dom_y={}, dom_w={}, dom_h={}, scale={}, requested_pos={:?}, requested_size={:?}, inner_pos=({}, {}), outer_pos=({}, {})",
+        tag, x, y, width, height, scale_factor, pos, size, inner_pos.x, inner_pos.y, outer_pos.x, outer_pos.y
+    );
+    eprintln!("POSITION_DEBUG: {}", msg);
+}
+
+struct BrowserStateWrapper(Mutex<BrowserState>);
 
 // Struct mapping to an active PTY session on the OS
 struct PtySession {
@@ -134,12 +191,12 @@ fn spawn_pty(
     for arg in final_args {
         cmd_builder.arg(&arg);
     }
-    
+
     // Set current working directory
     if let Some(cwd_path) = cwd {
         cmd_builder.cwd(&cwd_path);
     }
-    
+
     // Append environment variables
     if let Some(env_map) = env {
         for (k, v) in env_map {
@@ -148,7 +205,10 @@ fn spawn_pty(
     }
 
     // Spawn the shell process inside slave PTY
-    let child = pair.slave.spawn_command(cmd_builder).map_err(|e| e.to_string())?;
+    let child = pair
+        .slave
+        .spawn_command(cmd_builder)
+        .map_err(|e| e.to_string())?;
     let process_id = child.process_id();
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let master = pair.master;
@@ -167,17 +227,22 @@ fn spawn_pty(
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut buffer = [0u8; 65536];
             let mut backpressure_events = 0;
-            
+
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break, // EOF, PTY closed
                     Ok(n) => {
                         // Try to send immediately. If full, backpressure activated!
                         let data = buffer[..n].to_vec();
-                        if let Err(tokio::sync::mpsc::error::TrySendError::Full(returned_data)) = tx.try_send(data.clone()) {
+                        if let Err(tokio::sync::mpsc::error::TrySendError::Full(returned_data)) =
+                            tx.try_send(data.clone())
+                        {
                             backpressure_events += 1;
                             if backpressure_events % 100 == 1 {
-                                println!("[Telemetry] Session {} hit backpressure {} times.", thread_session_id, backpressure_events);
+                                println!(
+                                    "[Telemetry] Session {} hit backpressure {} times.",
+                                    thread_session_id, backpressure_events
+                                );
                             }
                             // Fallback to blocking send to ensure zero data loss
                             if tx.blocking_send(returned_data).is_err() {
@@ -191,7 +256,10 @@ fn spawn_pty(
                 }
             }
             if backpressure_events > 0 {
-                println!("[Telemetry] Session {} finished. Experienced backpressure {} times.", thread_session_id, backpressure_events);
+                println!(
+                    "[Telemetry] Session {} finished. Experienced backpressure {} times.",
+                    thread_session_id, backpressure_events
+                );
             }
         }));
     });
@@ -201,11 +269,14 @@ fn spawn_pty(
         // Setup 60Hz interval (~16.6ms) for Visible, hidden will hoard more
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(16));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        
+
         let mut buffer: Vec<u8> = Vec::new();
-        
+
         // Ensure visibility is registered by default
-        get_visibilities().lock().unwrap_or_else(|e| e.into_inner()).insert(session_id_clone.clone(), "Visible".to_string());
+        get_visibilities()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(session_id_clone.clone(), "Visible".to_string());
 
         let mut first_chunk_arrival: Option<Instant> = None;
         let mut last_second_reset = Instant::now();
@@ -213,7 +284,7 @@ fn spawn_pty(
         let mut events_this_sec = 0;
         let mut events_per_sec = 0;
         let mut bytes_per_sec = 0;
-        
+
         let mut emit_durations = Vec::new();
 
         loop {
@@ -230,16 +301,32 @@ fn spawn_pty(
             // Sync metrics to global state
             {
                 let mut metrics = TERMINAL_METRICS.lock().unwrap_or_else(|e| e.into_inner());
-                let m = metrics.entry(session_id_clone.clone()).or_insert_with(BackendMetrics::default);
+                let m = metrics
+                    .entry(session_id_clone.clone())
+                    .or_insert_with(BackendMetrics::default);
                 m.pending_bytes = buffer.len();
-                m.oldest_pending_age_ms = if buffer.is_empty() { 0 } else { first_chunk_arrival.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) };
+                m.oldest_pending_age_ms = if buffer.is_empty() {
+                    0
+                } else {
+                    first_chunk_arrival
+                        .map(|t| t.elapsed().as_millis() as u64)
+                        .unwrap_or(0)
+                };
                 m.events_per_second = events_per_sec;
                 m.bytes_per_second = bytes_per_sec;
-                
+
                 if !emit_durations.is_empty() {
-                    let sum: u128 = emit_durations.iter().map(|d: &Duration| d.as_micros()).sum();
+                    let sum: u128 = emit_durations
+                        .iter()
+                        .map(|d: &Duration| d.as_micros())
+                        .sum();
                     m.emit_avg_ms = (sum as f64 / emit_durations.len() as f64) / 1000.0;
-                    m.emit_max_ms = (emit_durations.iter().map(|d: &Duration| d.as_micros()).max().unwrap_or(0) as f64) / 1000.0;
+                    m.emit_max_ms = (emit_durations
+                        .iter()
+                        .map(|d: &Duration| d.as_micros())
+                        .max()
+                        .unwrap_or(0) as f64)
+                        / 1000.0;
                 } else {
                     m.emit_avg_ms = 0.0;
                     m.emit_max_ms = 0.0;
@@ -251,7 +338,7 @@ fn spawn_pty(
                 _ = interval.tick() => {
                     if !buffer.is_empty() {
                         let vis = get_visibilities().lock().unwrap_or_else(|e| e.into_inner()).get(&session_id_clone).cloned().unwrap_or_else(|| "Visible".to_string());
-                        
+
                         let should_emit = match vis.as_str() {
                             "Visible" => true, // Emit 60Hz
                             "Hidden" | "Background" => buffer.len() > 1024 * 512, // Hoard up to 512KB to save CPU
@@ -266,7 +353,7 @@ fn spawn_pty(
                         }
                     }
                 }
-                
+
                 // Wait for new data from PTY
                 msg = rx.recv() => {
                     match msg {
@@ -276,9 +363,9 @@ fn spawn_pty(
                             }
                             bytes_this_sec += data.len();
                             events_this_sec += 1;
-                            
+
                             buffer.extend(data);
-                            
+
                             // Explicit Backpressure Policy: MAX_BUFFER_SIZE = 10MB per terminal
                             let max_buffer_size = 10 * 1024 * 1024;
                             if buffer.len() > max_buffer_size {
@@ -288,7 +375,7 @@ fn spawn_pty(
                             }
 
                             // Safety threshold for hidden terminals: start emitting if buffer gets too large
-                            if buffer.len() > 1024 * 512 { 
+                            if buffer.len() > 1024 * 512 {
                                 if let Some(dur) = emit_buffer(&app_clone, &session_id_clone, &mut buffer) {
                                     emit_durations.push(dur);
                                 }
@@ -315,7 +402,7 @@ fn spawn_pty(
 
     // Save PTY session
     let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 🔥 THE FIX: Explicitly kill the old process before overwriting it.
     // In Rust portable-pty, dropping the Child struct does not kill the OS process.
     // Without this, the orphaned process and its reader thread continue running and
@@ -323,42 +410,53 @@ fn spawn_pty(
     if let Some(mut old_session) = sessions.remove(&session_id) {
         let _ = old_session.child.kill();
     }
-    
-    sessions.insert(session_id.clone(), PtySession {
-        writer,
-        master,
-        child,
-    });
+
+    sessions.insert(
+        session_id.clone(),
+        PtySession {
+            writer,
+            master,
+            child,
+        },
+    );
 
     Ok(process_id)
 }
 
 // Helper to emit and clear buffer with UTF-8 Splice Safety, up to MAX_CHUNK_SIZE
 fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) -> Option<Duration> {
-    if buffer.is_empty() { return None; }
-    
+    if buffer.is_empty() {
+        return None;
+    }
+
     let start = Instant::now();
     let max_chunk_size = 256 * 1024; // 256KB limit per payload
-    
+
     let chunk_len = std::cmp::min(buffer.len(), max_chunk_size);
 
     // Safety against slicing a multi-byte unicode character
     match std::str::from_utf8(&buffer[..chunk_len]) {
         Ok(valid_str) => {
-            let _ = app.emit("terminal:stdout", PtyOutput {
-                session_id: session_id.to_string(),
-                data: valid_str.to_string(),
-            });
+            let _ = app.emit(
+                "terminal:stdout",
+                PtyOutput {
+                    session_id: session_id.to_string(),
+                    data: valid_str.to_string(),
+                },
+            );
             buffer.drain(..chunk_len);
         }
         Err(e) => {
             let valid_len = e.valid_up_to();
             if valid_len > 0 {
                 let valid_str = unsafe { std::str::from_utf8_unchecked(&buffer[..valid_len]) };
-                let _ = app.emit("terminal:stdout", PtyOutput {
-                    session_id: session_id.to_string(),
-                    data: valid_str.to_string(),
-                });
+                let _ = app.emit(
+                    "terminal:stdout",
+                    PtyOutput {
+                        session_id: session_id.to_string(),
+                        data: valid_str.to_string(),
+                    },
+                );
                 buffer.drain(..valid_len); // Leave incomplete bytes for next tick
             } else {
                 // If the very first bytes form an incomplete UTF-8 sequence,
@@ -367,25 +465,34 @@ fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) -> Optio
             }
         }
     }
-    
+
     Some(start.elapsed())
 }
 
 #[tauri::command]
 fn get_terminal_metrics() -> HashMap<String, BackendMetrics> {
-    TERMINAL_METRICS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    TERMINAL_METRICS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 #[tauri::command]
 fn set_terminal_visibility(session_id: String, visibility: String) {
-    get_visibilities().lock().unwrap_or_else(|e| e.into_inner()).insert(session_id, visibility);
+    get_visibilities()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(session_id, visibility);
 }
 
 #[tauri::command]
 fn write_pty(session_id: String, data: String) -> Result<(), String> {
     let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(session) = sessions.get_mut(&session_id) {
-        session.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        session
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())?;
         session.writer.flush().map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -396,18 +503,28 @@ fn write_pty(session_id: String, data: String) -> Result<(), String> {
 #[tauri::command]
 fn resize_pty(session_id: String, mut rows: u16, mut cols: u16) -> Result<(), String> {
     // 🛠️ THE FIX: Enforce safety floors for small grid views
-    if cols < 2 { cols = 2; }
-    if rows < 1 { rows = 1; }
+    if cols < 2 {
+        cols = 2;
+    }
+    if rows < 1 {
+        rows = 1;
+    }
 
     let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(session) = sessions.get(&session_id) {
-        session.master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        }).map_err(|e| e.to_string())?;
-        println!("Successfully resized backend PTY '{}' to {}x{}", session_id, cols, rows);
+        session
+            .master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| e.to_string())?;
+        println!(
+            "Successfully resized backend PTY '{}' to {}x{}",
+            session_id, cols, rows
+        );
         Ok(())
     } else {
         Err(format!("PTY Session not found for ID: {}", session_id))
@@ -443,17 +560,17 @@ fn select_folder() -> Result<Option<String>, String> {
     let folder = rfd::FileDialog::new()
         .set_title("Select Project Folder")
         .pick_folder();
-    
+
     Ok(folder.map(|p| p.to_string_lossy().to_string()))
 }
 
 fn get_config_path(app: &AppHandle, filename: &str) -> Result<PathBuf, String> {
     let mut path = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    
+
     if !path.exists() {
         fs::create_dir_all(&path).map_err(|e| e.to_string())?;
     }
-    
+
     path.push(filename);
     Ok(path)
 }
@@ -477,7 +594,7 @@ fn load_config(app: AppHandle, filename: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn spawn_browser_webview(
+async fn spawn_browser_webview(
     app_handle: AppHandle,
     url: String,
     x: f64,
@@ -485,33 +602,78 @@ fn spawn_browser_webview(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let main_window = app_handle.get_webview_window("main").ok_or("Main window not found")?;
-    let parsed_url = url.parse::<tauri::Url>().map_err(|e| format!("Invalid URL: {}", e))?;
+    let parsed_url = url
+        .parse::<tauri::Url>()
+        .map_err(|e| format!("Invalid URL: {}", e))?;
 
-    // Check if webview window already exists
-    if let Some(browser_window) = app_handle.get_webview_window("browser") {
-        browser_window.navigate(parsed_url).map_err(|e| e.to_string())?;
-        let pos = Position::Logical(LogicalPosition::new(x, y));
-        let size = Size::Logical(LogicalSize::new(width, height));
-        browser_window.set_position(pos).map_err(|e| e.to_string())?;
+    let main_window = app_handle
+        .get_webview_window("main")
+        .ok_or("Main window not found")?;
+
+    let (pos, size) = browser_webview_bounds(&main_window, x, y, width, height);
+
+    // If owned webview window already exists, navigate and reposition it.
+    if let Some(browser_window) = app_handle.get_webview_window(BROWSER_WEBVIEW_LABEL) {
+        browser_window
+            .navigate(parsed_url)
+            .map_err(|e| e.to_string())?;
+        log_debug_pos(
+            "reposition_window",
+            &main_window,
+            x,
+            y,
+            width,
+            height,
+            pos,
+            size,
+        );
+        browser_window
+            .set_position(pos)
+            .map_err(|e| e.to_string())?;
         browser_window.set_size(size).map_err(|e| e.to_string())?;
         browser_window.show().map_err(|e| e.to_string())?;
     } else {
-        let _browser_window = WebviewWindowBuilder::new(&app_handle, "browser", WebviewUrl::External(parsed_url))
-            .decorations(false)
-            .shadow(false)
-            .inner_size(width, height)
-            .position(x, y)
-            .parent(&main_window)
-            .map_err(|e| e.to_string())?
-            .build()
-            .map_err(|e| format!("Failed to build webview window: {}", e))?;
+        log_debug_pos("spawn_window", &main_window, x, y, width, height, pos, size);
+
+        let browser_window = WebviewWindowBuilder::new(
+            &app_handle,
+            BROWSER_WEBVIEW_LABEL,
+            WebviewUrl::External(parsed_url),
+        )
+        .on_page_load(|window, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                let _ = window.emit("browser-webview-navigation-finished", ());
+            }
+        })
+        .decorations(false)
+        .shadow(false)
+        .skip_taskbar(true)
+        .resizable(false)
+        .inner_size(width, height)
+        .parent(&main_window)
+        .map_err(|e| e.to_string())?
+        .build()
+        .map_err(|e| format!("Failed to build browser webview window: {}", e))?;
+
+        browser_window
+            .set_position(pos)
+            .map_err(|e| e.to_string())?;
+        browser_window.set_size(size).map_err(|e| e.to_string())?;
     }
+
+    // Update managed state
+    if let Some(state) = app_handle.try_state::<BrowserStateWrapper>() {
+        if let Ok(mut bs) = state.0.lock() {
+            bs.created = true;
+            bs.current_url = url;
+        }
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-fn sync_browser_webview_layout(
+async fn sync_browser_webview_layout(
     app_handle: AppHandle,
     visible: bool,
     x: f64,
@@ -519,11 +681,17 @@ fn sync_browser_webview_layout(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    if let Some(browser_window) = app_handle.get_webview_window("browser") {
+    let main_window = app_handle
+        .get_webview_window("main")
+        .ok_or("Main window not found")?;
+    if let Some(browser_window) = app_handle.get_webview_window(BROWSER_WEBVIEW_LABEL) {
         if visible {
-            let pos = Position::Logical(LogicalPosition::new(x, y));
-            let size = Size::Logical(LogicalSize::new(width, height));
-            browser_window.set_position(pos).map_err(|e| e.to_string())?;
+            let (pos, size) = browser_webview_bounds(&main_window, x, y, width, height);
+            log_debug_pos("sync_window", &main_window, x, y, width, height, pos, size);
+
+            browser_window
+                .set_position(pos)
+                .map_err(|e| e.to_string())?;
             browser_window.set_size(size).map_err(|e| e.to_string())?;
             browser_window.show().map_err(|e| e.to_string())?;
         } else {
@@ -534,58 +702,73 @@ fn sync_browser_webview_layout(
 }
 
 #[tauri::command]
-fn destroy_browser_webview(app_handle: AppHandle) -> Result<(), String> {
-    if let Some(browser_window) = app_handle.get_webview_window("browser") {
-        browser_window.hide().map_err(|e| e.to_string())?;
+async fn destroy_browser_webview(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(browser_window) = app_handle.get_webview_window(BROWSER_WEBVIEW_LABEL) {
+        browser_window.close().map_err(|e| e.to_string())?;
+    }
+    // Update managed state
+    if let Some(state) = app_handle.try_state::<BrowserStateWrapper>() {
+        if let Ok(mut bs) = state.0.lock() {
+            bs.created = false;
+            bs.current_url.clear();
+        }
     }
     Ok(())
 }
 
 #[tauri::command]
 fn open_browser_devtools(app_handle: AppHandle, label: String) -> Result<(), String> {
-    if let Some(window) = app_handle.get_webview_window(&label) {
-        window.open_devtools();
+    #[cfg(any(debug_assertions, feature = "devtools"))]
+    if let Some(wv) = app_handle.get_webview(&label) {
+        wv.open_devtools();
     }
     Ok(())
 }
 
 #[tauri::command]
 fn inject_picker_into_webview(app_handle: AppHandle, script: String) -> Result<(), String> {
-    if let Some(browser_window) = app_handle.get_webview_window("browser") {
-        browser_window.eval(&script).map_err(|e| format!("Failed to inject picker script: {}", e))?;
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
+        browser_wv
+            .eval(&script)
+            .map_err(|e| format!("Failed to inject picker script: {}", e))?;
     }
     Ok(())
 }
 
 #[tauri::command]
 fn remove_picker_from_webview(app_handle: AppHandle) -> Result<(), String> {
-    if let Some(browser_window) = app_handle.get_webview_window("browser") {
-        browser_window.eval(
-            "if (window.__nexoraPickerCleanup) { window.__nexoraPickerCleanup(); }"
-        ).map_err(|e| format!("Failed to remove picker: {}", e))?;
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
+        browser_wv
+            .eval("if (window.__nexoraPickerCleanup) { window.__nexoraPickerCleanup(); }")
+            .map_err(|e| format!("Failed to remove picker: {}", e))?;
     }
     Ok(())
 }
 
 #[tauri::command]
 fn relay_picked_element(app_handle: AppHandle, data: String) -> Result<(), String> {
-    app_handle.emit("nexora-element-picked", data)
+    app_handle
+        .emit("nexora-element-picked", data)
         .map_err(|e| format!("Failed to relay element data: {}", e))?;
     Ok(())
 }
 
 #[tauri::command]
 fn check_cli_tool(command: String) -> bool {
-    let check_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    
+    let check_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+
     let mut cmd = std::process::Command::new(check_cmd);
-    
+
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    
+
     cmd.arg(&command)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -621,7 +804,12 @@ fn list_directory(dir_path: String) -> Result<Vec<FileNode>, String> {
         let file_name = entry.file_name().to_string_lossy().to_string();
 
         // 🚀 CRITICAL IGNORE RULE: Filter system/dependency dirs for maximum performance
-        if file_name == ".git" || file_name == "node_modules" || file_name == "target" || file_name == "dist" || file_name == "build" {
+        if file_name == ".git"
+            || file_name == "node_modules"
+            || file_name == "target"
+            || file_name == "dist"
+            || file_name == "build"
+        {
             continue;
         }
 
@@ -675,14 +863,11 @@ fn get_system_metrics() -> SystemMetrics {
     let mut sys = get_system_info().lock().unwrap_or_else(|e| e.into_inner());
     sys.refresh_cpu_usage();
     sys.refresh_memory();
-    
+
     let cpu = sys.global_cpu_usage();
     let ram_gb = sys.used_memory() as f32 / 1024.0 / 1024.0 / 1024.0;
-    
-    SystemMetrics {
-        cpu,
-        ram_gb,
-    }
+
+    SystemMetrics { cpu, ram_gb }
 }
 
 #[tauri::command]
@@ -692,14 +877,19 @@ fn exit_app(app_handle: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    std::env::set_var("TAURI_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-web-security");
+    std::env::set_var(
+        "TAURI_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "--disable-web-security",
+    );
     tauri::Builder::default()
+        .manage(BrowserStateWrapper(Mutex::new(BrowserState::default())))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Initialize Swarm SQLite Database
             if let Err(e) = swarm_db::init_db(app.handle()) {
                 eprintln!("Failed to initialize swarm db: {}", e);
-                app.handle().manage(swarm_db::DbState(std::sync::Mutex::new(None)));
+                app.handle()
+                    .manage(swarm_db::DbState(std::sync::Mutex::new(None)));
             }
 
             // Start Stalled Agent Watchdog

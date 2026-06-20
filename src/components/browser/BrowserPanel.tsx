@@ -58,9 +58,10 @@ export const BrowserPanel: React.FC = () => {
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const [address, setAddress] = useState(activeTab?.url || "");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [loading, setLoading] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const lastParentPos = useRef<{ x: number; y: number } | null>(null);
-  const lastViewportRect = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
+  const isWebviewSpawned = useRef(false);
+  const lastSyncedRect = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
 
   // Sync address input when active tab changes
   useEffect(() => {
@@ -96,119 +97,195 @@ export const BrowserPanel: React.FC = () => {
     }
   };
 
-  // WebView layout sync logic
-  const updateWebviewBounds = async () => {
-    if (!viewportRef.current || isSettingsModalOpen) {
-      await invoke("sync_browser_webview_layout", {
-        visible: false,
-        x: 0,
-        y: 0,
-        width: 0,
-        height: 0
-      }).catch(() => {});
-      return;
-    }
+  // ==========================================
+  // WebView Layout Sync (coordinates are relative to the parent window now)
+  // ==========================================
+  const syncLayout = async (forceVisible?: boolean) => {
+    if (!viewportRef.current) return;
 
     const rect = viewportRef.current.getBoundingClientRect();
     const hasUrl = activeTab?.url && !isLocalUrl(activeTab.url);
+    const visible = forceVisible !== undefined ? forceVisible : true;
 
-    if (rect.width === 0 || rect.height === 0 || !hasUrl) {
+    if (rect.width === 0 || rect.height === 0 || !hasUrl || !visible) {
       await invoke("sync_browser_webview_layout", {
         visible: false,
         x: 0,
         y: 0,
         width: 0,
-        height: 0
+        height: 0,
       }).catch(() => {});
       return;
     }
 
+    // With add_child(), coordinates are relative to the parent window, not the screen
+    const x = rect.left;
+    const y = rect.top;
+    const width = rect.width;
+    const height = rect.height;
+
+    // Skip if nothing changed
+    if (
+      lastSyncedRect.current &&
+      Math.abs(x - lastSyncedRect.current.left) < 1 &&
+      Math.abs(y - lastSyncedRect.current.top) < 1 &&
+      Math.abs(width - lastSyncedRect.current.width) < 1 &&
+      Math.abs(height - lastSyncedRect.current.height) < 1
+    ) {
+      return;
+    }
+
+    lastSyncedRect.current = { left: x, top: y, width, height };
+
     try {
-      const win = getCurrentWindow() as any;
-      const winPos = await win.position();
-      const scaleFactor = await win.scaleFactor();
-
-      const winLogicalX = winPos.x / scaleFactor;
-      const winLogicalY = winPos.y / scaleFactor;
-
-      const x = winLogicalX + rect.left;
-      const y = winLogicalY + rect.top;
-      const width = rect.width;
-      const height = rect.height;
-
-      // Update refs to break loops
-      lastParentPos.current = { x: winPos.x, y: winPos.y };
-      lastViewportRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-
       await invoke("sync_browser_webview_layout", {
         visible: true,
         x,
         y,
         width,
-        height
+        height,
       });
     } catch (err) {
       console.error("Failed to sync webview layout:", err);
     }
   };
 
-  const handleLoadUrl = async (url: string) => {
+  // Keep a ref of the latest function to avoid stale closures in debounce
+  const latestSyncLayout = useRef(syncLayout);
+  useEffect(() => {
+    latestSyncLayout.current = syncLayout;
+  });
+
+  const debouncedSyncLayout = useRef(
+    debounce(() => {
+      latestSyncLayout.current();
+    }, 80)
+  ).current;
+
+  const syncLayoutDuringTransition = () => {
+    const start = performance.now();
+    let frame = 0;
+
+    const tick = (now: number) => {
+      latestSyncLayout.current();
+      if (now - start < 500) {
+        frame = requestAnimationFrame(tick);
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  };
+
+  // ==========================================
+  // Spawn / Navigate the child webview
+  // ==========================================
+  const spawnOrNavigate = async (url: string) => {
     if (!url || isLocalUrl(url)) return;
     if (!viewportRef.current) return;
 
     const rect = viewportRef.current.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
 
+    // Coordinates are relative to the parent window (add_child API)
+    const x = rect.left;
+    const y = rect.top;
+    const width = rect.width;
+    const height = rect.height;
+
+    setLoading(true);
     try {
-      const win = getCurrentWindow() as any;
-      const winPos = await win.position();
-      const scaleFactor = await win.scaleFactor();
-
-      const winLogicalX = winPos.x / scaleFactor;
-      const winLogicalY = winPos.y / scaleFactor;
-
-      const x = winLogicalX + rect.left;
-      const y = winLogicalY + rect.top;
-      const width = rect.width;
-      const height = rect.height;
-
-      lastParentPos.current = { x: winPos.x, y: winPos.y };
-      lastViewportRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-
-      await invoke("spawn_browser_webview", {
-        url,
-        x,
-        y,
-        width,
-        height
-      });
+      await invoke("spawn_browser_webview", { url, x, y, width, height });
+      isWebviewSpawned.current = true;
+      lastSyncedRect.current = { left: x, top: y, width, height };
+      syncLayoutDuringTransition();
     } catch (err) {
-      console.error("Failed to spawn webview:", err);
+      console.error("Failed to spawn/navigate webview:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Keep a ref of the latest function to avoid stale closure in debounce
-  const latestUpdateWebviewBounds = useRef(updateWebviewBounds);
-  useEffect(() => {
-    latestUpdateWebviewBounds.current = updateWebviewBounds;
-  });
-
-  const debouncedUpdateWebviewBounds = useRef(
-    debounce(() => {
-      latestUpdateWebviewBounds.current();
-    }, 100)
-  ).current;
-
-  // Handle activeTab changes
+  // ==========================================
+  // EFFECT: Navigation lifecycle — URL changes trigger spawn/navigate
+  // ==========================================
   useEffect(() => {
     if (activeTab?.url && !isLocalUrl(activeTab.url)) {
-      handleLoadUrl(activeTab.url);
+      spawnOrNavigate(activeTab.url);
     } else {
-      invoke("destroy_browser_webview").catch(() => {});
+      // No external URL — destroy the child webview
+      if (isWebviewSpawned.current) {
+        invoke("destroy_browser_webview").catch(() => {});
+        isWebviewSpawned.current = false;
+      }
     }
   }, [activeTab?.id, activeTab?.url, refreshKey]);
 
-  // Handle settings modal changes
+  // ==========================================
+  // EFFECT: Mount lifecycle — ResizeObserver + window resize
+  // ==========================================
+  useEffect(() => {
+    if (!viewportRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const rect = entry.contentRect;
+        if (
+          lastSyncedRect.current &&
+          Math.abs(rect.width - lastSyncedRect.current.width) < 1 &&
+          Math.abs(rect.height - lastSyncedRect.current.height) < 1
+        ) {
+          continue;
+        }
+        debouncedSyncLayout();
+      }
+    });
+
+    observer.observe(viewportRef.current);
+
+    // Window resize handler (catches IDE-style layout shifts)
+    const handleWindowResize = () => {
+      debouncedSyncLayout();
+    };
+    window.addEventListener("resize", handleWindowResize);
+    window.addEventListener("scroll", handleWindowResize, true);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", handleWindowResize);
+      window.removeEventListener("scroll", handleWindowResize, true);
+    };
+  }, [activeTab?.id, activeTab?.url]);
+
+  // Panel open/dock transitions can move the placeholder without changing its size.
+  useEffect(() => {
+    if (!activeTab?.url || isLocalUrl(activeTab.url) || isSettingsModalOpen) return;
+    return syncLayoutDuringTransition();
+  }, [activeTab?.id, activeTab?.url, isBrowserPanelPinned, isSettingsModalOpen]);
+
+  useEffect(() => {
+    if (!activeTab?.url || isLocalUrl(activeTab.url)) return;
+
+    let unlisten: (() => void) | undefined;
+    const setupWindowMoveListener = async () => {
+      try {
+        unlisten = await getCurrentWindow().onMoved(() => {
+          latestSyncLayout.current();
+        });
+      } catch (err) {
+        console.error("Failed to listen for browser window moves:", err);
+      }
+    };
+
+    setupWindowMoveListener();
+    return () => {
+      unlisten?.();
+    };
+  }, [activeTab?.id, activeTab?.url]);
+
+  // ==========================================
+  // EFFECT: Settings modal — hide/show webview
+  // ==========================================
   useEffect(() => {
     if (isSettingsModalOpen) {
       invoke("sync_browser_webview_layout", {
@@ -216,74 +293,21 @@ export const BrowserPanel: React.FC = () => {
         x: 0,
         y: 0,
         width: 0,
-        height: 0
+        height: 0,
       }).catch(() => {});
     } else {
-      setTimeout(updateWebviewBounds, 100);
+      // Re-sync when settings closes
+      setTimeout(() => syncLayout(), 100);
     }
   }, [isSettingsModalOpen]);
 
-  // Handle resize events
-  useEffect(() => {
-    if (!viewportRef.current) return;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const rect = entry.contentRect;
-        // Check if the size has actually changed significantly to avoid micro-resizes
-        if (
-          lastViewportRect.current &&
-          Math.abs(rect.width - lastViewportRect.current.width) < 1 &&
-          Math.abs(rect.height - lastViewportRect.current.height) < 1
-        ) {
-          continue;
-        }
-        debouncedUpdateWebviewBounds();
-      }
-    });
-
-    observer.observe(viewportRef.current);
-    return () => {
-      observer.disconnect();
-    };
-  }, [activeTab?.id, activeTab?.url]);
-
-  // Handle window movements (to make the child window follow parent)
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    
-    const setupWindowListener = async () => {
-      try {
-        const win = getCurrentWindow() as any;
-        const unsubscribe = await win.onMoved(async () => {
-          const winPos = await win.position();
-          // ONLY trigger update if the parent window has actually moved its screen position
-          if (
-            lastParentPos.current &&
-            winPos.x === lastParentPos.current.x &&
-            winPos.y === lastParentPos.current.y
-          ) {
-            return;
-          }
-          debouncedUpdateWebviewBounds();
-        });
-        unlisten = unsubscribe;
-      } catch (err) {
-        console.error("Failed to listen to window move:", err);
-      }
-    };
-
-    setupWindowListener();
-
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, [activeTab?.id, activeTab?.url]);
-
-  // Hide child webview on unmount
+  // ==========================================
+  // EFFECT: Cleanup on unmount — destroy the child webview
+  // ==========================================
   useEffect(() => {
     return () => {
       invoke("destroy_browser_webview").catch(() => {});
+      isWebviewSpawned.current = false;
     };
   }, []);
 
@@ -457,13 +481,22 @@ export const BrowserPanel: React.FC = () => {
               title="Browser Panel Viewport"
             />
           ) : (
-            /* External webview placeholder */
+            /* External webview placeholder — the native child webview renders on top of this */
             <div className="w-full h-full bg-[#050508] flex flex-col items-center justify-center text-zinc-500 font-mono text-[10px] gap-2 select-none">
-              <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-              <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">Rendering Webview Overlay</span>
-              <span className="text-zinc-650 text-[8px] max-w-[200px] text-center leading-normal">
-                This external page is loaded in a native child window overlay for complete compatibility.
-              </span>
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">Loading Webview</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500/50" />
+                  <span className="text-zinc-500 font-bold uppercase tracking-wider text-[9px]">Webview Active</span>
+                  <span className="text-zinc-650 text-[8px] max-w-[200px] text-center leading-normal">
+                    The native child webview is rendering on top of this placeholder.
+                  </span>
+                </>
+              )}
             </div>
           )}
         </div>

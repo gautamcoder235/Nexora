@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use nexora_lib::swarm_db;
+use rusqlite::Connection;
 use std::fs;
 use std::process::Command;
 
@@ -10,7 +10,13 @@ fn test_recover_swarm_state_missing_worktree() {
     swarm_db::run_migrations(&conn).expect("Failed to run migrations");
 
     // 2. Set up a temporary Git repository and make an initial commit.
-    let repo_dir = std::env::temp_dir().join(format!("test_repo_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+    let repo_dir = std::env::temp_dir().join(format!(
+        "test_repo_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
     fs::create_dir_all(&repo_dir).unwrap();
     let repo_path = repo_dir.to_str().unwrap();
 
@@ -56,7 +62,7 @@ fn test_recover_swarm_state_missing_worktree() {
     swarm_db::insert_repository_if_missing(&conn, repo_id, "Test Repo", repo_path).unwrap();
     swarm_db::insert_task(&conn, task_id, repo_id, "Test Task", "Desc", "running").unwrap();
     swarm_db::insert_execution(&conn, exec_id, task_id, "agent-1", worktree_id, "running").unwrap();
-    
+
     // Insert worktree pointing to a folder that does not exist
     swarm_db::insert_worktree(
         &conn,
@@ -66,13 +72,15 @@ fn test_recover_swarm_state_missing_worktree() {
         repo_id,
         missing_worktree_path.to_str().unwrap(),
         "task-branch",
-        "active"
-    ).unwrap();
+        "active",
+    )
+    .unwrap();
 
     // 4. Verify that `get_active_executions` correctly fetches the execution
-    let active_execs = swarm_db::get_active_executions(&conn).expect("Failed to get active executions");
+    let active_execs =
+        swarm_db::get_active_executions(&conn).expect("Failed to get active executions");
     assert_eq!(active_execs.len(), 1, "Should fetch one active execution");
-    
+
     let exec = &active_execs[0];
     assert_eq!(exec.execution_id, exec_id);
     assert_eq!(exec.worktree_id, worktree_id);
@@ -82,7 +90,10 @@ fn test_recover_swarm_state_missing_worktree() {
     let contract_dir = worktree_dir.join(".nexora");
 
     let is_missing = !worktree_dir.exists() || !contract_dir.exists();
-    assert!(is_missing, "Worktree folder should not exist in this simulated crash");
+    assert!(
+        is_missing,
+        "Worktree folder should not exist in this simulated crash"
+    );
 
     if is_missing {
         // Correctly identified as missing worktree, update status
@@ -100,14 +111,22 @@ fn test_recover_swarm_state_missing_worktree() {
 
     // Verify it was marked failed and deleted
     let active_execs_after = swarm_db::get_active_executions(&conn).unwrap();
-    assert_eq!(active_execs_after.len(), 0, "Execution should no longer be active");
+    assert_eq!(
+        active_execs_after.len(),
+        0,
+        "Execution should no longer be active"
+    );
 
     // Check status in DB directly
-    let mut stmt = conn.prepare("SELECT status FROM executions WHERE id = ?1").unwrap();
+    let mut stmt = conn
+        .prepare("SELECT status FROM executions WHERE id = ?1")
+        .unwrap();
     let status: String = stmt.query_row([exec_id], |row| row.get(0)).unwrap();
     assert_eq!(status, "failed", "Execution should be marked as failed");
 
-    let mut stmt = conn.prepare("SELECT deleted_at FROM worktrees WHERE id = ?1").unwrap();
+    let mut stmt = conn
+        .prepare("SELECT deleted_at FROM worktrees WHERE id = ?1")
+        .unwrap();
     let deleted_at: Option<String> = stmt.query_row([worktree_id], |row| row.get(0)).unwrap();
     assert!(deleted_at.is_some(), "Worktree should be marked as deleted");
 

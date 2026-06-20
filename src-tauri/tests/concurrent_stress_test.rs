@@ -92,7 +92,14 @@ fn test_concurrent_stress() {
             let worktree_id = format!("wt_{}_{}", run_id, i);
 
             // Create Worktree
-            let result = create_worktree(root, task_id.clone(), exec_id.clone(), "Title".to_string(), "Desc".to_string(), vec![]);
+            let result = create_worktree(
+                root,
+                task_id.clone(),
+                exec_id.clone(),
+                "Title".to_string(),
+                "Desc".to_string(),
+                vec![],
+            );
             assert!(
                 result.is_ok(),
                 "Worktree creation failed for thread {}: {:?}",
@@ -108,7 +115,7 @@ fn test_concurrent_stress() {
 
             // Connect to DB and Insert records
             let conn = Connection::open(&db_p).expect("Failed to open thread DB connection");
-            
+
             // We need to set busy_timeout on the individual connection just in case
             // run_migrations sets it per-connection. Actually, busy_timeout is per-connection.
             conn.execute_batch("PRAGMA busy_timeout = 5000;").unwrap();
@@ -143,19 +150,31 @@ fn test_concurrent_stress() {
 
     // 6. Assert 50 worktrees created and 50 executions in DB
     let conn = Connection::open(&db_path).expect("Failed to open DB for assertions");
-    
-    let task_count: i32 = conn.query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0)).unwrap();
-    assert_eq!(task_count, NUM_THREADS as i32, "Expected {} tasks", NUM_THREADS);
 
-    let exec_count: i32 = conn.query_row("SELECT COUNT(*) FROM executions", [], |row| row.get(0)).unwrap();
-    assert_eq!(exec_count, NUM_THREADS as i32, "Expected {} executions", NUM_THREADS);
+    let task_count: i32 = conn
+        .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        task_count, NUM_THREADS as i32,
+        "Expected {} tasks",
+        NUM_THREADS
+    );
+
+    let exec_count: i32 = conn
+        .query_row("SELECT COUNT(*) FROM executions", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        exec_count, NUM_THREADS as i32,
+        "Expected {} executions",
+        NUM_THREADS
+    );
 
     // Assert worktrees on disk
     let parent_worktrees_dir = temp_dir.parent().unwrap().join(".nexora-worktrees");
     let mut actual_wt_count = 0;
     let run_id = std::process::id();
     let prefix = format!("task-task_{}_", run_id);
-    
+
     if parent_worktrees_dir.exists() {
         for entry in fs::read_dir(&parent_worktrees_dir).unwrap() {
             let entry = entry.unwrap();
@@ -168,7 +187,11 @@ fn test_concurrent_stress() {
             }
         }
     }
-    assert_eq!(actual_wt_count, NUM_THREADS, "Expected {} worktree directories", NUM_THREADS);
+    assert_eq!(
+        actual_wt_count, NUM_THREADS,
+        "Expected {} worktree directories",
+        NUM_THREADS
+    );
 
     // Cleanup
     let _ = fs::remove_dir_all(&temp_dir);

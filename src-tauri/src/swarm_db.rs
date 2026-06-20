@@ -7,32 +7,42 @@ pub struct DbState(pub Mutex<Option<Connection>>);
 
 pub fn init_db(app_handle: &AppHandle) -> Result<(), String> {
     // Get the path to app data directory
-    let mut db_path = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
-    
+    let mut db_path = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+
     // Ensure directory exists
     if !db_path.exists() {
         std::fs::create_dir_all(&db_path).map_err(|e| e.to_string())?;
     }
-    
+
     db_path.push("swarm.db");
-    
+
     let conn = Connection::open(&db_path).map_err(|e| format!("Failed to open DB: {}", e))?;
-    
+
     // Enable WAL mode and busy timeout for concurrent access
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA busy_timeout = 5000;
-         PRAGMA synchronous = NORMAL;"
-    ).map_err(|e| format!("Pragma failed: {}", e))?;
+         PRAGMA synchronous = NORMAL;",
+    )
+    .map_err(|e| format!("Pragma failed: {}", e))?;
 
     run_migrations(&conn).map_err(|e| format!("Migration failed: {}", e))?;
     seed_default_agents(&conn).map_err(|e| format!("Seeding failed: {}", e))?;
-    
+
     // Clean up mock changeset data from existing databases if present
-    let _ = conn.execute("DELETE FROM review_comments WHERE changeset_id = 'cset-mock-auth'", []);
-    let _ = conn.execute("DELETE FROM changeset_files WHERE changeset_id = 'cset-mock-auth'", []);
+    let _ = conn.execute(
+        "DELETE FROM review_comments WHERE changeset_id = 'cset-mock-auth'",
+        [],
+    );
+    let _ = conn.execute(
+        "DELETE FROM changeset_files WHERE changeset_id = 'cset-mock-auth'",
+        [],
+    );
     let _ = conn.execute("DELETE FROM changesets WHERE id = 'cset-mock-auth'", []);
-    
+
     app_handle.manage(DbState(Mutex::new(Some(conn))));
     Ok(())
 }
@@ -42,7 +52,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA busy_timeout = 5000;
-         PRAGMA synchronous = NORMAL;"
+         PRAGMA synchronous = NORMAL;",
     )?;
 
     // Create schema version table
@@ -55,14 +65,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     // Check current version
     let mut current_version = 0;
-    let _ = conn.query_row(
-        "SELECT MAX(version) FROM schema_version",
-        [],
-        |row| {
-            current_version = row.get(0).unwrap_or(0);
-            Ok(())
-        },
-    );
+    let _ = conn.query_row("SELECT MAX(version) FROM schema_version", [], |row| {
+        current_version = row.get(0).unwrap_or(0);
+        Ok(())
+    });
 
     let migrations = vec![
         // Version 1: Initial core tables
@@ -337,7 +343,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             expires_at INTEGER NOT NULL,
             heartbeat_at INTEGER NOT NULL
         );
-        "
+        ",
     ];
 
     for (i, migration) in migrations.iter().enumerate() {
@@ -355,7 +361,14 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 }
 
 // Data Access Layer (CRUD)
-pub fn insert_task(conn: &Connection, id: &str, repo_id: &str, title: &str, description: &str, status: &str) -> Result<()> {
+pub fn insert_task(
+    conn: &Connection,
+    id: &str,
+    repo_id: &str,
+    title: &str,
+    description: &str,
+    status: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO tasks (id, repository_id, title, description, status) VALUES (?1, ?2, ?3, ?4, ?5)",
         [id, repo_id, title, description, status],
@@ -363,7 +376,14 @@ pub fn insert_task(conn: &Connection, id: &str, repo_id: &str, title: &str, desc
     Ok(())
 }
 
-pub fn insert_execution(conn: &Connection, id: &str, task_id: &str, agent_id: &str, worktree_id: &str, status: &str) -> Result<()> {
+pub fn insert_execution(
+    conn: &Connection,
+    id: &str,
+    task_id: &str,
+    agent_id: &str,
+    worktree_id: &str,
+    status: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO executions (id, task_id, agent_id, worktree_id, status) VALUES (?1, ?2, ?3, ?4, ?5)",
         [id, task_id, agent_id, worktree_id, status],
@@ -371,8 +391,16 @@ pub fn insert_execution(conn: &Connection, id: &str, task_id: &str, agent_id: &s
     Ok(())
 }
 
-
-pub fn insert_worktree(conn: &Connection, id: &str, task_id: &str, exec_id: &str, repo_id: &str, path: &str, branch: &str, status: &str) -> Result<()> {
+pub fn insert_worktree(
+    conn: &Connection,
+    id: &str,
+    task_id: &str,
+    exec_id: &str,
+    repo_id: &str,
+    path: &str,
+    branch: &str,
+    status: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO worktrees (id, task_id, execution_id, repository_id, path, branch_name, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         [id, task_id, exec_id, repo_id, path, branch, status],
@@ -380,7 +408,12 @@ pub fn insert_worktree(conn: &Connection, id: &str, task_id: &str, exec_id: &str
     Ok(())
 }
 
-pub fn insert_ownership_rule(conn: &Connection, id: &str, task_id: &str, pattern: &str) -> Result<()> {
+pub fn insert_ownership_rule(
+    conn: &Connection,
+    id: &str,
+    task_id: &str,
+    pattern: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO ownership_rules (id, task_id, pattern) VALUES (?1, ?2, ?3)",
         [id, task_id, pattern],
@@ -396,7 +429,14 @@ pub fn mark_worktree_deleted(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn insert_agent_process(conn: &Connection, id: &str, execution_id: &str, pid: Option<u32>, command: &str, status: &str) -> Result<()> {
+pub fn insert_agent_process(
+    conn: &Connection,
+    id: &str,
+    execution_id: &str,
+    pid: Option<u32>,
+    command: &str,
+    status: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO agent_processes (id, execution_id, pid, command, status) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![id, execution_id, pid, command, status],
@@ -404,7 +444,12 @@ pub fn insert_agent_process(conn: &Connection, id: &str, execution_id: &str, pid
     Ok(())
 }
 
-pub fn update_agent_process_status(conn: &Connection, id: &str, status: &str, exit_code: Option<i32>) -> Result<()> {
+pub fn update_agent_process_status(
+    conn: &Connection,
+    id: &str,
+    status: &str,
+    exit_code: Option<i32>,
+) -> Result<()> {
     if let Some(code) = exit_code {
         conn.execute(
             "UPDATE agent_processes SET status = ?1, exit_code = ?2, ended_at = CURRENT_TIMESTAMP WHERE id = ?3",
@@ -419,7 +464,11 @@ pub fn update_agent_process_status(conn: &Connection, id: &str, status: &str, ex
     Ok(())
 }
 
-pub fn update_execution_status(conn: &Connection, execution_id: &str, new_status: &str) -> Result<()> {
+pub fn update_execution_status(
+    conn: &Connection,
+    execution_id: &str,
+    new_status: &str,
+) -> Result<()> {
     // 1. Enforce State Machine Integrity
     let current_status: String = conn.query_row(
         "SELECT status FROM executions WHERE id = ?1",
@@ -440,19 +489,24 @@ pub fn update_execution_status(conn: &Connection, execution_id: &str, new_status
         ("running", "paused") => true,
         ("paused", "running") => true,
         ("running", "validating") => true,
-        ("running", "failed") => true, // Mid-flight crash
+        ("running", "failed") => true,     // Mid-flight crash
         ("running", "terminated") => true, // Killed by user
         ("validating", "completed") => true,
         ("validating", "failed") => true,
         // Any state can go to failed or terminated, but terminal states cannot be changed
-        (s, "failed") | (s, "terminated") if s != "completed" && s != "failed" && s != "terminated" => true,
+        (s, "failed") | (s, "terminated")
+            if s != "completed" && s != "failed" && s != "terminated" =>
+        {
+            true
+        }
         _ => false,
     };
 
     if !is_valid {
-        return Err(rusqlite::Error::InvalidParameterName(
-            format!("Invalid state transition from {} to {}", current_status, new_status)
-        ));
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "Invalid state transition from {} to {}",
+            current_status, new_status
+        )));
     }
 
     conn.execute(
@@ -462,7 +516,12 @@ pub fn update_execution_status(conn: &Connection, execution_id: &str, new_status
     Ok(())
 }
 
-pub fn insert_repository_if_missing(conn: &Connection, id: &str, name: &str, path: &str) -> Result<()> {
+pub fn insert_repository_if_missing(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    path: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO repositories (id, name, root_path) VALUES (?1, ?2, ?3)",
         [id, name, path],
@@ -484,9 +543,9 @@ pub fn get_active_executions(conn: &Connection) -> Result<Vec<ActiveExecution>> 
         "SELECT e.id, e.task_id, e.worktree_id, w.path, w.branch_name 
          FROM executions e 
          JOIN worktrees w ON e.worktree_id = w.id 
-         WHERE e.status IN ('running', 'paused') AND e.deleted_at IS NULL AND w.deleted_at IS NULL"
+         WHERE e.status IN ('running', 'paused') AND e.deleted_at IS NULL AND w.deleted_at IS NULL",
     )?;
-    
+
     let execs = stmt.query_map([], |row| {
         Ok(ActiveExecution {
             execution_id: row.get(0)?,
@@ -501,7 +560,7 @@ pub fn get_active_executions(conn: &Connection) -> Result<Vec<ActiveExecution>> 
     for exec in execs {
         result.push(exec?);
     }
-    
+
     Ok(result)
 }
 
@@ -513,9 +572,24 @@ fn seed_default_agents(conn: &Connection) -> Result<()> {
     }
 
     let default_agents = vec![
-        ("claude", "Claude Code", "claude", vec!["react", "rust", "architecture", "typescript"]),
-        ("aider", "Aider", "aider", vec!["python", "refactoring", "git"]),
-        ("opencode", "OpenCode", "opencode", vec!["general", "bash", "terminal"]),
+        (
+            "claude",
+            "Claude Code",
+            "claude",
+            vec!["react", "rust", "architecture", "typescript"],
+        ),
+        (
+            "aider",
+            "Aider",
+            "aider",
+            vec!["python", "refactoring", "git"],
+        ),
+        (
+            "opencode",
+            "OpenCode",
+            "opencode",
+            vec!["general", "bash", "terminal"],
+        ),
     ];
 
     for (id, name, cmd, caps) in default_agents {
@@ -523,7 +597,7 @@ fn seed_default_agents(conn: &Connection) -> Result<()> {
             "INSERT INTO agents (id, name, command, enabled) VALUES (?1, ?2, ?3, 1)",
             [id, name, cmd],
         )?;
-        
+
         for cap in caps {
             conn.execute(
                 "INSERT INTO agent_capabilities (agent_id, capability) VALUES (?1, ?2)",
@@ -537,7 +611,13 @@ fn seed_default_agents(conn: &Connection) -> Result<()> {
 
 // -- Execution Events (Timeline) ----------------------------------------------
 
-pub fn insert_execution_event(conn: &Connection, id: &str, execution_id: &str, event_type: &str, detail: Option<&str>) -> Result<()> {
+pub fn insert_execution_event(
+    conn: &Connection,
+    id: &str,
+    execution_id: &str,
+    event_type: &str,
+    detail: Option<&str>,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO execution_events (id, execution_id, event_type, detail) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![id, execution_id, event_type, detail],
@@ -547,7 +627,16 @@ pub fn insert_execution_event(conn: &Connection, id: &str, execution_id: &str, e
 
 // -- Execution Drafts ---------------------------------------------------------
 
-pub fn insert_execution_draft(conn: &Connection, id: &str, repo_name: &str, repo_path: &str, task_title: &str, task_description: &str, agent_id: &str, allowed_patterns_json: &str) -> Result<()> {
+pub fn insert_execution_draft(
+    conn: &Connection,
+    id: &str,
+    repo_name: &str,
+    repo_path: &str,
+    task_title: &str,
+    task_description: &str,
+    agent_id: &str,
+    allowed_patterns_json: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO execution_drafts (id, repo_name, repo_path, task_title, task_description, agent_id, allowed_patterns) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![id, repo_name, repo_path, task_title, task_description, agent_id, allowed_patterns_json],
@@ -727,7 +816,7 @@ pub fn get_changesets(conn: &Connection) -> Result<Vec<DbChangeset>> {
             affected_symbols: row.get(9)?,
         })
     })?;
-    
+
     let mut results = Vec::new();
     for r in rows {
         results.push(r?);
@@ -749,7 +838,7 @@ pub fn get_changeset_files(conn: &Connection, changeset_id: &str) -> Result<Vec<
             status: row.get(7)?,
         })
     })?;
-    
+
     let mut results = Vec::new();
     for r in rows {
         results.push(r?);
@@ -757,7 +846,10 @@ pub fn get_changeset_files(conn: &Connection, changeset_id: &str) -> Result<Vec<
     Ok(results)
 }
 
-pub fn get_changeset_comments(conn: &Connection, changeset_id: &str) -> Result<Vec<DbReviewComment>> {
+pub fn get_changeset_comments(
+    conn: &Connection,
+    changeset_id: &str,
+) -> Result<Vec<DbReviewComment>> {
     let mut stmt = conn.prepare("SELECT id, changeset_id, path, line_number, agent_name, comment, severity, created_at FROM review_comments WHERE changeset_id = ?1 ORDER BY created_at ASC")?;
     let rows = stmt.query_map([changeset_id], |row| {
         Ok(DbReviewComment {
@@ -771,7 +863,7 @@ pub fn get_changeset_comments(conn: &Connection, changeset_id: &str) -> Result<V
             created_at: row.get(7)?,
         })
     })?;
-    
+
     let mut results = Vec::new();
     for r in rows {
         results.push(r?);
@@ -779,7 +871,10 @@ pub fn get_changeset_comments(conn: &Connection, changeset_id: &str) -> Result<V
     Ok(results)
 }
 
-pub fn get_changeset_snapshots(conn: &Connection, changeset_id: &str) -> Result<Vec<DbChangesetSnapshot>> {
+pub fn get_changeset_snapshots(
+    conn: &Connection,
+    changeset_id: &str,
+) -> Result<Vec<DbChangesetSnapshot>> {
     let mut stmt = conn.prepare("SELECT id, changeset_id, file_path, content_backup, timestamp FROM changeset_snapshots WHERE changeset_id = ?1")?;
     let rows = stmt.query_map([changeset_id], |row| {
         Ok(DbChangesetSnapshot {
@@ -790,7 +885,7 @@ pub fn get_changeset_snapshots(conn: &Connection, changeset_id: &str) -> Result<
             timestamp: row.get(4)?,
         })
     })?;
-    
+
     let mut results = Vec::new();
     for r in rows {
         results.push(r?);

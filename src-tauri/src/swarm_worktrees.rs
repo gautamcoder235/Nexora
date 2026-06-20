@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
 use crate::swarm_db::DbState;
-use std::process::Command;
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
+use std::path::Path;
+use std::process::Command;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Serialize, Deserialize)]
 pub struct GitValidationResult {
@@ -37,10 +37,8 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
     };
 
     // 1. Check if git is installed
-    let git_check = Command::new("git")
-        .arg("--version")
-        .output();
-        
+    let git_check = Command::new("git").arg("--version").output();
+
     if git_check.is_err() {
         result.is_valid = false;
         result.errors.push(GitError {
@@ -61,7 +59,7 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
         });
         return Ok(result);
     }
-    
+
     let git_dir = root.join(".git");
     if !git_dir.exists() {
         result.is_valid = false;
@@ -78,17 +76,19 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
         .arg("rev-parse")
         .arg("HEAD")
         .output();
-        
+
     match commit_check {
         Ok(output) => {
             if !output.status.success() {
                 result.is_valid = false;
                 result.errors.push(GitError {
                     code: "NO_INITIAL_COMMIT".to_string(),
-                    message: "Repository must contain at least one commit before creating worktrees.".to_string(),
+                    message:
+                        "Repository must contain at least one commit before creating worktrees."
+                            .to_string(),
                 });
             }
-        },
+        }
         Err(_) => {
             result.is_valid = false;
             result.errors.push(GitError {
@@ -104,7 +104,7 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
         .arg("status")
         .arg("--porcelain")
         .output();
-        
+
     if let Ok(output) = status_check {
         if !output.stdout.is_empty() {
             result.has_warnings = true;
@@ -121,7 +121,7 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
     // A good place is root_path/../.nexora-worktrees/
     let parent = root.parent().unwrap_or(root);
     let worktrees_dir = parent.join(".nexora-worktrees");
-    
+
     if !worktrees_dir.exists() {
         if let Err(e) = fs::create_dir_all(&worktrees_dir) {
             result.is_valid = false;
@@ -155,17 +155,17 @@ pub struct WorktreeResult {
 
 #[tauri::command]
 pub fn create_worktree(
-    project_root: String, 
-    task_id: String, 
+    project_root: String,
+    task_id: String,
     execution_id: String,
     task_title: String,
     task_description: String,
-    allowed_patterns: Vec<String>
+    allowed_patterns: Vec<String>,
 ) -> Result<WorktreeResult, String> {
     let root = Path::new(&project_root);
     let parent = root.parent().unwrap_or(root);
     let worktrees_dir = parent.join(".nexora-worktrees");
-    
+
     if !worktrees_dir.exists() {
         if let Err(e) = fs::create_dir_all(&worktrees_dir) {
             return Err(format!("Failed to create base worktrees directory: {}", e));
@@ -201,7 +201,13 @@ pub fn create_worktree(
     let contract_dir = worktree_path.join(".nexora");
     if let Err(e) = fs::create_dir_all(&contract_dir) {
         // Cleanup worktree if we fail to create the contract
-        let _ = Command::new("git").current_dir(root).arg("worktree").arg("remove").arg(&worktree_path).arg("--force").output();
+        let _ = Command::new("git")
+            .current_dir(root)
+            .arg("worktree")
+            .arg("remove")
+            .arg(&worktree_path)
+            .arg("--force")
+            .output();
         return Ok(WorktreeResult {
             success: false,
             path: "".to_string(),
@@ -218,7 +224,7 @@ pub fn create_worktree(
         "description": task_description,
         "status": "pending"
     });
-    
+
     let ownership_json = serde_json::json!({
         "task_id": task_id,
         "execution_id": execution_id,
@@ -228,9 +234,9 @@ pub fn create_worktree(
     let status_json = serde_json::json!({
         "status": "active"
     });
-    
-use std::time::{SystemTime, UNIX_EPOCH};
-    
+
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     // Additional Context Injection (Phase 2.5)
     let execution_json = serde_json::json!({
         "execution_id": execution_id,
@@ -242,17 +248,32 @@ use std::time::{SystemTime, UNIX_EPOCH};
     allowed_patterns.hash(&mut hasher);
     let ownership_hash_str = format!("{:x}", hasher.finish());
 
-    fs::write(contract_dir.join("task.json"), serde_json::to_string_pretty(&task_json).unwrap())
-        .map_err(|e| format!("Failed to write task.json: {}", e))?;
-    fs::write(contract_dir.join("ownership.json"), serde_json::to_string_pretty(&ownership_json).unwrap())
-        .map_err(|e| format!("Failed to write ownership.json: {}", e))?;
-    fs::write(contract_dir.join("status.json"), serde_json::to_string_pretty(&status_json).unwrap())
-        .map_err(|e| format!("Failed to write status.json: {}", e))?;
-    fs::write(contract_dir.join("execution.json"), serde_json::to_string_pretty(&execution_json).unwrap())
-        .map_err(|e| format!("Failed to write execution.json: {}", e))?;
+    fs::write(
+        contract_dir.join("task.json"),
+        serde_json::to_string_pretty(&task_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write task.json: {}", e))?;
+    fs::write(
+        contract_dir.join("ownership.json"),
+        serde_json::to_string_pretty(&ownership_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write ownership.json: {}", e))?;
+    fs::write(
+        contract_dir.join("status.json"),
+        serde_json::to_string_pretty(&status_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write status.json: {}", e))?;
+    fs::write(
+        contract_dir.join("execution.json"),
+        serde_json::to_string_pretty(&execution_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write execution.json: {}", e))?;
     fs::write(contract_dir.join("ownership.hash"), ownership_hash_str)
         .map_err(|e| format!("Failed to write ownership.hash: {}", e))?;
-    let _ = fs::write(contract_dir.join("execution.log"), "[Nexora] Worktree and contract initialized.\n");
+    let _ = fs::write(
+        contract_dir.join("execution.log"),
+        "[Nexora] Worktree and contract initialized.\n",
+    );
 
     Ok(WorktreeResult {
         success: true,
@@ -263,9 +284,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 }
 
 #[tauri::command]
-pub fn remove_worktree(project_root: String, worktree_path: String, branch_name: String) -> Result<bool, String> {
+pub fn remove_worktree(
+    project_root: String,
+    worktree_path: String,
+    branch_name: String,
+) -> Result<bool, String> {
     let root = Path::new(&project_root);
-    
+
     // 1. Remove the worktree
     let output = Command::new("git")
         .current_dir(root)
@@ -274,10 +299,13 @@ pub fn remove_worktree(project_root: String, worktree_path: String, branch_name:
         .arg(&worktree_path)
         .arg("--force")
         .output();
-        
+
     if let Ok(out) = output {
         if !out.status.success() {
-            eprintln!("Warning: git worktree remove failed: {}", String::from_utf8_lossy(&out.stderr));
+            eprintln!(
+                "Warning: git worktree remove failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         }
     }
 
@@ -288,10 +316,13 @@ pub fn remove_worktree(project_root: String, worktree_path: String, branch_name:
         .arg("-D")
         .arg(&branch_name)
         .output();
-        
+
     if let Ok(out) = output {
         if !out.status.success() {
-            eprintln!("Warning: git branch -D failed: {}", String::from_utf8_lossy(&out.stderr));
+            eprintln!(
+                "Warning: git branch -D failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         }
     }
 
@@ -303,15 +334,19 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
     let root = Path::new(&project_root);
     let parent = root.parent().unwrap_or(root);
     let worktrees_dir = parent.join(".nexora-worktrees");
-    
+
     let mut cleaned = Vec::new();
-    
+
     if worktrees_dir.exists() && worktrees_dir.is_dir() {
         if let Ok(entries) = fs::read_dir(&worktrees_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    let dir_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let dir_name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     if dir_name.starts_with("task-") {
                         // Attempt to run git worktree remove on it
                         let _ = Command::new("git")
@@ -321,7 +356,7 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
                             .arg(&path)
                             .arg("--force")
                             .output();
-                            
+
                         // Delete the branch if possible
                         let _ = Command::new("git")
                             .current_dir(root)
@@ -329,14 +364,14 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
                             .arg("-D")
                             .arg(&dir_name)
                             .output();
-                            
+
                         cleaned.push(dir_name);
                     }
                 }
             }
         }
     }
-    
+
     Ok(cleaned)
 }
 
@@ -347,26 +382,33 @@ pub fn revert_execution_snapshot(
     snapshot_id: String,
 ) -> Result<(), String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     // 1. Fetch worktree path
-    let (worktree_path, _repo_path): (String, String) = conn.query_row(
-        "SELECT w.path, r.path 
+    let (worktree_path, _repo_path): (String, String) = conn
+        .query_row(
+            "SELECT w.path, r.path 
          FROM executions e 
          JOIN worktrees w ON e.worktree_id = w.id 
          JOIN repositories r ON w.repository_id = r.id
          WHERE e.id = ?1",
-        [&execution_id],
-        |row| Ok((row.get(0)?, row.get(1)?))
-    ).map_err(|e| format!("Failed to find worktree for execution: {}", e))?;
+            [&execution_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| format!("Failed to find worktree for execution: {}", e))?;
 
     // 2. Fetch snapshot commit hash
-    let commit_hash: String = conn.query_row(
-        "SELECT head_commit FROM execution_snapshots WHERE id = ?1 AND execution_id = ?2",
-        [snapshot_id, execution_id.clone()],
-        |row| row.get(0)
-    ).map_err(|e| format!("Snapshot not found: {}", e))?;
+    let commit_hash: String = conn
+        .query_row(
+            "SELECT head_commit FROM execution_snapshots WHERE id = ?1 AND execution_id = ?2",
+            [snapshot_id, execution_id.clone()],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Snapshot not found: {}", e))?;
 
     // Drop lock before running git command to prevent holding lock during disk I/O
     drop(conn_guard);
@@ -390,4 +432,3 @@ pub fn revert_execution_snapshot(
 
     Ok(())
 }
-

@@ -1,13 +1,20 @@
-use tauri::{AppHandle, Emitter, Manager, State};
 use crate::swarm_db::DbState;
 use crate::swarm_queries::ExecutionSummary;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 static EVENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-pub fn emit_event(app_handle: &AppHandle, event_name: &str, execution_id: &str) -> Result<(), String> {
+pub fn emit_event(
+    app_handle: &AppHandle,
+    event_name: &str,
+    execution_id: &str,
+) -> Result<(), String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let summary = {
@@ -53,7 +60,8 @@ pub fn emit_event(app_handle: &AppHandle, event_name: &str, execution_id: &str) 
                 has_merge_candidate: row.get::<_, i64>(10)? != 0,
                 merge_status: row.get(11)?,
             })
-        }).map_err(|e| e.to_string())?
+        })
+        .map_err(|e| e.to_string())?
     };
 
     // Drop lock before emitting to avoid deadlocks
@@ -67,22 +75,32 @@ pub fn transition_execution_state(
     app_handle: &AppHandle,
     execution_id: &str,
     new_status: &str,
-    detail: Option<&str>
+    detail: Option<&str>,
 ) -> Result<(), String> {
     {
         let db_state: State<DbState> = app_handle.state();
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         crate::swarm_db::update_execution_status(conn, execution_id, new_status)
             .map_err(|e| format!("State error: {}", e))?;
 
         let counter = EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let event_id = format!("evt-{}-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(), counter);
+        let event_id = format!(
+            "evt-{}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+            counter
+        );
         crate::swarm_db::insert_execution_event(conn, &event_id, execution_id, new_status, detail)
             .map_err(|e| format!("Event error: {}", e))?;
     }
-    
+
     let event_name = match new_status {
         "created" => "execution:created",
         "terminated" => "execution:terminated",

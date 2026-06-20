@@ -11,7 +11,7 @@ use nexora_lib::swarm_worktrees::{create_worktree, remove_worktree};
 fn test_worktree_lifecycle() {
     // 1. Create a temporary directory.
     let temp_dir = env::temp_dir().join(format!("worktree_test_{}", std::process::id()));
-    
+
     // Clean up if it exists from a previous run
     if temp_dir.exists() {
         let _ = fs::remove_dir_all(&temp_dir);
@@ -32,7 +32,7 @@ fn test_worktree_lifecycle() {
         .current_dir(&temp_dir)
         .status()
         .expect("Failed to set user.name");
-    
+
     Command::new("git")
         .args(&["config", "user.email", "test@example.com"])
         .current_dir(&temp_dir)
@@ -62,20 +62,33 @@ fn test_worktree_lifecycle() {
     let exec_id = "456".to_string();
     let project_root_str = temp_dir.to_str().unwrap().to_string();
 
-    let result = create_worktree(project_root_str.clone(), task_id.clone(), exec_id.clone(), "Title".to_string(), "Desc".to_string(), vec![])
-        .expect("create_worktree failed");
+    let result = create_worktree(
+        project_root_str.clone(),
+        task_id.clone(),
+        exec_id.clone(),
+        "Title".to_string(),
+        "Desc".to_string(),
+        vec![],
+    )
+    .expect("create_worktree failed");
 
     // 4. Assert that the worktree directory was created successfully.
-    assert!(result.success, "Worktree result success flag should be true");
+    assert!(
+        result.success,
+        "Worktree result success flag should be true"
+    );
     let worktree_path = PathBuf::from(&result.path);
     assert!(worktree_path.exists(), "Worktree path does not exist");
     assert!(worktree_path.is_dir(), "Worktree path is not a directory");
-    assert_eq!(result.branch_name, format!("task-{}-exec-{}", task_id, exec_id));
+    assert_eq!(
+        result.branch_name,
+        format!("task-{}-exec-{}", task_id, exec_id)
+    );
 
     // 5. Assert that the `.nexora` contract directory exists inside the worktree
     let contract_dir = worktree_path.join(".nexora");
     assert!(contract_dir.exists(), "Contract directory does not exist");
-    
+
     // Assert task.json, ownership.json, status.json, and execution.log are successfully written
     assert!(contract_dir.join("task.json").exists());
     assert!(contract_dir.join("ownership.json").exists());
@@ -83,11 +96,18 @@ fn test_worktree_lifecycle() {
     assert!(contract_dir.join("execution.log").exists());
 
     // 6. Call `remove_worktree` and assert that the worktree was successfully deleted and the branch was deleted.
-    let remove_result = remove_worktree(project_root_str, result.path.clone(), result.branch_name.clone())
-        .expect("remove_worktree failed");
-    
+    let remove_result = remove_worktree(
+        project_root_str,
+        result.path.clone(),
+        result.branch_name.clone(),
+    )
+    .expect("remove_worktree failed");
+
     assert!(remove_result, "remove_worktree should return true");
-    assert!(!worktree_path.exists(), "Worktree directory should be deleted");
+    assert!(
+        !worktree_path.exists(),
+        "Worktree directory should be deleted"
+    );
 
     // Check if branch was deleted
     let branch_check = Command::new("git")
@@ -95,9 +115,12 @@ fn test_worktree_lifecycle() {
         .current_dir(&temp_dir)
         .output()
         .expect("Failed to list git branches");
-    
+
     let branch_output = String::from_utf8_lossy(&branch_check.stdout);
-    assert!(!branch_output.contains(&result.branch_name), "Branch should have been deleted");
+    assert!(
+        !branch_output.contains(&result.branch_name),
+        "Branch should have been deleted"
+    );
 
     // Clean up
     let _ = fs::remove_dir_all(&temp_dir);

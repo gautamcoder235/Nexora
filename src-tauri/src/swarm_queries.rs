@@ -1,7 +1,7 @@
+use crate::swarm_db::DbState;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
-use crate::swarm_db::DbState;
 
 #[derive(Serialize, Deserialize)]
 pub struct ValidationStepInfo {
@@ -65,9 +65,15 @@ pub struct ExecutionMetadata {
 }
 
 #[tauri::command]
-pub fn get_validation_run(app_handle: AppHandle, execution_id: String) -> Result<Option<ValidationRunInfo>, String> {
+pub fn get_validation_run(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<Option<ValidationRunInfo>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let run = conn.query_row(
@@ -86,16 +92,18 @@ pub fn get_validation_run(app_handle: AppHandle, execution_id: String) -> Result
 
     if let Some(mut run_info) = run {
         let mut stmt = conn.prepare("SELECT id, step_name, exit_code, duration_ms, status, artifact_id FROM validation_steps WHERE validation_run_id = ?1 ORDER BY rowid ASC").unwrap();
-        let step_iter = stmt.query_map([&run_info.id], |row| {
-            Ok(ValidationStepInfo {
-                id: row.get(0)?,
-                step_name: row.get(1)?,
-                exit_code: row.get(2)?,
-                duration_ms: row.get(3)?,
-                status: row.get(4)?,
-                artifact_id: row.get(5)?,
+        let step_iter = stmt
+            .query_map([&run_info.id], |row| {
+                Ok(ValidationStepInfo {
+                    id: row.get(0)?,
+                    step_name: row.get(1)?,
+                    exit_code: row.get(2)?,
+                    duration_ms: row.get(3)?,
+                    status: row.get(4)?,
+                    artifact_id: row.get(5)?,
+                })
             })
-        }).unwrap();
+            .unwrap();
 
         for step in step_iter {
             if let Ok(s) = step {
@@ -109,22 +117,30 @@ pub fn get_validation_run(app_handle: AppHandle, execution_id: String) -> Result
 }
 
 #[tauri::command]
-pub fn get_artifacts(app_handle: AppHandle, execution_id: String) -> Result<Vec<ArtifactInfo>, String> {
+pub fn get_artifacts(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<Vec<ArtifactInfo>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let mut stmt = conn.prepare("SELECT id, artifact_type, file_path, size_bytes, created_at, checksum FROM artifacts WHERE execution_id = ?1 ORDER BY created_at ASC").unwrap();
-    let artifact_iter = stmt.query_map([&execution_id], |row| {
-        Ok(ArtifactInfo {
-            id: row.get(0)?,
-            artifact_type: row.get(1)?,
-            file_path: row.get(2)?,
-            size_bytes: row.get(3)?,
-            created_at: row.get(4)?,
-            checksum: row.get(5)?,
+    let artifact_iter = stmt
+        .query_map([&execution_id], |row| {
+            Ok(ArtifactInfo {
+                id: row.get(0)?,
+                artifact_type: row.get(1)?,
+                file_path: row.get(2)?,
+                size_bytes: row.get(3)?,
+                created_at: row.get(4)?,
+                checksum: row.get(5)?,
+            })
         })
-    }).unwrap();
+        .unwrap();
 
     let mut artifacts = Vec::new();
     for a in artifact_iter {
@@ -136,20 +152,28 @@ pub fn get_artifacts(app_handle: AppHandle, execution_id: String) -> Result<Vec<
 }
 
 #[tauri::command]
-pub fn get_execution_logs(app_handle: AppHandle, execution_id: String) -> Result<Vec<ExecutionLogInfo>, String> {
+pub fn get_execution_logs(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<Vec<ExecutionLogInfo>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let mut stmt = conn.prepare("SELECT id, timestamp, level, message FROM execution_logs WHERE execution_id = ?1 ORDER BY rowid ASC").unwrap();
-    let log_iter = stmt.query_map([&execution_id], |row| {
-        Ok(ExecutionLogInfo {
-            id: row.get(0)?,
-            timestamp: row.get(1)?,
-            level: row.get(2)?,
-            message: row.get(3)?,
+    let log_iter = stmt
+        .query_map([&execution_id], |row| {
+            Ok(ExecutionLogInfo {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                level: row.get(2)?,
+                message: row.get(3)?,
+            })
         })
-    }).unwrap();
+        .unwrap();
 
     let mut logs = Vec::new();
     for l in log_iter {
@@ -161,9 +185,15 @@ pub fn get_execution_logs(app_handle: AppHandle, execution_id: String) -> Result
 }
 
 #[tauri::command]
-pub fn get_execution_metadata(app_handle: AppHandle, execution_id: String) -> Result<Option<ExecutionMetadata>, String> {
+pub fn get_execution_metadata(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<Option<ExecutionMetadata>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let meta = conn.query_row(
@@ -200,9 +230,15 @@ pub fn get_execution_metadata(app_handle: AppHandle, execution_id: String) -> Re
 }
 
 #[tauri::command]
-pub fn get_merge_candidate(app_handle: AppHandle, execution_id: String) -> Result<Option<MergeCandidateInfo>, String> {
+pub fn get_merge_candidate(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<Option<MergeCandidateInfo>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let candidate = conn.query_row(
@@ -224,9 +260,16 @@ pub fn get_merge_candidate(app_handle: AppHandle, execution_id: String) -> Resul
 }
 
 #[tauri::command]
-pub fn review_merge_candidate(app_handle: AppHandle, execution_id: String, action: String) -> Result<(), String> {
+pub fn review_merge_candidate(
+    app_handle: AppHandle,
+    execution_id: String,
+    action: String,
+) -> Result<(), String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let new_status = match action.as_str() {
@@ -235,14 +278,19 @@ pub fn review_merge_candidate(app_handle: AppHandle, execution_id: String, actio
         _ => return Err("Invalid action. Must be 'approve' or 'reject'".to_string()),
     };
 
-    let current_status: String = conn.query_row(
-        "SELECT status FROM merge_candidates WHERE execution_id = ?1",
-        rusqlite::params![execution_id],
-        |row| row.get(0)
-    ).map_err(|_| "Merge candidate not found".to_string())?;
+    let current_status: String = conn
+        .query_row(
+            "SELECT status FROM merge_candidates WHERE execution_id = ?1",
+            rusqlite::params![execution_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Merge candidate not found".to_string())?;
 
     if current_status != "pending_review" {
-        return Err(format!("Cannot {} candidate in status {}", action, current_status));
+        return Err(format!(
+            "Cannot {} candidate in status {}",
+            action, current_status
+        ));
     }
 
     conn.execute(
@@ -261,21 +309,30 @@ pub struct ArtifactReadResult {
 }
 
 #[tauri::command]
-pub fn read_artifact(app_handle: AppHandle, artifact_id: String) -> Result<ArtifactReadResult, String> {
+pub fn read_artifact(
+    app_handle: AppHandle,
+    artifact_id: String,
+) -> Result<ArtifactReadResult, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-    let (file_path, expected_checksum): (String, String) = conn.query_row(
-        "SELECT file_path, checksum FROM artifacts WHERE id = ?1",
-        rusqlite::params![artifact_id],
-        |row| Ok((row.get(0)?, row.get(1)?))
-    ).map_err(|e| format!("Artifact not found: {}", e))?;
+    let (file_path, expected_checksum): (String, String) = conn
+        .query_row(
+            "SELECT file_path, checksum FROM artifacts WHERE id = ?1",
+            rusqlite::params![artifact_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| format!("Artifact not found: {}", e))?;
 
-    let content = std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to read artifact from disk: {}", e))?;
+    let content = std::fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read artifact from disk: {}", e))?;
 
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
     let actual_checksum = format!("{:x}", hasher.finish());
@@ -299,13 +356,16 @@ pub fn read_artifact(app_handle: AppHandle, artifact_id: String) -> Result<Artif
 // Phase 5: Swarm Control Center Queries
 // ============================================================================
 
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static QUERIES_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn gen_id(prefix: &str) -> String {
-    let ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     let counter = QUERIES_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("{}-{}-{}", prefix, ms, counter)
 }
@@ -329,9 +389,15 @@ pub struct ExecutionSummary {
 }
 
 #[tauri::command]
-pub fn list_executions(app_handle: AppHandle, limit: Option<i64>) -> Result<Vec<ExecutionSummary>, String> {
+pub fn list_executions(
+    app_handle: AppHandle,
+    limit: Option<i64>,
+) -> Result<Vec<ExecutionSummary>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let max = limit.unwrap_or(50);
@@ -363,35 +429,45 @@ pub fn list_executions(app_handle: AppHandle, limit: Option<i64>) -> Result<Vec<
         LIMIT ?1
     ").map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map([max], |row| {
-        Ok(ExecutionSummary {
-            id: row.get(0)?,
-            task_title: row.get(1)?,
-            agent_id: row.get(2)?,
-            status: row.get(3)?,
-            started_at: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-            ended_at: row.get(5)?,
-            validation_status: row.get(6)?,
-            validation_steps_passed: row.get(7)?,
-            validation_steps_total: row.get(8)?,
-            current_gate: row.get(9)?,
-            has_merge_candidate: row.get::<_, i64>(10)? != 0,
-            merge_status: row.get(11)?,
+    let rows = stmt
+        .query_map([max], |row| {
+            Ok(ExecutionSummary {
+                id: row.get(0)?,
+                task_title: row.get(1)?,
+                agent_id: row.get(2)?,
+                status: row.get(3)?,
+                started_at: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                ended_at: row.get(5)?,
+                validation_status: row.get(6)?,
+                validation_steps_passed: row.get(7)?,
+                validation_steps_total: row.get(8)?,
+                current_gate: row.get(9)?,
+                has_merge_candidate: row.get::<_, i64>(10)? != 0,
+                merge_status: row.get(11)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut results = Vec::new();
-    for r in rows { results.push(r.map_err(|e| e.to_string())?); }
+    for r in rows {
+        results.push(r.map_err(|e| e.to_string())?);
+    }
     Ok(results)
 }
 
 // -- Terminate Execution -------------------------------------------------------
 
 #[tauri::command]
-pub async fn terminate_execution(app_handle: AppHandle, execution_id: String) -> Result<(), String> {
+pub async fn terminate_execution(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<(), String> {
     let pid_opt: Option<u32> = {
         let db_state: State<DbState> = app_handle.state();
-        let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+        let conn_guard = db_state
+            .0
+            .lock()
+            .map_err(|_| "Failed to lock DB".to_string())?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         conn.query_row(
@@ -404,22 +480,35 @@ pub async fn terminate_execution(app_handle: AppHandle, execution_id: String) ->
     if let Some(pid) = pid_opt {
         // Attempt graceful terminate
         #[cfg(windows)]
-        let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string()]).output();
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string()])
+            .output();
         #[cfg(unix)]
-        unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
         // Force kill tree
         #[cfg(windows)]
-        let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]).output();
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .output();
         #[cfg(unix)]
-        unsafe { libc::kill(-(pid as i32), libc::SIGKILL); }
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     }
 
-    crate::swarm_events::transition_execution_state(&app_handle, &execution_id, "terminated", Some("Manually terminated by user"))?;
+    crate::swarm_events::transition_execution_state(
+        &app_handle,
+        &execution_id,
+        "terminated",
+        Some("Manually terminated by user"),
+    )?;
 
     Ok(())
 }
@@ -435,26 +524,36 @@ pub struct ExecutionEventInfo {
 }
 
 #[tauri::command]
-pub fn get_execution_events(app_handle: AppHandle, execution_id: String) -> Result<Vec<ExecutionEventInfo>, String> {
+pub fn get_execution_events(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<Vec<ExecutionEventInfo>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let mut stmt = conn.prepare(
         "SELECT id, event_type, detail, timestamp FROM execution_events WHERE execution_id = ?1 ORDER BY timestamp ASC"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map(rusqlite::params![execution_id], |row| {
-        Ok(ExecutionEventInfo {
-            id: row.get(0)?,
-            event_type: row.get(1)?,
-            detail: row.get(2)?,
-            timestamp: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+    let rows = stmt
+        .query_map(rusqlite::params![execution_id], |row| {
+            Ok(ExecutionEventInfo {
+                id: row.get(0)?,
+                event_type: row.get(1)?,
+                detail: row.get(2)?,
+                timestamp: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut events = Vec::new();
-    for r in rows { events.push(r.map_err(|e| e.to_string())?); }
+    for r in rows {
+        events.push(r.map_err(|e| e.to_string())?);
+    }
     Ok(events)
 }
 
@@ -483,15 +582,26 @@ pub fn save_execution_draft(
     allowed_patterns: Vec<String>,
 ) -> Result<ExecutionDraft, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let id = gen_id("draft");
     let patterns_json = serde_json::to_string(&allowed_patterns).unwrap_or_default();
 
     crate::swarm_db::insert_execution_draft(
-        conn, &id, &repo_name, &repo_path, &task_title, &task_description, &agent_id, &patterns_json
-    ).map_err(|e| format!("DB Draft Error: {}", e))?;
+        conn,
+        &id,
+        &repo_name,
+        &repo_path,
+        &task_title,
+        &task_description,
+        &agent_id,
+        &patterns_json,
+    )
+    .map_err(|e| format!("DB Draft Error: {}", e))?;
 
     Ok(ExecutionDraft {
         id,
@@ -508,37 +618,47 @@ pub fn save_execution_draft(
 #[tauri::command]
 pub fn list_execution_drafts(app_handle: AppHandle) -> Result<Vec<ExecutionDraft>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let mut stmt = conn.prepare(
         "SELECT id, repo_name, repo_path, task_title, task_description, agent_id, allowed_patterns, created_at FROM execution_drafts ORDER BY created_at DESC"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map([], |row| {
-        let patterns_json: String = row.get(6)?;
-        let patterns: Vec<String> = serde_json::from_str(&patterns_json).unwrap_or_default();
-        Ok(ExecutionDraft {
-            id: row.get(0)?,
-            repo_name: row.get(1)?,
-            repo_path: row.get(2)?,
-            task_title: row.get(3)?,
-            task_description: row.get(4)?,
-            agent_id: row.get(5)?,
-            allowed_patterns: patterns,
-            created_at: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+    let rows = stmt
+        .query_map([], |row| {
+            let patterns_json: String = row.get(6)?;
+            let patterns: Vec<String> = serde_json::from_str(&patterns_json).unwrap_or_default();
+            Ok(ExecutionDraft {
+                id: row.get(0)?,
+                repo_name: row.get(1)?,
+                repo_path: row.get(2)?,
+                task_title: row.get(3)?,
+                task_description: row.get(4)?,
+                agent_id: row.get(5)?,
+                allowed_patterns: patterns,
+                created_at: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut drafts = Vec::new();
-    for r in rows { drafts.push(r.map_err(|e| e.to_string())?); }
+    for r in rows {
+        drafts.push(r.map_err(|e| e.to_string())?);
+    }
     Ok(drafts)
 }
 
 #[tauri::command]
 pub fn discard_execution_draft(app_handle: AppHandle, draft_id: String) -> Result<(), String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
     crate::swarm_db::delete_execution_draft(conn, &draft_id).map_err(|e| e.to_string())
 }
@@ -553,24 +673,32 @@ pub struct ExecutionSnapshotInfo {
 }
 
 #[tauri::command]
-pub fn list_execution_snapshots(app_handle: AppHandle, execution_id: String) -> Result<Vec<ExecutionSnapshotInfo>, String> {
+pub fn list_execution_snapshots(
+    app_handle: AppHandle,
+    execution_id: String,
+) -> Result<Vec<ExecutionSnapshotInfo>, String> {
     let db_state: State<DbState> = app_handle.state();
-    let conn_guard = db_state.0.lock().map_err(|_| "Failed to lock DB".to_string())?;
+    let conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock DB".to_string())?;
     let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
     let mut stmt = conn.prepare(
         "SELECT id, execution_id, head_commit, branch, timestamp FROM execution_snapshots WHERE execution_id = ?1 ORDER BY timestamp DESC"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map([execution_id], |row| {
-        Ok(ExecutionSnapshotInfo {
-            id: row.get(0)?,
-            execution_id: row.get(1)?,
-            head_commit: row.get(2)?,
-            branch: row.get(3)?,
-            timestamp: row.get(4)?,
+    let rows = stmt
+        .query_map([execution_id], |row| {
+            Ok(ExecutionSnapshotInfo {
+                id: row.get(0)?,
+                execution_id: row.get(1)?,
+                head_commit: row.get(2)?,
+                branch: row.get(3)?,
+                timestamp: row.get(4)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut list = Vec::new();
     for r in rows {
