@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use tauri::{
-    AppHandle, Emitter, Manager, LogicalPosition, LogicalSize, Position, Size, WebviewUrl,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder,
 };
 
@@ -57,19 +57,22 @@ fn browser_webview_bounds(
 ) -> (Position, Size) {
     let scale_factor = main_window.scale_factor().unwrap_or(1.0);
     let inner_pos = main_window.inner_position().unwrap_or_default();
-    
-    // Convert physical screen coordinates of parent client area to logical coordinates
-    let logical_inner_x = inner_pos.x as f64 / scale_factor;
-    let logical_inner_y = inner_pos.y as f64 / scale_factor;
+    let outer_pos = main_window.outer_position().unwrap_or_default();
+
+    // The child window's position is relative to the parent window's outer top-left frame corner.
+    // To align it with the client area DOM coordinates (which are relative to inner_position),
+    // we must offset by the window decoration size (border width and title bar height):
+    let dx = inner_pos.x - outer_pos.x;
+    let dy = inner_pos.y - outer_pos.y;
 
     (
-        Position::Logical(LogicalPosition::new(
-            logical_inner_x + x,
-            logical_inner_y + y,
+        Position::Physical(PhysicalPosition::new(
+            dx + (x * scale_factor).round() as i32,
+            dy + (y * scale_factor).round() as i32,
         )),
-        Size::Logical(LogicalSize::new(
-            width,
-            height,
+        Size::Physical(PhysicalSize::new(
+            (width * scale_factor).round().max(1.0) as u32,
+            (height * scale_factor).round().max(1.0) as u32,
         )),
     )
 }
