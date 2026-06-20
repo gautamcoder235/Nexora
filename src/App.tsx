@@ -1290,55 +1290,46 @@ function App() {
               />
             )}
 
-            {isBrowserPanelVisible && isBrowserPanelPinned && (
+            {isBrowserPanelVisible && (
               <>
-                {/* Resizable Divider Handle (only when pinned) */}
-                <div
-                  onMouseDown={startBrowserResize}
-                  onDoubleClick={toggleBrowserPanel}
-                  className="w-1.5 hover:w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none z-10"
-                  title="Drag to resize browser panel, Double-click to collapse"
-                >
-                  <div className="w-[1px] h-full bg-border-glass group-hover:bg-[#f59e0b]/50 group-active:bg-[#f59e0b] transition-colors duration-150" />
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                {/* Resizer Handle */}
+                {isBrowserPanelPinned ? (
+                  /* Resizable Divider Handle (only when pinned) */
+                  <div
+                    onMouseDown={startBrowserResize}
+                    onDoubleClick={toggleBrowserPanel}
+                    className="w-1.5 hover:w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none z-10"
+                    title="Drag to resize browser panel, Double-click to collapse"
+                  >
+                    <div className="w-[1px] h-full bg-border-glass group-hover:bg-[#f59e0b]/50 group-active:bg-[#f59e0b] transition-colors duration-150" />
+                    <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                      <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                      <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                      <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    </div>
                   </div>
-                </div>
-
-                {/* Web Browser Panel (Pinned) */}
-                <div
-                  className={`flex-shrink-0 h-full overflow-hidden glass-panel ${
-                    isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
-                  }`}
-                  style={{ width: 'var(--browser-panel-width)' }}
-                >
-                  <BrowserPanel />
-                </div>
-              </>
-            )}
-
-            {isBrowserPanelVisible && !isBrowserPanelPinned && (
-              <>
-                {/* Floating Resizer Handle (only when unpinned) */}
-                <div
-                  onMouseDown={startBrowserResize}
-                  className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
-                  style={{ right: 'var(--browser-panel-width)' }}
-                >
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                ) : (
+                  /* Floating Resizer Handle (only when unpinned) */
+                  <div
+                    onMouseDown={startBrowserResize}
+                    className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
+                    style={{ right: 'var(--browser-panel-width)' }}
+                  >
+                    <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                      <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                      <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                      <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* Web Browser Panel (Unpinned/Popup) */}
+                {/* Web Browser Panel (Unified to keep instance mounted when toggling pin state) */}
                 <div
-                  className={`!absolute right-0 top-0 bottom-0 z-30 overflow-hidden glass-panel shadow-2xl bg-[#08080a] backdrop-blur-xl border border-border-glass rounded-lg ${
-                    isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
-                  }`}
+                  className={`overflow-hidden glass-panel ${
+                    isBrowserPanelPinned
+                      ? "flex-shrink-0 h-full"
+                      : "!absolute right-0 top-0 bottom-0 z-30 shadow-2xl bg-[#08080a] backdrop-blur-xl border border-border-glass rounded-lg"
+                  } ${isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'}`}
                   style={{ width: 'var(--browser-panel-width)' }}
                 >
                   <BrowserPanel />

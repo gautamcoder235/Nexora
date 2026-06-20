@@ -8,6 +8,18 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+// Shared promise chain to serialize webview spawn and destroy commands,
+// preventing concurrent execution race conditions (especially during React StrictMode double-mount).
+let tauriWebviewPromiseChain: Promise<any> = Promise.resolve();
+
+function queueTauriCommand<T>(task: () => Promise<T>): Promise<T | void> {
+  const nextPromise = tauriWebviewPromiseChain.then(() => task());
+  tauriWebviewPromiseChain = nextPromise.catch((err) => {
+    console.error("Error in queued Tauri command:", err);
+  });
+  return nextPromise;
+}
+
 function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeout: number | null = null;
   return (...args: Parameters<T>) => {
@@ -195,7 +207,7 @@ export const BrowserPanel: React.FC = () => {
 
     setLoading(true);
     try {
-      await invoke("spawn_browser_webview", { url, x, y, width, height });
+      await queueTauriCommand(() => invoke("spawn_browser_webview", { url, x, y, width, height }));
       isWebviewSpawned.current = true;
       lastSyncedRect.current = { left: x, top: y, width, height };
       syncLayoutDuringTransition();
@@ -214,7 +226,7 @@ export const BrowserPanel: React.FC = () => {
       spawnOrNavigate(activeTab.url);
     } else {
       // No external URL — destroy the child webview
-      invoke("destroy_browser_webview").catch(() => {});
+      queueTauriCommand(() => invoke("destroy_browser_webview")).catch(() => {});
       isWebviewSpawned.current = false;
     }
   }, [activeTab?.id, activeTab?.url, refreshKey]);
@@ -304,7 +316,7 @@ export const BrowserPanel: React.FC = () => {
   // ==========================================
   useEffect(() => {
     return () => {
-      invoke("destroy_browser_webview").catch(() => {});
+      queueTauriCommand(() => invoke("destroy_browser_webview")).catch(() => {});
       isWebviewSpawned.current = false;
     };
   }, []);
