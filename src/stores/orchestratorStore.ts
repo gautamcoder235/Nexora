@@ -447,6 +447,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     set((state) => ({
       workspaces: [...state.workspaces, newWorkspace],
       activeWorkspaceId: newWorkspace.id,
+      isSidebarVisible: false,
       projects: [],
       agents: [],
       terminals: [],
@@ -472,6 +473,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     set((state) => ({
       activeWorkspaceId: workspaceId,
+      isSidebarVisible: false,
       terminals: [],
       layout: { type: 'grid', panels: [] },
       workspaces: state.workspaces.map(w => w.id === workspaceId ? { ...w, lastOpened: Date.now() } : w)
@@ -1141,7 +1143,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           agents: restoredAgents,
           tasks: snapshot.tasks || [],
           layout: snapshot.layout || { type: 'grid', panels: [] },
-          isSidebarVisible: restoredTerminals.length === 0 ? true : (snapshot.isSidebarVisible !== undefined ? snapshot.isSidebarVisible : true),
+          isSidebarVisible: false,
           isTaskCenterVisible: snapshot.isTaskCenterVisible !== undefined ? snapshot.isTaskCenterVisible : true,
           sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 490,
           topPanelHeight: snapshot.topPanelHeight !== undefined ? snapshot.topPanelHeight : 320
