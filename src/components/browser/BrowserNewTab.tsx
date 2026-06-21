@@ -114,6 +114,58 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const clockString = time.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const dateString = time.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).toUpperCase();
+
+  const getGreeting = () => {
+    const hrs = time.getHours();
+    if (hrs < 12) return "Good morning";
+    if (hrs < 17) return "Good afternoon";
+    return "Good evening";
+  };
+
+  const greeting = getGreeting();
+
+  const thought = useMemo(() => {
+    const thoughts = [
+      "First, solve the problem. Then, write the code.",
+      "Simplicity is the soul of efficiency.",
+      "Make it work, make it right, make it fast.",
+      "The best way to predict the future is to invent it.",
+      "Clean code always looks like it was written by someone who cares.",
+      "Excellence is not a skill. It is an attitude.",
+      "Talk is cheap. Show me the code.",
+      "Every great developer was once a beginner who didn't quit.",
+      "Details matter, it's worth waiting to get them right.",
+      "Programs must be written for people to read, and only accidentally for machines to execute.",
+      "In order to be irreplaceable one must always be different.",
+      "The only way to do great work is to love what you do.",
+      "Excellence is a continuous process and not an accident.",
+      "Intellectuals solve problems, geniuses prevent them."
+    ];
+    const day = new Date().getDate();
+    return thoughts[day % thoughts.length];
+  }, []);
+
   // Quick Links State
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>(() => {
     const saved = localStorage.getItem("nexora_quick_links");
@@ -381,20 +433,19 @@ export const BrowserNewTab: React.FC<BrowserNewTabProps> = ({ onNavigate }) => {
 
       <div className="browser-home-content">
         {/* Header/Hero Section */}
-        <div className="text-center space-y-4">
-          <div className="browser-logo-wrapper group">
-            <div className="browser-logo-card">
-              <span className="browser-logo-text">NX</span>
-            </div>
-            <div className="browser-logo-glow" />
+        <div className="text-center">
+          <div className="browser-home-clock">
+            {clockString}
           </div>
-
-          <h1 className="browser-home-title">
-            Nexora Browser
-          </h1>
-          <p className="browser-home-subtitle">
-            Browse local development ports, documentation and the web alongside your terminal.
-          </p>
+          <div className="browser-home-date">
+            {dateString}
+          </div>
+          <div className="browser-home-greeting">
+            {greeting}, <span className="highlight">Explorer</span>
+          </div>
+          <div className="browser-home-thought">
+            &ldquo;{thought}&rdquo;
+          </div>
         </div>
 
         {/* Search / Omnibox Form */}

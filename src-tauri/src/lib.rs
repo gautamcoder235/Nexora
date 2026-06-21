@@ -4,8 +4,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager,
 };
 
 pub mod swarm_agents;
@@ -48,46 +47,7 @@ struct BrowserState {
     current_url: String,
 }
 
-fn browser_webview_bounds(
-    main_window: &WebviewWindow,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-) -> (Position, Size) {
-    let scale_factor = main_window.scale_factor().unwrap_or(1.0);
-    let inner_pos = main_window.inner_position().unwrap_or_default();
-    (
-        Position::Physical(PhysicalPosition::new(
-            inner_pos.x + (x * scale_factor).round() as i32,
-            inner_pos.y + (y * scale_factor).round() as i32,
-        )),
-        Size::Physical(PhysicalSize::new(
-            (width * scale_factor).round().max(1.0) as u32,
-            (height * scale_factor).round().max(1.0) as u32,
-        )),
-    )
-}
 
-fn log_debug_pos(
-    tag: &str,
-    main_window: &WebviewWindow,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    pos: Position,
-    size: Size,
-) {
-    let scale_factor = main_window.scale_factor().unwrap_or(1.0);
-    let inner_pos = main_window.inner_position().unwrap_or_default();
-    let outer_pos = main_window.outer_position().unwrap_or_default();
-    let msg = format!(
-        "[{}] dom_x={}, dom_y={}, dom_w={}, dom_h={}, scale={}, requested_pos={:?}, requested_size={:?}, inner_pos=({}, {}), outer_pos=({}, {})",
-        tag, x, y, width, height, scale_factor, pos, size, inner_pos.x, inner_pos.y, outer_pos.x, outer_pos.y
-    );
-    eprintln!("POSITION_DEBUG: {}", msg);
-}
 
 struct BrowserStateWrapper(Mutex<BrowserState>);
 
@@ -597,68 +557,46 @@ fn load_config(app: AppHandle, filename: &str) -> Result<String, String> {
 async fn spawn_browser_webview(
     app_handle: AppHandle,
     url: String,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
 ) -> Result<(), String> {
     let parsed_url = url
         .parse::<tauri::Url>()
         .map_err(|e| format!("Invalid URL: {}", e))?;
 
     let main_window = app_handle
-        .get_webview_window("main")
+        .get_window("main")
         .ok_or("Main window not found")?;
 
-    let (pos, size) = browser_webview_bounds(&main_window, x, y, width, height);
+    let pos = tauri::PhysicalPosition::new(x, y);
+    let size = tauri::PhysicalSize::new(width, height);
 
-    // If owned webview window already exists, navigate and reposition it.
-    if let Some(browser_window) = app_handle.get_webview_window(BROWSER_WEBVIEW_LABEL) {
-        browser_window
+    // If child webview already exists, navigate and reposition/resize it.
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
+        browser_wv
             .navigate(parsed_url)
             .map_err(|e| e.to_string())?;
-        log_debug_pos(
-            "reposition_window",
-            &main_window,
-            x,
-            y,
-            width,
-            height,
-            pos,
-            size,
-        );
-        browser_window
+        browser_wv
             .set_position(pos)
             .map_err(|e| e.to_string())?;
-        browser_window.set_size(size).map_err(|e| e.to_string())?;
-        browser_window.show().map_err(|e| e.to_string())?;
+        browser_wv.set_size(size).map_err(|e| e.to_string())?;
     } else {
-        log_debug_pos("spawn_window", &main_window, x, y, width, height, pos, size);
-
-        let browser_window = WebviewWindowBuilder::new(
-            &app_handle,
+        let app_handle_clone = app_handle.clone();
+        let webview_builder = tauri::webview::WebviewBuilder::new(
             BROWSER_WEBVIEW_LABEL,
-            WebviewUrl::External(parsed_url),
+            tauri::WebviewUrl::External(parsed_url),
         )
-        .on_page_load(|window, payload| {
+        .on_page_load(move |_, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                let _ = window.emit("browser-webview-navigation-finished", ());
+                let _ = app_handle_clone.emit("browser-webview-navigation-finished", ());
             }
-        })
-        .decorations(false)
-        .shadow(false)
-        .skip_taskbar(true)
-        .resizable(false)
-        .inner_size(width, height)
-        .parent(&main_window)
-        .map_err(|e| e.to_string())?
-        .build()
-        .map_err(|e| format!("Failed to build browser webview window: {}", e))?;
+        });
 
-        browser_window
-            .set_position(pos)
-            .map_err(|e| e.to_string())?;
-        browser_window.set_size(size).map_err(|e| e.to_string())?;
+        main_window
+            .add_child(webview_builder, pos, size)
+            .map_err(|e| format!("Failed to add child webview: {}", e))?;
     }
 
     // Update managed state
@@ -676,26 +614,25 @@ async fn spawn_browser_webview(
 async fn sync_browser_webview_layout(
     app_handle: AppHandle,
     visible: bool,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
 ) -> Result<(), String> {
-    let main_window = app_handle
-        .get_webview_window("main")
-        .ok_or("Main window not found")?;
-    if let Some(browser_window) = app_handle.get_webview_window(BROWSER_WEBVIEW_LABEL) {
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
         if visible {
-            let (pos, size) = browser_webview_bounds(&main_window, x, y, width, height);
-            log_debug_pos("sync_window", &main_window, x, y, width, height, pos, size);
-
-            browser_window
+            let pos = tauri::PhysicalPosition::new(x, y);
+            let size = tauri::PhysicalSize::new(width, height);
+            browser_wv
                 .set_position(pos)
                 .map_err(|e| e.to_string())?;
-            browser_window.set_size(size).map_err(|e| e.to_string())?;
-            browser_window.show().map_err(|e| e.to_string())?;
+            browser_wv.set_size(size).map_err(|e| e.to_string())?;
         } else {
-            browser_window.hide().map_err(|e| e.to_string())?;
+            // Hide by moving offscreen and setting size to 0
+            let pos = tauri::PhysicalPosition::new(-40000, -40000);
+            let size = tauri::PhysicalSize::new(0, 0);
+            let _ = browser_wv.set_position(pos);
+            let _ = browser_wv.set_size(size);
         }
     }
     Ok(())
@@ -703,15 +640,12 @@ async fn sync_browser_webview_layout(
 
 #[tauri::command]
 async fn destroy_browser_webview(app_handle: AppHandle) -> Result<(), String> {
-    println!("DEBUG: destroy_browser_webview called");
-    if let Some(browser_window) = app_handle.get_webview_window(BROWSER_WEBVIEW_LABEL) {
-        println!("DEBUG: Found browser window, calling destroy()");
-        match browser_window.destroy() {
-            Ok(_) => println!("DEBUG: browser_window.destroy() returned Ok"),
-            Err(e) => println!("DEBUG: browser_window.destroy() returned Err: {}", e),
-        }
-    } else {
-        println!("DEBUG: Browser window not found under label '{}'", BROWSER_WEBVIEW_LABEL);
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
+        // Move offscreen and set size to 0 to simulate destruction/hiding
+        let pos = tauri::PhysicalPosition::new(-40000, -40000);
+        let size = tauri::PhysicalSize::new(0, 0);
+        let _ = browser_wv.set_position(pos);
+        let _ = browser_wv.set_size(size);
     }
     // Update managed state
     if let Some(state) = app_handle.try_state::<BrowserStateWrapper>() {

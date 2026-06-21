@@ -346,9 +346,15 @@
   pointer-events: none;
   user-select: none;
   z-index: 5;
+  display: flex;
+  align-items: center;
 }
 
 .browser-search-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   font-family: inherit;
   font-size: 8.5px;
   font-weight: 700;
@@ -363,7 +369,7 @@
 
 .browser-search-form:focus-within .browser-search-kbd {
   opacity: 0;
-  transform: translateX(-4px);
+  transform: translate(-4px, 0);
 }
 
 /* Submit search button */

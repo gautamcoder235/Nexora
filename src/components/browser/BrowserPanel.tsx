@@ -8,18 +8,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-// Shared promise chain to serialize webview spawn and destroy commands,
-// preventing concurrent execution race conditions (especially during React StrictMode double-mount).
-let tauriWebviewPromiseChain: Promise<any> = Promise.resolve();
-
-function queueTauriCommand<T>(task: () => Promise<T>): Promise<T | void> {
-  const nextPromise = tauriWebviewPromiseChain.then(() => task());
-  tauriWebviewPromiseChain = nextPromise.catch((err) => {
-    console.error("Error in queued Tauri command:", err);
-  });
-  return nextPromise;
-}
-
 function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeout: number | null = null;
   return (...args: Parameters<T>) => {
@@ -149,13 +137,20 @@ export const BrowserPanel: React.FC = () => {
 
     lastSyncedRect.current = { left: x, top: y, width, height };
 
+    // Calculate strict physical pixels in the frontend
+    const dpr = window.devicePixelRatio;
+    const physicalX = Math.round(x * dpr);
+    const physicalY = Math.round(y * dpr);
+    const physicalW = Math.round(width * dpr);
+    const physicalH = Math.round(height * dpr);
+
     try {
       await invoke("sync_browser_webview_layout", {
         visible: true,
-        x,
-        y,
-        width,
-        height,
+        x: physicalX,
+        y: physicalY,
+        width: physicalW,
+        height: physicalH,
       });
     } catch (err) {
       console.error("Failed to sync webview layout:", err);
@@ -207,7 +202,19 @@ export const BrowserPanel: React.FC = () => {
 
     setLoading(true);
     try {
-      await queueTauriCommand(() => invoke("spawn_browser_webview", { url, x, y, width, height }));
+      const dpr = window.devicePixelRatio;
+      const physicalX = Math.round(x * dpr);
+      const physicalY = Math.round(y * dpr);
+      const physicalW = Math.round(width * dpr);
+      const physicalH = Math.round(height * dpr);
+
+      await invoke("spawn_browser_webview", {
+        url,
+        x: physicalX,
+        y: physicalY,
+        width: physicalW,
+        height: physicalH,
+      });
       isWebviewSpawned.current = true;
       lastSyncedRect.current = { left: x, top: y, width, height };
       syncLayoutDuringTransition();
@@ -226,8 +233,10 @@ export const BrowserPanel: React.FC = () => {
       spawnOrNavigate(activeTab.url);
     } else {
       // No external URL — destroy the child webview
-      queueTauriCommand(() => invoke("destroy_browser_webview")).catch(() => {});
-      isWebviewSpawned.current = false;
+      if (isWebviewSpawned.current) {
+        invoke("destroy_browser_webview").catch(() => {});
+        isWebviewSpawned.current = false;
+      }
     }
   }, [activeTab?.id, activeTab?.url, refreshKey]);
 
@@ -316,7 +325,7 @@ export const BrowserPanel: React.FC = () => {
   // ==========================================
   useEffect(() => {
     return () => {
-      queueTauriCommand(() => invoke("destroy_browser_webview")).catch(() => {});
+      invoke("destroy_browser_webview").catch(() => {});
       isWebviewSpawned.current = false;
     };
   }, []);
