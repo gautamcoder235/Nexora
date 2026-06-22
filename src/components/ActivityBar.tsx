@@ -334,13 +334,13 @@ export const ActivityBar: React.FC = () => {
             <button
               onClick={() => useBrowserStore.getState().toggleBrowserPanel()}
               className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
-                useBrowserStore((s) => s.isBrowserPanelVisible)
+                useBrowserStore((s) => s.isElectronConnected)
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
               }`}
-              title={useBrowserStore((s) => s.isBrowserPanelVisible) ? "Hide Web Browser" : "Show Web Browser"}
+              title={useBrowserStore((s) => s.isElectronConnected) ? "Close Web Browser" : "Open Web Browser"}
             >
-              {useBrowserStore((s) => s.isBrowserPanelVisible) && (
+              {useBrowserStore((s) => s.isElectronConnected) && (
                 <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
               )}
               <Globe size={20} />

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    html {
+      background: transparent !important;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent !important;
+      overflow: hidden;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+      box-sizing: border-box;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .popup-container {
+      background: #0c0c0e;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03);
+      padding: 14px;
+      width: calc(100% - 20px);
+      height: calc(100% - 20px);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      
+      /* Animation states */
+      opacity: 0;
+      transform: translateY(-12px) scale(0.96);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+    }
+
+    .popup-container.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    .site-settings-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 8px;
+    }
+
+    .site-settings-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #ffffff;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      letter-spacing: -0.01em;
+    }
+
+    .header-icon {
+      flex-shrink: 0;
+      color: #c084fc;
+    }
+
+    .site-settings-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-grow: 1;
+    }
+
+    .site-settings-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      border-radius: 10px;
+      transition: background 0.2s ease;
+    }
+
+    .site-settings-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .item-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #e2e2e9;
+    }
+
+    .item-left svg {
+      color: #9ca3af;
+      transition: color 0.2s ease;
+    }
+
+    .site-settings-item:hover .item-left svg {
+      color: #c084fc;
+    }
+
+    /* Elegant toggle switch */
+    .switch-small {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+    }
+
+    .switch-small input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider-small {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 20px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .slider-small:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 2px;
+      bottom: 2px;
+      background-color: #9ca3af;
+      border-radius: 50%;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+
+    input:checked + .slider-small {
+      background-color: rgba(168, 85, 247, 0.25);
+      border-color: rgba(168, 85, 247, 0.4);
+    }
+
+    input:checked + .slider-small:before {
+      transform: translateX(14px);
+      background-color: #c084fc;
+    }
+
+    .reset-permissions-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      color: #a1a1aa;
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 8px 0;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-top: auto;
+    }
+
+    .reset-permissions-btn:hover {
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.25);
+      color: #f87171;
+    }
+
+    .reset-permissions-btn:active {
+      transform: scale(0.98);
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-container" id="popup-container">
+    <div class="site-settings-header">
+      <svg class="header-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+      </svg>
+      <span class="site-settings-title" id="settings-origin-label">site.com</span>
+    </div>
+    
+    <div class="site-settings-list">
+      <div class="site-settings-item">
+        <div class="item-left">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span>Microphone</span>
+        </div>
+        <label class="switch-small">
+          <input type="checkbox" id="mic-toggle">
+          <span class="slider-small"></span>
+        </label>
+      </div>
+
+      <div class="site-settings-item">
+        <div class="item-left">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span>Notifications</span>
+        </div>
+        <label class="switch-small">
+          <input type="checkbox" id="notif-toggle">
+          <span class="slider-small"></span>
+        </label>
+      </div>
+
+      <div class="site-settings-item">
+        <div class="item-left">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <span>Sound</span>
+        </div>
+        <label class="switch-small">
+          <input type="checkbox" id="sound-toggle">
+          <span class="slider-small"></span>
+        </label>
+      </div>
+    </div>
+
+    <button id="reset-permissions-btn" class="reset-permissions-btn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+      </svg>
+      Reset permissions
+    </button>
+  </div>
+
+  <script>
+    let activeTabId = null;
+    let siteUrl = '';
+
+    const container = document.getElementById("popup-container");
+    const micToggle = document.getElementById("mic-toggle");
+    const notifToggle = document.getElementById("notif-toggle");
+    const soundToggle = document.getElementById("sound-toggle");
+    const resetBtn = document.getElementById("reset-permissions-btn");
+    const originLabel = document.getElementById("settings-origin-label");
+
+    // Animate popup entry
+    setTimeout(() => {
+      container.classList.add("visible");
+    }, 20);
+
+    if (window.electron) {
+      window.electron.on('init-site-settings', (data) => {
+        originLabel.textContent = data.origin;
+        micToggle.checked = data.microphone;
+        notifToggle.checked = data.notifications;
+        soundToggle.checked = data.sound;
+        activeTabId = data.tabId;
+        siteUrl = data.url;
+      });
+      
+      window.electron.on('site-settings-data', (data) => {
+        micToggle.checked = data.microphone;
+        notifToggle.checked = data.notifications;
+        soundToggle.checked = data.sound;
+      });
+
+      // Handle close request with fade-out exit animation
+      window.electron.on('request-close-popup', () => {
+        container.classList.remove('visible');
+        setTimeout(() => {
+          window.electron.send('confirm-close-popup');
+        }, 220);
+      });
+    }
+
+    micToggle.addEventListener('change', () => {
+      if (window.electron && siteUrl) {
+        window.electron.send('set-site-permission', {
+          url: siteUrl,
+          permissionType: 'microphone',
+          allowed: micToggle.checked
+        });
+      }
+    });
+
+    notifToggle.addEventListener('change', () => {
+      if (window.electron && siteUrl) {
+        window.electron.send('set-site-permission', {
+          url: siteUrl,
+          permissionType: 'notifications',
+          allowed: notifToggle.checked
+        });
+      }
+    });
+
+    soundToggle.addEventListener('change', () => {
+      if (window.electron && activeTabId) {
+        window.electron.send('set-tab-sound', {
+          tabId: activeTabId,
+          allowed: soundToggle.checked
+        });
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      if (window.electron && activeTabId && siteUrl) {
+        window.electron.send('reset-site-permissions', {
+          tabId: activeTabId,
+          url: siteUrl
+        });
+      }
+    });
+  </script>
+</body>
+</html>

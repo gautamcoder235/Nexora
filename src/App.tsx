@@ -69,6 +69,8 @@ function App() {
   const showConfirmDialog = useOrchestratorStore(s => s.showConfirmDialog);
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
   const workspaces = useOrchestratorStore(useShallow(s => s.workspaces));
+  const settings = useOrchestratorStore(useShallow(s => s.settings));
+  const settingsShortcut = settings?.shortcuts?.openSettings || "Ctrl+,";
   const createWorkspace = useOrchestratorStore(s => s.createWorkspace);
   const terminals = useOrchestratorStore(useShallow(s => s.terminals));
   const projects = useOrchestratorStore(useShallow(s => s.projects));
@@ -203,6 +205,37 @@ function App() {
 
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 2000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Electron browser connection status poller
+  useEffect(() => {
+    let isMounted = true;
+    
+    const checkConnection = async () => {
+      try {
+        const connected = await invoke<boolean>("check_electron_ping");
+        if (isMounted) {
+          const current = useBrowserStore.getState().isElectronConnected;
+          if (connected !== current) {
+            useBrowserStore.getState().setElectronConnected(connected);
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          const current = useBrowserStore.getState().isElectronConnected;
+          if (current) {
+            useBrowserStore.getState().setElectronConnected(false);
+          }
+        }
+      }
+    };
+
+    checkConnection();
+    const interval = setInterval(checkConnection, 500);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -815,7 +848,7 @@ function App() {
             >
               <Settings size={13} />
               <span>Settings</span>
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-zinc-300 group-hover:border-white/15 transition-all ml-1.5">Ctrl+,</span>
+              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-zinc-300 group-hover:border-white/15 transition-all ml-1.5">{settingsShortcut}</span>
             </button>
             <button
               onClick={handleExitApp}

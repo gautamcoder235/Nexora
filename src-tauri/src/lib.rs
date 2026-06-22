@@ -575,9 +575,20 @@ async fn spawn_browser_webview(
 
     // If child webview already exists, navigate and reposition/resize it.
     if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
-        browser_wv
-            .navigate(parsed_url)
-            .map_err(|e| e.to_string())?;
+        let mut should_navigate = true;
+        if let Some(state) = app_handle.try_state::<BrowserStateWrapper>() {
+            if let Ok(bs) = state.0.lock() {
+                if bs.created && bs.current_url == url {
+                    should_navigate = false;
+                }
+            }
+        }
+
+        if should_navigate {
+            browser_wv
+                .navigate(parsed_url)
+                .map_err(|e| e.to_string())?;
+        }
         browser_wv
             .set_position(pos)
             .map_err(|e| e.to_string())?;
@@ -590,6 +601,16 @@ async fn spawn_browser_webview(
         )
         .on_page_load(move |_, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                let url_str = payload.url().as_str().to_string();
+
+                // Update managed state with the navigated URL
+                if let Some(state) = app_handle_clone.try_state::<BrowserStateWrapper>() {
+                    if let Ok(mut bs) = state.0.lock() {
+                        bs.current_url = url_str.clone();
+                    }
+                }
+
+                let _ = app_handle_clone.emit("browser-webview-url-changed", url_str);
                 let _ = app_handle_clone.emit("browser-webview-navigation-finished", ());
             }
         });
@@ -658,9 +679,149 @@ async fn destroy_browser_webview(app_handle: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_browser_devtools(app_handle: AppHandle, label: String) -> Result<(), String> {
+async fn browser_go_back(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
+        browser_wv.eval("window.history.back()").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn browser_go_forward(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
+        browser_wv.eval("window.history.forward()").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn browser_reload(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(browser_wv) = app_handle.get_webview(BROWSER_WEBVIEW_LABEL) {
+        browser_wv.eval("window.location.reload()").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<String>) -> Result<(), String> {
+    use std::process::Command;
+    
+    let mut electron_dir = None;
+
+    // 1. Try to check if we are in production resources
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let prod_dir = resource_dir.join("electron-browser");
+        if prod_dir.exists() {
+            electron_dir = Some(prod_dir);
+        } else {
+            // Check with "_up_" prefix which Tauri v2 adds for relative directory bundle resources
+            let up_dir = resource_dir.join("_up_").join("electron-browser");
+            if up_dir.exists() {
+                electron_dir = Some(up_dir);
+            }
+        }
+    }
+
+    // 2. Try current working directory pop logic
+    if electron_dir.is_none() {
+        let mut current_dir = std::env::current_dir().unwrap_or_default();
+        if current_dir.ends_with("src-tauri") {
+            current_dir.pop();
+        }
+        let dev_dir = current_dir.join("electron-browser");
+        if dev_dir.exists() {
+            electron_dir = Some(dev_dir);
+        }
+    }
+
+    // 3. Try to locate relative to the current executable path
+    if electron_dir.is_none() {
+        if let Ok(mut exe_dir) = std::env::current_exe() {
+            exe_dir.pop(); // Remove file name
+            let mut check_dir = exe_dir.clone();
+            for _ in 0..4 {
+                let check_path = check_dir.join("electron-browser");
+                if check_path.exists() {
+                    electron_dir = Some(check_path);
+                    break;
+                }
+                check_dir.pop();
+            }
+        }
+    }
+
+    let electron_dir = electron_dir.ok_or_else(|| {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let exe = std::env::current_exe().unwrap_or_default();
+        let res = app_handle.path().resource_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|e| format!("Error: {}", e));
+        format!(
+            "Could not locate electron-browser directory. Checked production resources (res: {}), cwd (cwd: {}), and exe path (exe: {}).",
+            res, cwd.to_string_lossy(), exe.to_string_lossy()
+        )
+    })?;
+
+    // Direct Electron executable path based on platform
+    let electron_exe = if cfg!(target_os = "windows") {
+        electron_dir.join("node_modules").join("electron").join("dist").join("electron.exe")
+    } else if cfg!(target_os = "macos") {
+        electron_dir.join("node_modules").join("electron").join("dist").join("Electron.app").join("Contents").join("MacOS").join("Electron")
+    } else {
+        electron_dir.join("node_modules").join("electron").join("dist").join("electron")
+    };
+
+    let mut direct_args = vec![".".to_string()];
+    if let Some(u) = url.as_ref() {
+        if !u.trim().is_empty() {
+            direct_args.push("--".to_string());
+            direct_args.push(u.trim().to_string());
+        }
+    }
+
+    if electron_exe.exists() {
+        // Direct spawn is sub-100ms and extremely fast
+        Command::new(electron_exe)
+            .args(&direct_args)
+            .current_dir(&electron_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn direct Electron: {}", e))?;
+    } else {
+        // Fallback to npm start shell execution if node_modules structure is different
+        let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
+        let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+        
+        let mut fallback_args = vec![shell_arg.to_string(), "npm start".to_string()];
+        if let Some(u) = url {
+            if !u.trim().is_empty() {
+                fallback_args.push("--".to_string());
+                fallback_args.push(u.trim().to_string());
+            }
+        }
+
+        Command::new(shell)
+            .args(&fallback_args)
+            .current_dir(&electron_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to launch Electron browser fallback: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn check_electron_ping() -> bool {
+    use std::net::SocketAddr;
+    use std::time::Duration;
+    if let Ok(addr) = "127.0.0.1:30120".parse::<SocketAddr>() {
+        std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+    } else {
+        false
+    }
+}
+
+#[tauri::command]
+fn open_browser_devtools(_app_handle: AppHandle, _label: String) -> Result<(), String> {
     #[cfg(any(debug_assertions, feature = "devtools"))]
-    if let Some(wv) = app_handle.get_webview(&label) {
+    if let Some(wv) = _app_handle.get_webview(&_label) {
         wv.open_devtools();
     }
     Ok(())
@@ -822,7 +983,7 @@ pub fn run() {
         "TAURI_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
         "--disable-web-security",
     );
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .manage(BrowserStateWrapper(Mutex::new(BrowserState::default())))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -846,6 +1007,11 @@ pub fn run() {
             spawn_browser_webview,
             sync_browser_webview_layout,
             destroy_browser_webview,
+            browser_go_back,
+            browser_go_forward,
+            browser_reload,
+            launch_electron_browser,
+            check_electron_ping,
             open_browser_devtools,
             inject_picker_into_webview,
             remove_picker_from_webview,
@@ -914,6 +1080,17 @@ pub fn run() {
             swarm_changeset::rollback_changeset,
             swarm_changeset::validate_changeset_shadow
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|_app_handle, event| match event {
+        tauri::RunEvent::Exit => {
+            // Close spawned electron browser by calling its control server endpoint /close
+            if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
+                use std::io::Write;
+                let _ = stream.write_all(b"GET /close HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
+            }
+        }
+        _ => {}
+    });
 }

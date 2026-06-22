@@ -9,6 +9,7 @@ interface BrowserState {
   browserPanelWidth: number;
   isElementPickerOpen: boolean;
   history: BrowserHistoryItem[];
+  isElectronConnected: boolean;
 
   // Actions
   addTab: (url?: string) => void;
@@ -22,6 +23,7 @@ interface BrowserState {
   toggleElementPicker: () => void;
   addToHistory: (title: string, url: string) => void;
   clearHistoryItem: (url: string) => void;
+  setElectronConnected: (connected: boolean) => void;
 }
 
 const normalizeUrl = (input: string): string => {
@@ -73,6 +75,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   browserPanelWidth: 480,
   isElementPickerOpen: false,
   history: [],
+  isElectronConnected: false,
 
   addTab: (url = "") => {
     const id = Math.random().toString(36).substring(7);
@@ -155,25 +158,41 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   },
 
   toggleBrowserPanel: () => {
-    set((state) => {
-      const nextVisible = !state.isBrowserPanelVisible;
-      
-      // If we are opening the panel and there are no tabs, create an empty one
-      const tabsUpdate = (nextVisible && state.tabs.length === 0)
-        ? (() => {
-            const tabId = Math.random().toString(36).substring(7);
-            return {
-              tabs: [{ id: tabId, url: "", title: "New Tab", isLoading: false }],
-              activeTabId: tabId
-            };
-          })()
-        : {};
+    const { isElectronConnected } = get();
+    if (isElectronConnected) {
+      // Optimistically toggle off connection state for instant UI responsiveness
+      set({ isElectronConnected: false });
+      fetch("http://localhost:30120/close").catch((err) => {
+        console.error("Failed to close electron browser:", err);
+      });
+    } else {
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        invoke("launch_electron_browser").then(() => {
+          // Rapidly poll the ping endpoint every 100ms for up to 2 seconds to establish connection instantly
+          let attempts = 0;
+          const interval = setInterval(async () => {
+            attempts++;
+            if (attempts > 20 || get().isElectronConnected) {
+              clearInterval(interval);
+              return;
+            }
+            try {
+              const connected = await invoke<boolean>("check_electron_ping");
+              if (connected) {
+                set({ isElectronConnected: true });
+                clearInterval(interval);
+              }
+            } catch (_) {}
+          }, 100);
+        }).catch((err) => {
+          console.error("Failed to launch electron browser:", err);
+        });
+      });
+    }
+  },
 
-      return {
-        isBrowserPanelVisible: nextVisible,
-        ...tabsUpdate
-      };
-    });
+  setElectronConnected: (connected) => {
+    set({ isElectronConnected: connected });
   },
 
   toggleBrowserPanelPinned: () => {
