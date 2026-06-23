@@ -652,6 +652,10 @@ function createHoverPreviewWindow() {
     hasShadow: false
   });
 
+  try {
+    hoverPreviewWindow.setIgnoreMouseEvents(true);
+  } catch (e) {}
+
   hoverPreviewWindow.loadFile(path.join(__dirname, 'src', 'hover-preview.html'));
 
   hoverPreviewWindow.on('closed', () => {
@@ -822,6 +826,14 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     createHoverPreviewWindow();
+  });
+
+  mainWindow.on('blur', () => {
+    if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
+      try {
+        hoverPreviewWindow.hide();
+      } catch (e) {}
+    }
   });
 
   // Main window keystroke listener for Ctrl+T, Ctrl+W

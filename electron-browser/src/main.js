@@ -268,6 +268,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Tab Created Event
   window.electron.on("tab-created", (tab) => {
+    let hoverTimeout = null;
     const tabEl = document.createElement("div");
     tabEl.className = "tab";
     tabEl.id = `tab-${tab.id}`;
@@ -296,6 +297,8 @@ window.addEventListener("DOMContentLoaded", () => {
     // Switch focus on click
     tabEl.addEventListener("click", (e) => {
       if (e.target.closest(".tab-close-btn")) return;
+      if (hoverTimeout) clearTimeout(hoverTimeout);
+      window.electron.send("hide-tab-hover-preview");
       window.electron.send("switch-tab", tab.id);
     });
 
@@ -303,12 +306,12 @@ window.addEventListener("DOMContentLoaded", () => {
     const closeBtn = tabEl.querySelector(".tab-close-btn");
     closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (hoverTimeout) clearTimeout(hoverTimeout);
+      window.electron.send("hide-tab-hover-preview");
       window.electron.send("close-tab", tab.id);
     });
 
     // Tab hover preview event handlers
-    let hoverTimeout = null;
-
     tabEl.addEventListener("mouseenter", () => {
       const cachedThumbnail = tabThumbnails[tab.id];
       if (cachedThumbnail) {
@@ -737,4 +740,8 @@ window.addEventListener("DOMContentLoaded", () => {
       portNotification.classList.remove("show");
     });
   }
+
+  document.addEventListener("mouseleave", () => {
+    window.electron.send("hide-tab-hover-preview");
+  });
 });
