@@ -20,6 +20,7 @@ interface TerminalFrameProps {
 
 const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, isHidden = false, globalRefreshKey, onFocusToggle }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
+  const settings = useOrchestratorStore(s => s.settings);
   const frameRef = useRef<HTMLDivElement>(null);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const refreshKey = localRefreshKey + globalRefreshKey;
@@ -45,37 +46,39 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
       }`}
     >
       {/* Title / Action bar */}
-      <div className="flex items-center justify-between px-2 h-[24px] bg-white/[0.03] backdrop-blur-md border-b border-border-glass/35 text-[9.5px] select-none text-zinc-400 flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] rounded-t-[inherit]">
-        <div className="flex items-center gap-1.5 truncate">
-          <TerminalIcon size={10.5} className="text-zinc-500 flex-shrink-0" />
-          <span className="truncate font-semibold">{session.title}</span>
-          <span className="text-[8px] bg-white/5 text-zinc-500 px-1 py-0.5 rounded font-bold font-mono tracking-wider">{session.id}</span>
-        </div>
+      {settings.appearance?.layout?.showTerminalTitleBar !== false && (
+        <div className="flex items-center justify-between px-2 h-[24px] bg-white/[0.03] backdrop-blur-md border-b border-border-glass/35 text-[9.5px] select-none text-zinc-400 flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] rounded-t-[inherit]">
+          <div className="flex items-center gap-1.5 truncate">
+            <TerminalIcon size={10.5} className="text-zinc-500 flex-shrink-0" />
+            <span className="truncate font-semibold">{session.title}</span>
+            <span className="text-[8px] bg-white/5 text-zinc-500 px-1 py-0.5 rounded font-bold font-mono tracking-wider">{session.id}</span>
+          </div>
 
-        <div className="flex items-center gap-1 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setLocalRefreshKey(prev => prev + 1); }} 
-            title="Refresh Terminal Display"
-            className="hover:text-zinc-300 p-1 hover:bg-white/5 rounded cursor-pointer transition-colors"
-          >
-            <RotateCcw size={10} />
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); onFocusToggle(frameRef.current); }} 
-            title={isFocused ? "Exit Focus Mode" : "Focus Session"}
-            className="hover:text-zinc-300 p-1 hover:bg-white/5 rounded cursor-pointer transition-colors"
-          >
-            {isFocused ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); killTerminal(session.id); }} 
-            title="Kill Terminal Session"
-            className="hover:text-rose-400 p-1 hover:bg-rose-500/10 rounded cursor-pointer transition-colors"
-          >
-            <X size={10} />
-          </button>
+          <div className="flex items-center gap-1 text-zinc-500 opacity-60 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={(e) => { e.stopPropagation(); setLocalRefreshKey(prev => prev + 1); }} 
+              title="Refresh Terminal Display"
+              className="hover:text-zinc-300 p-1 hover:bg-white/5 rounded cursor-pointer transition-colors"
+            >
+              <RotateCcw size={10} />
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onFocusToggle(frameRef.current); }} 
+              title={isFocused ? "Exit Focus Mode" : "Focus Session"}
+              className="hover:text-zinc-300 p-1 hover:bg-white/5 rounded cursor-pointer transition-colors"
+            >
+              {isFocused ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); killTerminal(session.id); }} 
+              title="Kill Terminal Session"
+              className="hover:text-rose-400 p-1 hover:bg-rose-500/10 rounded cursor-pointer transition-colors"
+            >
+              <X size={10} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
       <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#000000]">
