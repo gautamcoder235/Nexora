@@ -388,7 +388,10 @@ function App() {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
         const maxWidth = window.innerWidth - 300; // Leave at least 300px for main content
-        const newWidth = Math.max(420, Math.min(e.clientX - activityBarWidth, maxWidth));
+        const isLeftSidebar = settings?.appearance?.workspace?.sidebarPosition !== 'right';
+        const newWidth = isLeftSidebar 
+          ? Math.max(420, Math.min(e.clientX - activityBarWidth, maxWidth))
+          : Math.max(420, Math.min(window.innerWidth - e.clientX, maxWidth));
         if (appRef.current) appRef.current.style.setProperty('--sidebar-width', `${newWidth}px`);
         resizeRef.current.lastWidth = newWidth;
       });
@@ -501,13 +504,15 @@ function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
-        const leftBoundary = activityBarWidth + (isSidebarVisible ? sidebarWidth : 0) + 300;
+        const isLeftSidebar = settings?.appearance?.workspace?.sidebarPosition !== 'right';
+        const leftBoundary = activityBarWidth + (isSidebarVisible && isAgentPanelPinned && isLeftSidebar ? sidebarWidth : 0) + 300;
+        const rightEdge = window.innerWidth - (isSidebarVisible && isAgentPanelPinned && !isLeftSidebar ? sidebarWidth : 0);
         const rightBoundary = Math.min(
-          window.innerWidth - 300,
-          window.innerWidth - 320 - 8
+          rightEdge - 300,
+          rightEdge - 320 - 8
         );
         const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
-        const newWidth = Math.max(320, window.innerWidth - currentX - 8);
+        const newWidth = Math.max(320, rightEdge - currentX - 8);
 
         if (appRef.current) {
           appRef.current.style.setProperty('--browser-panel-width', `${newWidth}px`);
@@ -546,15 +551,17 @@ function App() {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
         // Left boundary respects the Activity Bar, dynamic sidebar, and browser width (if pinned)
+        const isLeftSidebar = settings?.appearance?.workspace?.sidebarPosition !== 'right';
         const leftBoundary = 
           activityBarWidth + 
-          (isSidebarVisible ? sidebarWidth : 0) + 
+          (isSidebarVisible && isAgentPanelPinned && isLeftSidebar ? sidebarWidth : 0) + 
           (isBrowserPanelVisible && isBrowserPanelPinned ? browserPanelWidth : 0) + 
           300;
         
-        const rightBoundary = window.innerWidth - 300;
+        const rightEdge = window.innerWidth - (isSidebarVisible && isAgentPanelPinned && !isLeftSidebar ? sidebarWidth : 0);
+        const rightBoundary = rightEdge - 300;
         const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
-        const newWidth = window.innerWidth - currentX - 8;
+        const newWidth = rightEdge - currentX - 8;
 
         if (appRef.current) {
           appRef.current.style.setProperty('--review-panel-width', `${newWidth}px`);
@@ -1327,7 +1334,10 @@ function App() {
         {/* 2. Main Dashboard Layout splits */}
         <div 
           className="flex-1 flex overflow-hidden pt-2.5 px-2 pb-2 relative"
-          style={{ gap: 'var(--pane-spacing)' }}
+          style={{ 
+            gap: 'var(--pane-spacing)',
+            flexDirection: settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'row-reverse' : 'row'
+          }}
         >
         {/* Left Side Dock columns (resizable) - Agents & Telemetry Feed */}
         {isSidebarVisible && !isAgentPanelPinned && (
@@ -1339,13 +1349,15 @@ function App() {
         )}
         <div 
           className={`flex flex-col gap-1 overflow-hidden ${
-            isAgentPanelPinned ? 'flex-shrink-0 relative mr-1' : 'absolute left-2 top-2.5 bottom-2 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg'
+            isAgentPanelPinned 
+              ? (settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'flex-shrink-0 relative ml-1' : 'flex-shrink-0 relative mr-1') 
+              : `absolute top-2.5 bottom-2 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'right-2' : 'left-2'}`
           } ${
             isSidebarDragging ? '' : 'transition-[width,opacity,margin,transform] duration-300 ease-out'
           } ${
             isSidebarVisible 
               ? `opacity-100 ${isAgentPanelPinned ? '' : 'translate-x-0'}` 
-              : `opacity-0 pointer-events-none ${isAgentPanelPinned ? '' : '-translate-x-4'}`
+              : `opacity-0 pointer-events-none ${isAgentPanelPinned ? '' : (settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'translate-x-4' : '-translate-x-4')}`
           }`}
           style={{ width: isSidebarVisible ? 'var(--sidebar-width)' : '0px' }}
         >
@@ -1367,7 +1379,7 @@ function App() {
           <div
             onMouseDown={startSidebarResize}
             onDoubleClick={() => setSidebarVisible(false)}
-            className="w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none mr-1"
+            className={`w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'ml-1' : 'mr-1'}`}
             title="Drag to resize sidebar, Double-click to collapse"
           >
             {/* Vertical line divider */}
@@ -1387,7 +1399,7 @@ function App() {
           <div
             onMouseDown={startSidebarResize}
             className="absolute top-2.5 bottom-2 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
-            style={{ left: 'calc(var(--sidebar-width) + 8px)' }}
+            style={settings?.appearance?.workspace?.sidebarPosition === 'right' ? { right: 'calc(var(--sidebar-width) + 8px)' } : { left: 'calc(var(--sidebar-width) + 8px)' }}
           >
             <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
@@ -1427,7 +1439,8 @@ function App() {
                     }
                   : { 
                       height: 'var(--top-panel-height)',
-                      left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 8px)' : '0px',
+                      left: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition !== 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
+                      right: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition === 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
                       transform: isTaskCenterVisible ? 'translateY(0)' : 'translateY(calc(-1 * var(--top-panel-height)))',
                       opacity: isTaskCenterVisible ? 1 : 0,
                       pointerEvents: isTaskCenterVisible ? 'auto' : 'none'
@@ -1575,7 +1588,8 @@ function App() {
               className={`${isTaskPanelPinned ? 'relative w-full' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
               style={isTaskPanelPinned ? {} : { 
                 top: 'var(--top-panel-height)',
-                left: (isSidebarVisible && !isAgentPanelPinned) ? 'calc(var(--sidebar-width) + 8px)' : '0px'
+                left: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition !== 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
+                right: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition === 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px'
               }}
               title="Drag to resize top panel, Double-click to collapse"
             >

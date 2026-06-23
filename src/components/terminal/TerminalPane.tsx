@@ -533,10 +533,13 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       const tCb = settings.appearance?.terminal?.cursorBlink ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorBlink;
       const tCs = settings.appearance?.terminal?.cursorStyle ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorStyle;
 
-      if (term.options.fontSize !== tFs) term.options.fontSize = tFs;
-      if (term.options.fontFamily !== tFf) term.options.fontFamily = tFf;
-      if (term.options.cursorBlink !== tCb) term.options.cursorBlink = tCb;
-      if (term.options.cursorStyle !== tCs) term.options.cursorStyle = tCs as any;
+      term.options = {
+        ...term.options,
+        fontSize: tFs,
+        fontFamily: tFf,
+        cursorBlink: tCb,
+        cursorStyle: tCs as any
+      };
     }
   }, [
     settings.appearance?.typography?.terminalFontSize,
