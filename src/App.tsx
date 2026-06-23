@@ -595,6 +595,8 @@ function App() {
       const state = useOrchestratorStore.getState();
       const shortcuts = { ...DEFAULT_APP_SETTINGS.shortcuts, ...(state.settings?.shortcuts || {}) };
       
+      console.log("[Global Keydown] Key:", e.key, "Code:", e.code, "Ctrl:", e.ctrlKey, "Meta:", e.metaKey, "isInputFocused:", isInputFocused);
+
       const checkShortcut = (shortcutString: string | undefined) => {
         if (!shortcutString) return false;
         const parts = shortcutString.toLowerCase().split('+').map(s => s.trim());
@@ -614,7 +616,9 @@ function App() {
         if (needsAlt !== e.altKey) return false;
         
         if (key === ',') return e.key === ',';
-        return e.key.toLowerCase() === key;
+        const match = e.key.toLowerCase() === key || e.code.toLowerCase() === 'key' + key;
+        console.log(`[Global Shortcut Check] shortcutString: ${shortcutString}, match: ${match}, key: ${key}, e.key: ${e.key}, e.code: ${e.code}`);
+        return match;
       };
 
       if (checkShortcut(shortcuts.toggleSidebar)) {
