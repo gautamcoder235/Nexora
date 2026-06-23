@@ -317,8 +317,43 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Custom Key Event Handler for Clipboard (Copy/Paste)
+    // Custom Key Event Handler for Clipboard (Copy/Paste) and Global App Shortcuts
     term.attachCustomKeyEventHandler((arg) => {
+      // Allow app-level shortcuts to bubble up to the window listener
+      if (arg.type === 'keydown') {
+        const currentSettings = useOrchestratorStore.getState().settings;
+        const shortcuts = { ...DEFAULT_APP_SETTINGS.shortcuts, ...(currentSettings?.shortcuts || {}) };
+        
+        const checkShortcut = (shortcutString: string | undefined) => {
+          if (!shortcutString) return false;
+          const parts = shortcutString.toLowerCase().split('+').map(s => s.trim());
+          const key = parts[parts.length - 1];
+          const needsCtrl = parts.includes('ctrl') || parts.includes('cmd');
+          const needsShift = parts.includes('shift');
+          const needsAlt = parts.includes('alt');
+          
+          const hasCtrl = arg.ctrlKey || arg.metaKey;
+          if (needsCtrl !== hasCtrl) return false;
+          if (needsShift !== arg.shiftKey) return false;
+          if (needsAlt !== arg.altKey) return false;
+          
+          if (key === ',') return arg.key === ',';
+          return arg.key.toLowerCase() === key;
+        };
+
+        const isAppShortcut = 
+          checkShortcut(shortcuts.toggleSidebar) ||
+          checkShortcut(shortcuts.toggleTaskCenter) ||
+          checkShortcut(shortcuts.toggleAddAgent) ||
+          checkShortcut(shortcuts.openSettings) ||
+          checkShortcut(shortcuts.toggleBrowser || 'Ctrl+Shift+B') ||
+          checkShortcut(shortcuts.toggleReviewCenter || 'Ctrl+Shift+R');
+
+        if (isAppShortcut) {
+          return false; // Let it bubble up to the global window listener
+        }
+      }
+
       // Handle Copy: Ctrl+C or Cmd+C (only if text is selected, otherwise send SIGINT)
       // Also allow Ctrl+Shift+C explicitly for copying
       if ((arg.ctrlKey || arg.metaKey) && arg.code === 'KeyC' && arg.type === 'keydown') {
