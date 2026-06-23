@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal } from "lucide-react";
+import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal, GitBranch } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentGrid } from "./components/AgentGrid";
 import { ActivityFeed } from "./components/ActivityFeed";
@@ -52,7 +52,7 @@ class SettingsModalBoundary extends React.Component<
           </div>
           <button
             onClick={() => { this.setState({ hasError: false, error: '' }); useOrchestratorStore.getState().setSettingsModalOpen(false); }}
-            style={{ padding: '8px 20px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: '6px', color: '#f59e0b', fontSize: '12px', cursor: 'pointer' }}
+            style={{ padding: '8px 20px', background: 'rgba(var(--accent-primary-rgb, 245, 158, 11), 0.15)', border: '1px solid rgba(var(--accent-primary-rgb, 245, 158, 11), 0.35)', borderRadius: '6px', color: 'var(--accent-primary, #f59e0b)', fontSize: '12px', cursor: 'pointer' }}
           >
             Close
           </button>
@@ -65,12 +65,62 @@ class SettingsModalBoundary extends React.Component<
 
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashFade, setSplashFade] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => {
+      setSplashFade(true);
+    }, 3800);
+
+    const finishTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 4300);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(finishTimer);
+    };
+  }, []);
+
   const initStore = useOrchestratorStore(s => s.initStore);
   const showConfirmDialog = useOrchestratorStore(s => s.showConfirmDialog);
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
   const workspaces = useOrchestratorStore(useShallow(s => s.workspaces));
   const settings = useOrchestratorStore(useShallow(s => s.settings));
   const settingsShortcut = settings?.shortcuts?.openSettings || "Ctrl+,";
+
+  const [gitBranch, setGitBranch] = useState<string>("");
+  const activeWs = workspaces.find(w => w.id === activeWorkspaceId);
+
+  useEffect(() => {
+    if (!activeWs?.rootPath) {
+      setGitBranch("");
+      return;
+    }
+    let isMounted = true;
+    const fetchGitBranch = async () => {
+      try {
+        const branch = await invoke<string>("get_git_branch", { workspacePath: activeWs.rootPath });
+        if (isMounted) {
+          setGitBranch(branch);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setGitBranch("");
+        }
+      }
+    };
+    fetchGitBranch();
+    const interval = setInterval(fetchGitBranch, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeWs?.rootPath]);
+
+  const activityBarWidth = settings?.appearance?.workspace?.showActivityBar !== false ? 56 : 0;
+  const paneSpacing = settings?.appearance?.workspace?.paneSpacing ?? 8;
   const createWorkspace = useOrchestratorStore(s => s.createWorkspace);
   const terminals = useOrchestratorStore(useShallow(s => s.terminals));
   const projects = useOrchestratorStore(useShallow(s => s.projects));
@@ -240,10 +290,13 @@ function App() {
   // Electron browser connection status poller
   useEffect(() => {
     let isMounted = true;
+    let timeoutId: any = null;
     
     const checkConnection = async () => {
+      let isConnected = false;
       try {
         const connected = await invoke<boolean>("check_electron_ping");
+        isConnected = connected;
         if (isMounted) {
           const current = useBrowserStore.getState().isElectronConnected;
           if (connected !== current) {
@@ -258,13 +311,19 @@ function App() {
           }
         }
       }
+      
+      if (isMounted) {
+        // Poll faster (1s) when connected to catch external window close events quickly.
+        // Poll slower (5s) when disconnected to reduce CPU/IPC overhead.
+        const nextDelay = isConnected ? 1000 : 5000;
+        timeoutId = setTimeout(checkConnection, nextDelay);
+      }
     };
 
     checkConnection();
-    const interval = setInterval(checkConnection, 500);
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []);
 
@@ -329,7 +388,7 @@ function App() {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
         const maxWidth = window.innerWidth - 300; // Leave at least 300px for main content
-        const newWidth = Math.max(420, Math.min(e.clientX - 56, maxWidth));
+        const newWidth = Math.max(420, Math.min(e.clientX - activityBarWidth, maxWidth));
         if (appRef.current) appRef.current.style.setProperty('--sidebar-width', `${newWidth}px`);
         resizeRef.current.lastWidth = newWidth;
       });
@@ -442,7 +501,7 @@ function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
-        const leftBoundary = 56 + (isSidebarVisible ? sidebarWidth : 0) + 300;
+        const leftBoundary = activityBarWidth + (isSidebarVisible ? sidebarWidth : 0) + 300;
         const rightBoundary = Math.min(
           window.innerWidth - 300,
           window.innerWidth - 320 - 8
@@ -488,7 +547,7 @@ function App() {
       frameId = requestAnimationFrame(() => {
         // Left boundary respects the Activity Bar, dynamic sidebar, and browser width (if pinned)
         const leftBoundary = 
-          56 + 
+          activityBarWidth + 
           (isSidebarVisible ? sidebarWidth : 0) + 
           (isBrowserPanelVisible && isBrowserPanelPinned ? browserPanelWidth : 0) + 
           300;
@@ -583,6 +642,15 @@ function App() {
 
     // 2. Load configurations database & active workspace snap
     initStore();
+
+    // 3. Start swarm execution events polling globally
+    const unsubscribeSwarm = useSwarmStore.getState().startPolling();
+
+    return () => {
+      if (unsubscribeSwarm) {
+        unsubscribeSwarm();
+      }
+    };
   }, [initStore]);
 
   const handleInitWorkspace = async () => {
@@ -596,7 +664,171 @@ function App() {
     } catch (e) {
       console.error("Failed to select folder path:", e);
     }
-  };  // If no workspace is active/defined, prompt to create a Workspace Session
+  };
+  if (showSplash) {
+    return (
+      <div 
+        className={`h-screen w-screen bg-[#0a0d16] flex flex-col justify-center items-center font-sans overflow-hidden select-none relative transition-opacity duration-500 ease-out z-[9999] ${
+          splashFade ? "opacity-0" : "opacity-100"
+        }`}
+      >
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes splashLogoBounce {
+            0% { transform: scale(0.3); opacity: 0; filter: blur(10px); }
+            70% { transform: scale(1.1); opacity: 0.9; filter: blur(0px); }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes splashLogoGlow {
+            0%, 100% { box-shadow: 0 0 25px rgba(37, 99, 235, 0.25), inset 0 0 20px rgba(37, 99, 235, 0.08); }
+            50% { box-shadow: 0 0 50px rgba(37, 99, 235, 0.5), inset 0 0 35px rgba(37, 99, 235, 0.2); }
+          }
+          @keyframes splashProgress {
+            0% { width: 0%; }
+            40% { width: 45%; }
+            70% { width: 85%; }
+            100% { width: 100%; }
+          }
+          @keyframes splashTextTracking {
+            0% { letter-spacing: -0.15em; opacity: 0; filter: blur(4px); transform: translateY(-4px); }
+            100% { letter-spacing: 0.25em; opacity: 1; filter: blur(0px); transform: translateY(0); }
+          }
+          @keyframes splashSubtextFade {
+            0% { opacity: 0; filter: blur(2px); transform: translateY(12px); }
+            100% { opacity: 0.7; filter: blur(0px); transform: translateY(0); }
+          }
+          @keyframes splashOrbit {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          @keyframes splashParticleFloat {
+            0%, 100% { transform: translateY(0px) translateX(0px); }
+            50% { transform: translateY(-12px) translateX(8px); }
+          }
+          @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          
+          .splash-logo-container {
+            animation: splashLogoBounce 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+          }
+          .splash-logo-card {
+            animation: splashLogoGlow 3s ease-in-out infinite;
+          }
+          .splash-text-brand {
+            animation: splashTextTracking 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+          }
+          .splash-subtext {
+            animation: splashSubtextFade 1.5s ease-out 1.2s both;
+          }
+          .splash-progress-fill {
+            background-color: #ffffff !important;
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.95), 0 0 4px rgba(255, 255, 255, 0.5);
+            animation: splashProgress 3.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .splash-orbiting-ring {
+            animation: splashOrbit 16s linear infinite;
+          }
+          .splash-particle-float {
+            animation: splashParticleFloat 9s ease-in-out infinite;
+          }
+        `}} />
+
+        {/* Ambient Glowing Background (Refined Spacing) */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          <div className="absolute top-[-5%] left-[-5%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-tr from-blue-600/12 to-indigo-600/8 opacity-40 blur-[130px]" />
+          <div className="absolute bottom-[-15%] right-[-15%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-br from-cyan-600/12 to-blue-600/8 opacity-40 blur-[130px]" />
+          
+          {/* Subtle Grid Overlay */}
+          <div 
+            className="absolute inset-0 opacity-[0.012]" 
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)
+              `,
+              backgroundSize: '32px 32px',
+              maskImage: 'radial-gradient(circle at center, black 10%, transparent 85%)',
+              WebkitMaskImage: 'radial-gradient(circle at center, black 10%, transparent 85%)',
+            }}
+          />
+          
+          {/* Floating splash particles */}
+          <div className="absolute top-[25%] left-[30%] w-2 h-2 rounded-full bg-cyan-400/25 blur-[1px] splash-particle-float" style={{ animationDelay: '0s', animationDuration: '8s' }} />
+          <div className="absolute top-[60%] right-[35%] w-1.5 h-1.5 rounded-full bg-indigo-400/25 blur-[1px] splash-particle-float" style={{ animationDelay: '1s', animationDuration: '9s' }} />
+          <div className="absolute bottom-[20%] left-[45%] w-1.5 h-1.5 rounded-full bg-blue-400/25 blur-[1px] splash-particle-float" style={{ animationDelay: '2s', animationDuration: '10s' }} />
+        </div>
+
+        {/* Splash Content Container */}
+        <div className="flex flex-col items-center justify-center z-10 space-y-10 -translate-y-12">
+          
+          {/* Outer Rotating Dotted Rings (CENTERED) */}
+          <div className="relative w-48 h-48 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border border-dashed border-blue-500/10 splash-orbiting-ring" />
+            <div className="absolute inset-3 rounded-full border border-dashed border-cyan-500/5 splash-orbiting-ring" style={{ animationDirection: 'reverse', animationDuration: '24s' }} />
+            
+            {/* Logo box */}
+            <div className="splash-logo-container relative w-24 h-24">
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 opacity-30 blur-lg" />
+              
+              {/* Glassmorphism Card */}
+              <div className="splash-logo-card relative w-24 h-24 rounded-2xl border border-blue-500/20 backdrop-blur-md bg-opacity-20 flex items-center justify-center shadow-[0_20px_60px_rgba(10,13,22,0.6)]">
+                <div className="absolute inset-0 rounded-2xl bg-[#0c101b] opacity-[0.9] z-0" />
+                
+                <svg viewBox="0 0 100 100" className="w-16 h-16 relative z-10 -translate-y-1">
+                  <defs>
+                    <linearGradient id="logoBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#38bdf8" stopOpacity="1" />
+                      <stop offset="60%" stopColor="#2563eb" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#1d4ed8" stopOpacity="1" />
+                    </linearGradient>
+                    <filter id="logoGlow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur stdDeviation="3.5" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                  </defs>
+                  
+                  {/* Thick-tailed Detached Bracket & Cursor */}
+                  <g filter="url(#logoGlow)" opacity="0.6">
+                    <path d="M49,23 L44,23 C38.5,23 34,27.5 34,33 L34,42 C34,46.4 26,46.4 26,50 C26,53.6 34,53.6 34,58 L34,67 C34,72.5 38.5,77 44,77 L49,77" fill="none" stroke="#2563eb" strokeWidth="12" strokeLinecap="butt" strokeLinejoin="round" />
+                    <path d="M80,29 L50,39 L56,45 L42,59 L50,67 L64,53 L70,59 Z" fill="#2563eb" />
+                  </g>
+                  
+                  <path d="M49,23 L44,23 C38.5,23 34,27.5 34,33 L34,42 C34,46.4 26,46.4 26,50 C26,53.6 34,53.6 34,58 L34,67 C34,72.5 38.5,77 44,77 L49,77" fill="none" stroke="url(#logoBlueGrad)" strokeWidth="12" strokeLinecap="butt" strokeLinejoin="round" />
+                  <path d="M80,29 L50,39 L56,45 L42,59 L50,67 L64,53 L70,59 Z" fill="url(#logoBlueGrad)" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Brand Name & Quote Stack */}
+          <div className="flex flex-col items-center justify-center space-y-3.5">
+            <h1 className="splash-text-brand text-5xl md:text-6xl font-black tracking-[0.25em] text-white uppercase select-none filter drop-shadow-[0_0_20px_rgba(37,99,235,0.25)] pl-[0.25em]">
+              Nexora
+            </h1>
+
+            <p className="splash-subtext text-xs md:text-sm font-bold tracking-[0.45em] text-blue-400/60 uppercase pl-[0.45em]">
+              Orchestrating the Future of Software
+            </p>
+          </div>
+
+          {/* Progress loader bar */}
+          <div className="flex flex-col items-center justify-center space-y-6 pt-4">
+            <div className="w-60 h-[4px] bg-white/5 rounded-full overflow-hidden relative shadow-inner">
+              <div className="splash-progress-fill h-full rounded-full" />
+            </div>
+
+            {/* Initializing label */}
+            <span className="splash-subtext text-[11px] font-mono tracking-[0.2em] text-blue-400/50 uppercase">
+              Initializing System...
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If no workspace is active/defined, prompt to create a Workspace Session
   if (!activeWorkspaceId) {
     // Sort workspaces by lastOpened (descending)
     const sortedWorkspaces = [...workspaces].sort((a, b) => {
@@ -619,12 +851,24 @@ function App() {
       <div className="h-screen w-screen text-zinc-100 flex flex-col justify-between items-center font-sans p-8 select-none relative workspace-setup-bg overflow-hidden">
         {/* Glow ambient background circles */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-          <div className="absolute top-[-15%] left-[-15%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-tr from-amber-500/10 to-orange-500/10 opacity-30 blur-[130px] animate-pulse" style={{ animationDuration: '9s' }}></div>
-          <div className="absolute bottom-[-15%] right-[-15%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-br from-purple-500/10 to-indigo-500/10 opacity-30 blur-[130px] animate-pulse" style={{ animationDuration: '13s' }}></div>
+          <div 
+            className="absolute top-[-15%] left-[-15%] w-[65vw] h-[65vw] rounded-full opacity-45 blur-[120px] animate-pulse" 
+            style={{ 
+              animationDuration: '9s',
+              background: 'radial-gradient(circle, rgba(var(--accent-primary-rgb, 56, 189, 248), 0.22) 0%, transparent 70%)'
+            }}
+          ></div>
+          <div 
+            className="absolute bottom-[-15%] right-[-15%] w-[65vw] h-[65vw] rounded-full opacity-45 blur-[120px] animate-pulse" 
+            style={{ 
+              animationDuration: '13s',
+              background: 'radial-gradient(circle, rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.18) 0%, transparent 70%)'
+            }}
+          ></div>
           
           {/* Abstract Grid Overlay */}
           <div 
-            className="absolute inset-0 opacity-[0.02]" 
+            className="absolute inset-0 opacity-[0.03]" 
             style={{
               backgroundImage: `
                 linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px),
@@ -637,10 +881,10 @@ function App() {
           ></div>
 
           {/* Orbiting / Floating Particles */}
-          <div className="absolute top-[25%] left-[20%] w-2.5 h-2.5 rounded-full bg-amber-400/25 blur-[1px] animate-float" style={{ animationDelay: '0s', animationDuration: '8s' }}></div>
-          <div className="absolute top-[65%] left-[15%] w-3.5 h-3.5 rounded-full bg-purple-400/20 blur-[1px] animate-float" style={{ animationDelay: '2s', animationDuration: '12s' }}></div>
-          <div className="absolute top-[35%] right-[25%] w-2 h-2 rounded-full bg-orange-400/35 blur-[1px] animate-float" style={{ animationDelay: '4s', animationDuration: '10s' }}></div>
-          <div className="absolute top-[75%] right-[20%] w-2.5 h-2.5 rounded-full bg-amber-500/20 blur-[1px] animate-float" style={{ animationDelay: '1s', animationDuration: '14s' }}></div>
+          <div className="absolute top-[25%] left-[20%] w-2.5 h-2.5 rounded-full blur-[1px] animate-float" style={{ animationDelay: '0s', animationDuration: '8s', backgroundColor: 'rgba(var(--accent-primary-rgb, 56, 189, 248), 0.35)' }}></div>
+          <div className="absolute top-[65%] left-[15%] w-3.5 h-3.5 rounded-full blur-[1px] animate-float" style={{ animationDelay: '2s', animationDuration: '12s', backgroundColor: 'rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.25)' }}></div>
+          <div className="absolute top-[35%] right-[25%] w-2 h-2 rounded-full blur-[1px] animate-float" style={{ animationDelay: '4s', animationDuration: '10s', backgroundColor: 'rgba(var(--accent-primary-rgb, 56, 189, 248), 0.35)' }}></div>
+          <div className="absolute top-[75%] right-[20%] w-2.5 h-2.5 rounded-full blur-[1px] animate-float" style={{ animationDelay: '1s', animationDuration: '14s', backgroundColor: 'rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.25)' }}></div>
         </div>
 
         {/* Top Spacer / Flex item */}
@@ -648,38 +892,75 @@ function App() {
           
           {/* Header section */}
           <div className="text-center space-y-4 mb-12 select-none">
-            {/* Logo brand with orange glow */}
+            {/* Logo brand with theme glow */}
             <div className="relative w-20 h-20 mx-auto flex items-center justify-center group mb-4">
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 opacity-25 blur-lg group-hover:opacity-45 transition-opacity duration-500 animate-pulse"></div>
-              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-[#181822] to-[#07070b] border border-white/10 flex items-center justify-center shadow-2xl group-hover:border-amber-500/40 transition-all duration-300">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 font-black text-2xl tracking-wider select-none font-mono">
-                  NX
-                </span>
+              <div 
+                className="absolute inset-0 rounded-2xl opacity-35 blur-lg group-hover:opacity-55 transition-opacity duration-500 animate-pulse"
+                style={{
+                  background: 'linear-gradient(135deg, var(--accent-primary, #38bdf8), var(--accent-secondary, #2563eb))'
+                }}
+              ></div>
+              <div 
+                className="relative w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-300"
+                style={{
+                  background: 'linear-gradient(135deg, var(--bg-secondary, #080a10), var(--bg-tertiary, #040406))',
+                  border: '1px solid rgba(var(--accent-primary-rgb, 56, 189, 248), 0.25)',
+                }}
+              >
+                <svg viewBox="0 0 100 100" className="w-9 h-9 relative z-10">
+                  <defs>
+                    <linearGradient id="headerBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="var(--accent-primary, #38bdf8)" />
+                      <stop offset="100%" stopColor="var(--accent-secondary, #2563eb)" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M49,23 L44,23 C38.5,23 34,27.5 34,33 L34,42 C34,46.4 26,46.4 26,50 C26,53.6 34,53.6 34,58 L34,67 C34,72.5 38.5,77 44,77 L49,77" fill="none" stroke="url(#headerBlueGrad)" strokeWidth="12" strokeLinecap="butt" strokeLinejoin="round" />
+                  <path d="M80,29 L50,39 L56,45 L42,59 L50,67 L64,53 L70,59 Z" fill="url(#headerBlueGrad)" />
+                </svg>
               </div>
             </div>
 
             <div className="space-y-3">
-              <h1 className="text-5xl md:text-6xl font-black tracking-tight text-white bg-clip-text bg-gradient-to-r from-white via-zinc-200 to-amber-500 select-none filter drop-shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+              <h1 
+                className="text-5xl md:text-6xl font-black tracking-tight text-white select-none filter"
+                style={{
+                  backgroundImage: 'linear-gradient(to right, #ffffff, #e4e4e7, var(--accent-primary, #38bdf8))',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                  filter: 'drop-shadow(0 0 30px rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.35))'
+                }}
+              >
                 Nexora
               </h1>
               <div className="flex justify-center">
-                <span className="px-3.5 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono bg-amber-500/10 text-[#f59e0b] border border-amber-500/25 shadow-[0_0_15px_rgba(245,158,11,0.08)] select-none">
-                  🤖 AI Orchestrator
+                <span 
+                  className="px-3.5 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono select-none"
+                  style={{
+                    backgroundColor: 'rgba(var(--accent-primary-rgb, 56, 189, 248), 0.1)',
+                    color: 'var(--accent-primary, #38bdf8)',
+                    border: '1px solid rgba(var(--accent-primary-rgb, 56, 189, 248), 0.25)',
+                    boxShadow: '0 0 15px rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.12)'
+                  }}
+                >
+                  AI Orchestrator
                 </span>
               </div>
-              <p className="text-zinc-400 text-xs md:text-sm max-w-lg mx-auto leading-relaxed pt-2 px-4 select-none">
-                A command-center dashboard designed to coordinate and monitor <span className="text-[#f59e0b] font-semibold">autonomous CLI coding agents</span> across multiple project folders.
-              </p>
             </div>
           </div>
 
-          {/* Middle Layout */}
-          {workspaces.length > 0 ? (
+          {/* Middle Layout */}          {workspaces.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10 w-full max-w-4xl relative items-stretch">
               
               {/* Vertical line with OR badge */}
-              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/[0.06] -translate-x-1/2 hidden md:block"></div>
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border border-white/[0.08] bg-[#07070c] flex items-center justify-center text-[10px] text-zinc-500 font-bold uppercase font-mono hidden md:flex select-none">
+              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/[0.04] -translate-x-1/2 hidden md:block"></div>
+              <div 
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border flex items-center justify-center text-[10px] text-zinc-500 font-bold uppercase font-mono hidden md:flex select-none"
+                style={{
+                  backgroundColor: 'var(--bg-primary, #000000)',
+                  borderColor: 'rgba(255, 255, 255, 0.08)'
+                }}
+              >
                 OR
               </div>
 
@@ -690,21 +971,21 @@ function App() {
                 </div>
                 <div 
                   onClick={() => useOrchestratorStore.getState().selectWorkspace(latestWorkspace.id)}
-                  className="group flex items-center justify-between p-6 rounded-2xl bg-[#0b0c10]/40 border border-white/[0.04] hover:bg-[#0f1017]/85 hover:border-amber-500/30 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-amber-500/[0.02] transition-all duration-300 ease-out cursor-pointer h-[130px] select-none"
+                  className="workspace-setup-card-interactive group flex items-center justify-between p-6 cursor-pointer h-[130px] select-none"
                 >
                   <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover:bg-amber-500/20 group-hover:border-amber-500/40 transition-all duration-300 shadow-[0_0_15px_rgba(245,158,11,0.08)]">
-                      <FolderOpen size={20} className="text-[#f59e0b]" />
+                    <div className="workspace-icon-wrapper w-12 h-12 rounded-xl flex items-center justify-center text-blue-500 flex-shrink-0">
+                      <FolderOpen size={20} style={{ color: 'var(--accent-primary, #38bdf8)' }} />
                     </div>
                     <div className="flex flex-col min-w-0 text-left">
-                      <span className="text-sm font-bold text-white group-hover:text-amber-400 transition-colors truncate">{latestWorkspace.name}</span>
-                      <span className="text-[10.5px] font-mono text-zinc-400 group-hover:text-zinc-300 truncate mt-1" title={latestWorkspace.rootPath}>{latestWorkspace.rootPath}</span>
+                      <span className="workspace-title text-sm font-bold truncate">{latestWorkspace.name}</span>
+                      <span className="text-[10.5px] font-mono text-zinc-400 truncate mt-1" title={latestWorkspace.rootPath}>{latestWorkspace.rootPath}</span>
                       <span className="text-[10px] text-zinc-500 mt-2">{formatLastOpenedTime(latestWorkspace.lastOpened)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-white/5 bg-white/5 text-zinc-500 group-hover:border-amber-500/20 group-hover:text-amber-500 transition-all">Enter</span>
-                    <ChevronRight size={18} className="text-zinc-500 group-hover:text-amber-400 group-hover:translate-x-1 transition-all" />
+                    <span className="workspace-enter-badge text-[9px] font-mono px-1.5 py-0.5 rounded">Enter</span>
+                    <ChevronRight size={18} className="workspace-arrow transition-all" />
                   </div>
                 </div>
               </div>
@@ -714,9 +995,9 @@ function App() {
                 <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest mb-3 pl-1">
                   Create New Session
                 </div>
-                <div className="flex flex-col justify-between p-6 rounded-2xl bg-[#0b0c10]/40 border border-white/[0.04] shadow-2xl h-[130px] space-y-3">
+                <div className="workspace-setup-card flex flex-col justify-between p-6 h-[130px] space-y-3">
                   <div className="relative group/input">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-amber-500 transition-colors duration-300">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-[var(--accent-primary)] transition-colors duration-300">
                       <Folder size={14} />
                     </div>
                     <input
@@ -730,7 +1011,7 @@ function App() {
                         }
                       }}
                       placeholder="Workspace name (e.g. CLI Coding Team)"
-                      className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/50 focus:bg-black/60 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none transition-all duration-300 focus:shadow-[0_0_20px_rgba(245,158,11,0.08)]"
+                      className="workspace-setup-input w-full rounded-xl pl-9 pr-4 py-2.5 text-xs outline-none transition-all duration-300"
                     />
                   </div>
                   <button
@@ -738,8 +1019,8 @@ function App() {
                     disabled={!initName.trim()}
                     className={`w-full flex items-center justify-center gap-2 font-bold text-xs py-2.5 px-4 rounded-xl transition-all duration-300 ${
                       initName.trim()
-                        ? "bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/10 cursor-pointer active:scale-[0.98]"
-                        : "bg-white/[0.02] border border-white/[0.04] text-zinc-650 cursor-not-allowed"
+                        ? "workspace-setup-btn-primary cursor-pointer"
+                        : "workspace-setup-btn-disabled"
                     }`}
                   >
                     <FolderOpen size={14} />
@@ -747,7 +1028,7 @@ function App() {
                   </button>
                 </div>
                 <p className="text-[10px] text-zinc-500 text-left pl-1 mt-1.5 flex items-center gap-1.5 select-none">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse"></span>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-primary, #38bdf8)', boxShadow: '0 0 8px rgba(var(--accent-primary-rgb, 56, 189, 248), 0.8)' }}></span>
                   Enter workspace name, then choose a directory to initialize
                 </p>
               </div>
@@ -755,12 +1036,12 @@ function App() {
             </div>
           ) : (
             /* Empty state - only show Create Session card centered */
-            <div className="w-full max-w-md p-6 rounded-2xl bg-[#0b0c10]/40 border border-white/[0.04] shadow-2xl space-y-4">
+            <div className="workspace-setup-card w-full max-w-md p-6 space-y-4">
               <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest text-center select-none">
                 Create New Session
               </div>
               <div className="relative group/input">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-amber-500 transition-colors duration-300">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-[var(--accent-primary)] transition-colors duration-300">
                   <Folder size={14} />
                 </div>
                 <input
@@ -769,7 +1050,7 @@ function App() {
                   value={initName}
                   onChange={(e) => setInitName(e.target.value)}
                   placeholder="Workspace name (e.g. CLI Coding Team)"
-                  className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/50 focus:bg-black/60 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none transition-all duration-300 focus:shadow-[0_0_20px_rgba(245,158,11,0.08)]"
+                  className="workspace-setup-input w-full rounded-xl pl-9 pr-4 py-2.5 text-xs outline-none transition-all duration-300"
                 />
               </div>
               <button
@@ -777,15 +1058,15 @@ function App() {
                 disabled={!initName.trim()}
                 className={`w-full flex items-center justify-center gap-2 font-bold text-xs py-2.5 px-4 rounded-xl transition-all duration-300 ${
                   initName.trim()
-                    ? "bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/10 cursor-pointer active:scale-[0.98]"
-                    : "bg-white/[0.02] border border-white/[0.04] text-zinc-650 cursor-not-allowed"
+                    ? "workspace-setup-btn-primary cursor-pointer"
+                    : "workspace-setup-btn-disabled"
                 }`}
               >
                 <FolderOpen size={14} />
                 Choose Workspace Directory
               </button>
               <p className="text-[10px] text-zinc-500 text-center pl-1 mt-1.5 flex items-center justify-center gap-1.5 select-none">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse"></span>
+                <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-primary, #38bdf8)', boxShadow: '0 0 8px rgba(var(--accent-primary-rgb, 56, 189, 248), 0.8)' }}></span>
                 Enter workspace name, then choose a directory to initialize
               </p>
             </div>
@@ -798,19 +1079,18 @@ function App() {
                 Recent Workspaces
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
-                
-                {/* Workspace cards */}
+                                {/* Workspace cards */}
                 {recentWorkspaces.map(ws => (
                   <div
                     key={ws.id}
                     onClick={() => useOrchestratorStore.getState().selectWorkspace(ws.id)}
-                    className="group/card flex items-center gap-3 p-3.5 rounded-xl bg-[#0b0c10]/20 border border-white/[0.03] hover:bg-[#0f1017]/85 hover:border-amber-500/20 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-amber-500/[0.01] transition-all duration-300 ease-out cursor-pointer min-w-0 min-h-[72px] active:scale-[0.985]"
+                    className="workspace-setup-card-interactive group/card flex items-center gap-3 p-3.5 cursor-pointer min-w-0 min-h-[72px] active:scale-[0.985]"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover/card:bg-amber-500/20 group-hover/card:border-amber-500/30 transition-all">
-                      <Folder size={14} className="text-[#f59e0b]" />
+                    <div className="workspace-icon-wrapper w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Folder size={14} style={{ color: 'var(--accent-primary, #38bdf8)' }} />
                     </div>
                     <div className="flex flex-col min-w-0 text-left">
-                      <span className="text-xs font-bold text-zinc-200 group-hover/card:text-white transition-colors truncate">{ws.name}</span>
+                      <span className="workspace-title text-xs font-bold transition-colors truncate">{ws.name}</span>
                       <span className="text-[9.5px] font-mono text-zinc-500 truncate mt-0.5" title={ws.rootPath}>{ws.rootPath}</span>
                       <span className="text-[9px] text-zinc-500 mt-1">{formatWorkspaceTime(ws.lastOpened)}</span>
                     </div>
@@ -820,20 +1100,20 @@ function App() {
                 {/* Browse All Link Card */}
                 <div
                   onClick={() => setShowBrowseAllModal(true)}
-                  className="group/card flex items-center justify-between p-3.5 rounded-xl bg-[#0b0c10]/10 border border-dashed border-white/10 hover:bg-[#0f1017]/60 hover:border-amber-500/30 hover:-translate-y-0.5 hover:shadow-xl transition-all duration-300 ease-out cursor-pointer min-h-[72px] active:scale-[0.985]"
+                  className="workspace-setup-card-dashed group/card flex items-center justify-between p-3.5 cursor-pointer min-h-[72px] active:scale-[0.985]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 flex-shrink-0 group-hover/card:bg-amber-500/10 group-hover/card:border-amber-500/20 group-hover/card:text-amber-400 transition-all">
-                      <FolderOpen size={14} />
+                    <div className="workspace-icon-wrapper w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FolderOpen size={14} style={{ color: 'var(--accent-primary, #38bdf8)' }} />
                     </div>
                     <div className="flex flex-col min-w-0 text-left">
-                      <span className="text-xs font-bold text-zinc-300 group-hover/card:text-white transition-colors">Browse All</span>
+                      <span className="workspace-title text-xs font-bold transition-colors">Browse All</span>
                       <span className="text-[9.5px] text-zinc-500 mt-0.5">View all workspaces</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                    <span className="text-[8px] font-mono px-1 py-0.5 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover/card:text-amber-500 group-hover/card:border-amber-500/20 transition-all">Ctrl+D</span>
-                    <ChevronRight size={14} className="text-zinc-500 group-hover/card:text-amber-400 group-hover/card:translate-x-0.5 transition-all" />
+                    <span className="workspace-enter-badge text-[8px] font-mono px-1 py-0.5 rounded transition-all">Ctrl+D</span>
+                    <ChevronRight size={14} className="workspace-arrow transition-all" />
                   </div>
                 </div>
 
@@ -848,37 +1128,37 @@ function App() {
           <div className="flex items-center gap-6">
             <button
               onClick={() => { if (workspaceInputRef.current) { workspaceInputRef.current.focus(); workspaceInputRef.current.select(); } }}
-              className="group flex items-center gap-1.5 hover:text-zinc-200 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+              className="workspace-footer-btn"
             >
-              <Sparkles size={13} className="text-[#f59e0b] group-hover:animate-pulse" />
+              <Sparkles size={13} className="plus-icon" />
               <span>New Session</span>
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-amber-400 group-hover:border-amber-500/20 transition-all ml-1.5">Ctrl+N</span>
+              <span className="workspace-footer-kbd">Ctrl+N</span>
             </button>
             <button
               onClick={() => {
                 setImportJsonText("");
                 setShowImportModal(true);
               }}
-              className="group flex items-center gap-1.5 hover:text-zinc-200 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+              className="workspace-footer-btn"
             >
               <Import size={13} />
               <span>Import Profile</span>
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-zinc-300 group-hover:border-white/15 transition-all ml-1.5">Ctrl+I</span>
+              <span className="workspace-footer-kbd">Ctrl+I</span>
             </button>
           </div>
 
           <div className="flex items-center gap-6">
             <button
               onClick={() => useOrchestratorStore.getState().setSettingsModalOpen(true)}
-              className="group flex items-center gap-1.5 hover:text-zinc-200 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+              className="workspace-footer-btn"
             >
-              <Settings size={13} />
+              <Settings size={13} className="settings-icon" />
               <span>Settings</span>
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-white/5 bg-white/5 text-zinc-600 group-hover:text-zinc-300 group-hover:border-white/15 transition-all ml-1.5">{settingsShortcut}</span>
+              <span className="workspace-footer-kbd">{settingsShortcut}</span>
             </button>
             <button
               onClick={handleExitApp}
-              className="group flex items-center gap-1.5 hover:text-red-400 cursor-pointer transition-colors bg-transparent border-0 p-0 shadow-none outline-none font-medium"
+              className="workspace-footer-btn-exit"
             >
               <Power size={13} />
               <span>Exit</span>
@@ -899,7 +1179,7 @@ function App() {
               </button>
               
               <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-200 border-b border-white/10 pb-3 mb-4 flex items-center gap-2 select-none">
-                <FolderOpen size={16} className="text-amber-500" />
+                <FolderOpen size={16} className="text-blue-500" />
                 Browse All Workspaces ({workspaces.length})
               </h2>
 
@@ -911,7 +1191,7 @@ function App() {
                   value={browseSearchQuery}
                   onChange={(e) => setBrowseSearchQuery(e.target.value)}
                   placeholder="Search workspaces..."
-                  className="w-full bg-black/40 border border-white/[0.08] focus:border-amber-500/50 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none"
+                  className="w-full bg-black/40 border border-white/[0.08] focus:border-blue-500/50 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none"
                 />
               </div>
 
@@ -928,8 +1208,8 @@ function App() {
                         }}
                         className="flex-1 flex items-center gap-3 px-3 py-2 text-left rounded-lg text-zinc-300 transition-colors min-w-0 bg-transparent border-0 outline-none cursor-pointer"
                       >
-                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 flex-shrink-0 group-hover/item:bg-amber-500/20 transition-all">
-                          <Folder size={14} className="text-[#f59e0b]" />
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 flex-shrink-0 group-hover/item:bg-blue-500/20 transition-all">
+                          <Folder size={14} className="text-[#38bdf8]" />
                         </div>
                         <div className="flex flex-col min-w-0">
                           <span className="text-xs font-semibold text-zinc-200 group-hover/item:text-white truncate">{ws.name}</span>
@@ -970,9 +1250,8 @@ function App() {
               >
                 <X size={16} />
               </button>
-              
-              <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-200 border-b border-white/10 pb-3 mb-3 flex items-center gap-2 select-none">
-                <Import size={16} className="text-amber-500" />
+                         <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-200 border-b border-white/10 pb-3 mb-3 flex items-center gap-2 select-none">
+                <Import size={16} className="text-blue-500" />
                 Import Settings Profile
               </h2>
               
@@ -983,8 +1262,8 @@ function App() {
               <textarea
                 value={importJsonText}
                 onChange={(e) => setImportJsonText(e.target.value)}
-                placeholder={`{\n  "appearance": {\n    "theme": "dark-glass",\n    "accentColor": "amber"\n  }\n}`}
-                className="w-full h-40 bg-black/40 border border-white/[0.08] focus:border-amber-500/50 rounded-xl p-3 text-[11px] font-mono text-zinc-200 placeholder-zinc-600 outline-none resize-none"
+                placeholder={`{\n  "appearance": {\n    "theme": "dark-glass",\n    "accentColor": "blue"\n  }\n}`}
+                className="w-full h-40 bg-black/40 border border-white/[0.08] focus:border-blue-500/50 rounded-xl p-3 text-[11px] font-mono text-zinc-200 placeholder-zinc-650 outline-none resize-none"
               />
 
               <div className="flex gap-2 justify-end mt-4">
@@ -1029,8 +1308,6 @@ function App() {
     );
   }
 
-  const activeWs = workspaces.find(w => w.id === activeWorkspaceId);
-
   return (
     <div 
       ref={appRef}
@@ -1038,21 +1315,25 @@ function App() {
         '--sidebar-width': `${sidebarWidth}px`, 
         '--top-panel-height': `${topPanelHeight}px`,
         '--browser-panel-width': `${browserPanelWidth}px`,
-        '--review-panel-width': `${reviewPanelWidth}px`
+        '--review-panel-width': `${reviewPanelWidth}px`,
+        '--pane-spacing': `${paneSpacing}px`
       } as React.CSSProperties}
       className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-black ${(isSidebarDragging || isHeightDragging || isSwarmDragging || isBrowserDragging || isReviewDragging) ? "is-dragging" : ""}`}
     >
-      <ActivityBar />
+      {settings?.appearance?.workspace?.showActivityBar !== false && <ActivityBar />}
 
       {/* Main content column */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* 2. Main Dashboard Layout splits */}
-        <div className="flex-1 flex overflow-hidden pt-2.5 px-2 pb-2 gap-0 relative">
+        <div 
+          className="flex-1 flex overflow-hidden pt-2.5 px-2 pb-2 relative"
+          style={{ gap: 'var(--pane-spacing)' }}
+        >
         {/* Left Side Dock columns (resizable) - Agents & Telemetry Feed */}
         {isSidebarVisible && !isAgentPanelPinned && (
           <div 
             className="fixed inset-0 z-20"
-            style={{ left: '56px' }} 
+            style={{ left: `${activityBarWidth}px` }} 
             onClick={() => setSidebarVisible(false)}
           />
         )}
@@ -1117,7 +1398,10 @@ function App() {
         )}
 
         {/* Right Side Dock viewport (split into top controls panel & bottom PTY workspace) */}
-        <div className="flex-1 min-w-0 flex flex-col gap-0 overflow-hidden relative">
+        <div 
+          className="flex-1 min-w-0 flex flex-col overflow-hidden relative"
+          style={{ gap: 'var(--pane-spacing)' }}
+        >
           
           {/* Top Panel Overlay Backdrop */}
           {activeWs && isTaskCenterVisible && !isTaskPanelPinned && (
@@ -1130,7 +1414,7 @@ function App() {
           {/* Top Panel (Task Board & Project Memory tabs) */}
           {activeWs && (
             <div 
-              className={`flex flex-col glass-panel shadow-2xl bg-black backdrop-blur-xl overflow-hidden ${
+              className={`flex flex-col glass-panel shadow-2xl bg-bg-glass backdrop-blur-xl overflow-hidden ${
                 isTaskPanelPinned ? 'relative z-10 flex-shrink-0' : '!absolute top-0 left-0 right-0 z-20'
               } ${isHeightDragging ? '' : 'transition-all duration-300 ease-out'} p-2 border-b border-border-glass`}
               style={
@@ -1151,7 +1435,7 @@ function App() {
               }
             >
               {/* Header Tabs */}
-              <header className="h-[46px] bg-black border-b border-[#1e1e28] px-4 flex items-center justify-between select-none flex-shrink-0">
+              <header className="h-[46px] bg-bg-glass border-b border-border-glass px-4 flex items-center justify-between select-none flex-shrink-0">
                 {/* Left Section: Navigation Tabs & Project Selector */}
                 <div className="flex items-center gap-2">
                   {/* Task Center Tab */}
@@ -1159,8 +1443,8 @@ function App() {
                     onClick={() => setActiveRightTab('tasks')}
                     className={`flex items-center gap-1.5 h-[30px] px-2.5 rounded text-[10px] font-bold tracking-wider uppercase border transition-all ${
                       activeRightTab === 'tasks'
-                        ? 'border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/5'
-                        : 'border-[#2a2a38] text-[#555568] hover:text-[#e2e2ea] hover:border-[#444458]'
+                        ? 'border-accent-primary text-accent-primary bg-accent-primary/5'
+                        : 'border-border-glass text-text-muted hover:text-text-primary hover:border-border-glass-hover'
                     }`}
                   >
                     <LayoutGrid size={12} />
@@ -1172,15 +1456,15 @@ function App() {
                     onClick={() => setActiveRightTab('memory')}
                     className={`flex items-center gap-1.5 h-[30px] px-2.5 rounded text-[10px] font-bold tracking-wider uppercase border transition-all ${
                       activeRightTab === 'memory'
-                        ? 'border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/5'
-                        : 'border-transparent text-[#555568] hover:text-[#e2e2ea]'
+                        ? 'border-accent-primary text-accent-primary bg-accent-primary/5'
+                        : 'border-transparent text-text-muted hover:text-text-primary'
                     }`}
                   >
                     <FileText size={12} />
                     <span>Project Memory</span>
                   </button>
 
-                  <div className="w-px h-3.5 bg-[#1e1e28] mx-1"></div>
+                  <div className="w-px h-3.5 bg-border-glass mx-1"></div>
 
                   {/* Project Dropdown Selector */}
                   <div className="relative">
@@ -1188,16 +1472,16 @@ function App() {
                       <select
                         value={selectedProjectId}
                         onChange={(e) => setSelectedProjectId(e.target.value)}
-                        className="appearance-none flex items-center gap-1.5 h-[30px] px-2.5 pr-7 rounded bg-[#111116] border border-[#2a2a38] text-[11px] font-medium text-[#e2e2ea] hover:border-[#444458] transition-colors outline-none cursor-pointer"
+                        className="appearance-none flex items-center gap-1.5 h-[30px] px-2.5 pr-7 rounded bg-bg-secondary/60 border border-border-glass text-[11px] font-medium text-text-primary hover:border-border-glass-hover transition-colors outline-none cursor-pointer"
                       >
                         {activeProjects.map(p => (
-                          <option key={p.id} value={p.id} className="bg-[#0f0f15]">{p.name}</option>
+                          <option key={p.id} value={p.id} className="bg-bg-secondary text-text-primary">{p.name}</option>
                         ))}
                       </select>
                     )}
                     {/* Custom Chevron since appearance is none */}
                     {activeProjects.length > 0 && (
-                      <ChevronDown size={10} className="text-[#555568] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <ChevronDown size={10} className="text-text-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     )}
                   </div>
                 </div>
@@ -1208,7 +1492,7 @@ function App() {
                   {activeRightTab === "tasks" && selectedProjectId && (
                     <button
                       onClick={() => setShowAddForm(!showAddForm)}
-                      className="flex items-center gap-1.5 h-[30px] px-3.5 rounded-lg bg-[#f59e0b] hover:bg-[#d97706] text-black text-[10px] font-bold tracking-wide transition-colors shadow-lg shadow-[#f59e0b]/5"
+                      className="flex items-center gap-1.5 h-[30px] px-3.5 rounded-lg bg-accent-primary hover:bg-accent-secondary text-zinc-950 text-[10px] font-bold tracking-wide transition-colors shadow-lg shadow-accent-primary/5"
                     >
                       <Plus size={12} strokeWidth={2.5} />
                       <span>{showAddForm ? "Hide Form" : "Create Task"}</span>
@@ -1227,7 +1511,7 @@ function App() {
                       <button
                         onClick={() => EventBus.publish("project-memory:save", undefined)}
                         disabled={isMemorySaving}
-                        className="flex items-center gap-1 h-[30px] px-3 rounded-lg bg-[#111116] border border-[#2a2a38] text-[#e2e2ea] hover:bg-[#1a1a22] hover:border-[#444458] text-[10px] font-bold tracking-wide transition-colors disabled:opacity-50"
+                        className="flex items-center gap-1 h-[30px] px-3 rounded-lg bg-bg-secondary/60 border border-border-glass text-text-primary hover:bg-bg-secondary hover:border-border-glass-hover text-[10px] font-bold tracking-wide transition-colors disabled:opacity-50"
                       >
                         <Save size={12} />
                         <span>{isMemorySaving ? "Saving..." : "Save Memory"}</span>
@@ -1235,14 +1519,14 @@ function App() {
                     </div>
                   )}
 
-                  <div className="w-px h-3.5 bg-[#1e1e28] mx-0.5"></div>
+                  <div className="w-px h-3.5 bg-border-glass mx-0.5"></div>
 
                   {/* Pin Panel Toggle */}
                   <button
                     onClick={() => {
                       if (terminals.length <= 8) setTaskPanelPinned(!isTaskPanelPinned);
                     }}
-                    className={`flex items-center justify-center w-[30px] h-[30px] rounded-lg border transition-colors ${terminals.length > 8 ? 'opacity-50 cursor-not-allowed border-[#2a2a38] text-[#555568]' : isTaskPanelPinned ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30 text-[#f59e0b]' : 'bg-[#111116] border-[#2a2a38] text-[#888899] hover:text-[#e2e2ea] hover:border-[#444458]'}`}
+                    className={`flex items-center justify-center w-[30px] h-[30px] rounded-lg border transition-colors ${terminals.length > 8 ? 'opacity-50 cursor-not-allowed border-border-glass text-text-muted' : isTaskPanelPinned ? 'bg-accent-primary/10 border-accent-primary/30 text-accent-primary' : 'bg-bg-secondary/60 border border-border-glass text-text-muted hover:text-text-primary hover:border-border-glass-hover'}`}
                     title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isTaskPanelPinned ? "Unpin Panel (Float)" : "Pin Panel (Dock)"}
                   >
                     {isTaskPanelPinned ? <Pin size={12} /> : <PinOff size={12} />}
@@ -1251,7 +1535,7 @@ function App() {
                   {/* Hide Panel Toggle */}
                   <button
                     onClick={() => setTaskCenterVisible(false)}
-                    className="flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg bg-[#111116] border border-[#2a2a38] text-[#888899] hover:text-[#e2e2ea] hover:border-[#444458] text-[10px] font-bold tracking-wider uppercase transition-colors"
+                    className="flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg bg-bg-secondary/60 border border-border-glass text-text-muted hover:text-text-primary hover:border-border-glass-hover text-[10px] font-bold tracking-wider uppercase transition-colors"
                   >
                     <SidebarClose size={12} className="rotate-180" />
                     <span>Hide</span>
@@ -1297,9 +1581,9 @@ function App() {
             >
               {/* Drag handle button */}
               <div className="absolute left-1/2 -translate-x-1/2 h-1.5 w-6 rounded glass-panel transition-all duration-150 flex justify-center items-center gap-[2px] px-1 shadow-md">
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
               </div>
             </div>
           )}
@@ -1362,11 +1646,11 @@ function App() {
                   className="w-1.5 hover:w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none z-10"
                   title="Drag to resize browser panel, Double-click to collapse"
                 >
-                  <div className="w-[1px] h-full bg-border-glass group-hover:bg-[#f59e0b]/50 group-active:bg-[#f59e0b] transition-colors duration-150" />
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                  <div className="w-[1px] h-full bg-border-glass group-hover:bg-accent-primary/50 group-active:bg-accent-primary transition-colors duration-150" />
+                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                   </div>
                 </div>
 
@@ -1390,10 +1674,10 @@ function App() {
                   className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
                   style={{ right: 'min(var(--browser-panel-width), 100%)' }}
                 >
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                   </div>
                 </div>
 
@@ -1418,10 +1702,10 @@ function App() {
                   className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-45"
                   style={{ right: 'min(var(--review-panel-width), 100%)' }}
                 >
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-[#f59e0b]/50 group-active:border-[#f59e0b]/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-[#f59e0b]" />
+                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                   </div>
                 </div>
 
@@ -1445,64 +1729,77 @@ function App() {
       </div>
 
       {/* Visual Status bar at the bottom */}
-      <div className="h-6 glass-bottombar px-4 flex items-center justify-between text-[10px] text-zinc-400 font-mono select-none flex-shrink-0 border-t border-white/[0.04] bg-[#050508]/90 z-40">
-        {/* Left section: Connection & Workspace info */}
-        <div className="flex items-center gap-3">
-          {/* Connection status badge */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-bold">
-            <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
-            PTY SERVER
+      {settings?.appearance?.workspace?.showStatusBar !== false && (
+        <div className="h-6 glass-bottombar px-4 flex items-center justify-between text-[10px] text-zinc-400 font-mono select-none flex-shrink-0 border-t border-white/[0.04] bg-black/95 z-40">
+          {/* Left section: Connection & Workspace info */}
+          <div className="flex-center gap-3 flex">
+            {/* Connection status badge */}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-bold">
+              <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
+              PTY SERVER
+            </div>
+
+            {activeWs && (
+              <div className="flex items-center gap-1.5 text-zinc-300">
+                <span className="text-zinc-650">|</span>
+                <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
+                  Workspace:
+                </span>
+                <span className="text-zinc-200 font-semibold">{activeWs.name}</span>
+              </div>
+            )}
+
+            {settings?.appearance?.workspace?.showGitBranch && gitBranch && (
+              <div className="flex items-center gap-1.5 text-zinc-300">
+                <span className="text-zinc-650">|</span>
+                <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
+                  <GitBranch size={10} className="text-zinc-500" />
+                  Branch:
+                </span>
+                <span className="text-zinc-200 font-semibold">{gitBranch}</span>
+              </div>
+            )}
+
+            {activeWs && (
+              <div className="flex items-center gap-1.5 text-zinc-400 max-w-sm truncate" title={activeWs.rootPath}>
+                <span className="text-zinc-750">/</span>
+                <span className="text-[9px] font-mono text-zinc-500 truncate">{activeWs.rootPath}</span>
+              </div>
+            )}
           </div>
 
-          {activeWs && (
-            <div className="flex items-center gap-1.5 text-zinc-300">
-              <span className="text-zinc-650">|</span>
-              <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
-                Workspace:
-              </span>
-              <span className="text-zinc-200 font-semibold">{activeWs.name}</span>
-            </div>
-          )}
+          {/* Right section: Session state & Metrics */}
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5 text-zinc-500">
+              <BarChart2 size={10} className="text-zinc-500" />
+              Snapshot Synced
+            </span>
 
-          {activeWs && (
-            <div className="flex items-center gap-1.5 text-zinc-400 max-w-sm truncate" title={activeWs.rootPath}>
-              <span className="text-zinc-750">/</span>
-              <span className="text-[9px] font-mono text-zinc-500 truncate">{activeWs.rootPath}</span>
-            </div>
-          )}
-        </div>
+            <div className="h-3 w-[1px] bg-zinc-800" />
 
-        {/* Right section: Session state & Metrics */}
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5 text-zinc-500">
-            <BarChart2 size={10} className="text-zinc-500" />
-            Snapshot Synced
-          </span>
+            {/* Metrics Gauges */}
+            <div className="flex items-center gap-1.5">
+              {/* CPU */}
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global CPU Load">
+                <Cpu size={10} className="text-[#38bdf8]" />
+                <span>CPU <span className="text-zinc-200 font-bold">{cpuLoad}%</span></span>
+              </div>
+              
+              {/* RAM */}
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global Memory Used">
+                <HardDrive size={10} className="text-[#38bdf8]" />
+                <span>RAM <span className="text-zinc-200 font-bold">{ramLoad} GB</span></span>
+              </div>
 
-          <div className="h-3 w-[1px] bg-zinc-800" />
-
-          {/* Metrics Gauges */}
-          <div className="flex items-center gap-1.5">
-            {/* CPU */}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global CPU Load">
-              <Cpu size={10} className="text-amber-500" />
-              <span>CPU <span className="text-zinc-200 font-bold">{cpuLoad}%</span></span>
-            </div>
-            
-            {/* RAM */}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global Memory Used">
-              <HardDrive size={10} className="text-amber-500" />
-              <span>RAM <span className="text-zinc-200 font-bold">{ramLoad} GB</span></span>
-            </div>
-
-            {/* PTYs */}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Active PTY Processes">
-              <Layers size={10} className="text-amber-500" />
-              <span>PTYs <span className="text-zinc-200 font-bold">{terminals.length}</span></span>
+              {/* PTYs */}
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Active PTY Processes">
+                <Layers size={10} className="text-[#38bdf8]" />
+                <span>PTYs <span className="text-zinc-200 font-bold">{terminals.length}</span></span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
       </div>
       <ContextMenu />
       <CustomDialog />

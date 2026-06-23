@@ -20,7 +20,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ isExpanded, onToggle
       case 'terminal':
         return <Play size={12} className="text-sky-400" />;
       case 'workspace':
-        return <Database size={12} className="text-amber-500" />;
+        return <Database size={12} className="text-accent-primary" />;
       case 'system':
       default:
         return <Info size={12} className="text-zinc-500" />;
@@ -32,7 +32,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ isExpanded, onToggle
       return "border-l-rose-500 bg-rose-500/[0.02] text-rose-400";
     }
     if (log.severity === 'warning') {
-      return "border-l-amber-500 bg-amber-500/[0.01] text-amber-400";
+      return "border-l-warning bg-warning/5 text-warning";
     }
     
     // Normal info logs
@@ -42,7 +42,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ isExpanded, onToggle
       case 'terminal':
         return "border-l-sky-500 text-zinc-300";
       case 'workspace':
-        return "border-l-amber-500 text-zinc-300";
+        return "border-l-accent-primary text-zinc-300";
       case 'system':
       default:
         return "border-l-zinc-700 text-zinc-400";

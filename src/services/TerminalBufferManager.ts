@@ -88,7 +88,7 @@ export class TerminalBufferManager {
     };
 
     buffer.chunks.push(chunk);
-    buffer.totalBytes += new Blob([data]).size;
+    buffer.totalBytes += data.length;
 
     this.trimBuffer(buffer);
 
@@ -133,7 +133,7 @@ export class TerminalBufferManager {
     while (buffer.totalBytes > this.maxBufferBytes && buffer.chunks.length > 0) {
       const removedChunk = buffer.chunks.shift();
       if (removedChunk) {
-        buffer.totalBytes -= new Blob([removedChunk.data]).size;
+        buffer.totalBytes -= removedChunk.data.length;
       }
     }
   }
@@ -197,7 +197,7 @@ export class TerminalBufferManager {
       while (q.length > 0 && bytesSent < MAX_BYTES_PER_FRAME) {
         const chunk = q.shift()!;
         combinedData += chunk.data;
-        bytesSent += new Blob([chunk.data]).size;
+        bytesSent += chunk.data.length;
       }
 
       if (combinedData.length > 0) {

@@ -101,7 +101,7 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
   setMemorySaveStatus,
   setMemorySaveError
 }) => {
-  const { projects, activeWorkspaceId, initializeProjectMemory } = useOrchestratorStore();
+  const { projects, activeWorkspaceId, initializeProjectMemory, settings } = useOrchestratorStore();
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
   const project = activeProjects.find(p => p.id === selectedProjectId);
 
@@ -223,13 +223,13 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
   return (
     <div className="flex h-full overflow-hidden">
       {/* File List Sidebar */}
-      <aside className="w-64 shrink-0 flex flex-col border-r border-zinc-800 bg-[#0c0c0e] overflow-hidden">
-        <div className="flex items-center justify-between px-3 h-11 shrink-0 border-b border-zinc-800">
+      <aside className="w-64 shrink-0 flex flex-col border-r border-border-glass bg-bg-secondary overflow-hidden">
+        <div className="flex items-center justify-between px-3 h-11 shrink-0 border-b border-border-glass">
           <span className="text-[10px] font-bold tracking-wider text-zinc-500">FILES</span>
           <button
             onClick={() => setAddingFile(true)}
             title="New file"
-            className="p-1 rounded text-zinc-500 hover:text-amber-500 hover:bg-white/5 transition-colors cursor-pointer"
+            className="p-1 rounded text-zinc-500 hover:text-accent-primary hover:bg-white/5 transition-colors cursor-pointer"
           >
             <FilePlus size={12} />
           </button>
@@ -237,18 +237,18 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
 
         {/* New File Input */}
         {addingFile && (
-          <div className="px-2.5 py-2.5 border-b border-zinc-800 bg-[#0c0c0e]/60 fade-in">
+          <div className="px-2.5 py-2.5 border-b border-border-glass bg-bg-secondary/60 fade-in">
             <input
               autoFocus
               value={newFileName}
               onChange={e => { setNewFileName(e.target.value); setAddError(''); }}
               onKeyDown={e => { if (e.key === 'Enter') addFile(); if (e.key === 'Escape') { setAddingFile(false); setAddError(''); } }}
               placeholder="filename.md"
-              className={`w-full bg-[#121215] border rounded px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-650 outline-none font-mono ${addError ? 'border-red-500/50' : 'border-amber-500/40'}`}
+              className={`w-full bg-bg-tertiary border rounded px-2.5 py-1.5 text-xs text-text-primary placeholder-text-muted outline-none font-mono ${addError ? 'border-red-500/50' : 'border-border-glass-hover focus:border-accent-primary/45'}`}
             />
             <div className="flex gap-1.5 mt-2">
-              <button onClick={addFile} className="flex-1 py-1 rounded bg-amber-500/15 text-amber-500 text-[10px] font-bold hover:bg-amber-500/25 transition-colors cursor-pointer">Create</button>
-              <button onClick={() => { setAddingFile(false); setAddError(''); }} className="flex-1 py-1 rounded bg-[#1a1a22] text-zinc-500 text-[10px] hover:text-zinc-200 transition-colors cursor-pointer">Cancel</button>
+              <button onClick={addFile} className="flex-1 py-1 rounded bg-accent-primary/15 text-accent-primary text-[10px] font-bold hover:bg-accent-primary/25 transition-colors cursor-pointer">Create</button>
+              <button onClick={() => { setAddingFile(false); setAddError(''); }} className="flex-1 py-1 rounded bg-bg-secondary border border-border-glass text-text-muted text-[10px] hover:text-text-primary transition-colors cursor-pointer">Cancel</button>
             </div>
             {addError && (
               <div className="mt-1.5 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-medium truncate text-center fade-in">
@@ -266,17 +266,17 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
               onClick={() => setActiveId(file.id)}
               className={`group w-full text-left px-3 py-2.5 transition-all outline-none border-l-2 ${
                 activeId === file.id
-                  ? 'border-amber-500 bg-amber-500/10'
+                  ? 'border-accent-primary bg-accent-primary/10'
                   : 'border-transparent hover:bg-zinc-900/40 hover:border-zinc-800'
               }`}
             >
               <div className="flex items-center gap-1.5 mb-1">
-                <FileText size={13} className={activeId === file.id ? 'text-amber-500' : 'text-zinc-500'} />
-                <span className={`text-[13px] font-mono font-bold truncate ${activeId === file.id ? 'text-amber-500' : 'text-zinc-300'}`}>
+                <FileText size={13} className={activeId === file.id ? 'text-accent-primary' : 'text-zinc-500'} />
+                <span className={`text-[13px] font-mono font-bold truncate ${activeId === file.id ? 'text-accent-primary' : 'text-zinc-300'}`}>
                   {file.name}
                 </span>
                 {file.dirty && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 ml-auto" title="Unsaved changes" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent-primary shrink-0 ml-auto" title="Unsaved changes" />
                 )}
               </div>
               <p className={`text-[11px] leading-relaxed truncate ${activeId === file.id ? 'text-zinc-400' : 'text-zinc-500'}`}>
@@ -290,8 +290,8 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
         </div>
 
         {/* Location */}
-        <div className="px-3 py-2.5 border-t border-zinc-800 bg-[#08080a]">
-          <p className="text-[9px] font-bold tracking-widest text-zinc-600 mb-1">LOCATION</p>
+        <div className="px-3 py-2.5 border-t border-border-glass bg-bg-tertiary">
+          <p className="text-[9px] font-bold tracking-widest text-text-muted mb-1">LOCATION</p>
           <p className="text-[10px] font-mono text-zinc-500 leading-relaxed break-all">
             {project ? `${project.path}\\${activeFile.name}` : activeFile.name}
           </p>
@@ -299,16 +299,16 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
       </aside>
 
       {/* Editor Area */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-[#08080a]">
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-bg-tertiary">
         {/* Editor Toolbar */}
-        <div className="flex items-center gap-1 px-3 h-11 border-b border-zinc-800 bg-[#0c0c0e]/60 shrink-0">
+        <div className="flex items-center gap-1 px-3 h-11 border-b border-border-glass bg-bg-secondary/60 shrink-0">
           {/* Tabs */}
-          <div className="flex bg-[#121215] border border-border-glass rounded p-0.5 h-7 items-center">
+          <div className="flex bg-bg-tertiary border border-border-glass rounded p-0.5 h-7 items-center">
             <button
               onClick={() => setMode('write')}
               className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center gap-1.5 font-medium ${
                 mode === 'write'
-                  ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
+                  ? 'bg-accent-primary/15 text-accent-primary font-bold border border-accent-primary/30'
                   : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
               }`}
             >
@@ -335,7 +335,7 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
             {lineCount} lines · {activeFile.content.length} chars
           </span>
 
-          <div className="w-px h-4 bg-zinc-850 mx-1" />
+          <div className="w-px h-4 bg-border-glass mx-1" />
 
           {/* Actions */}
           <button
@@ -355,7 +355,7 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
             <Trash2 size={11} />
           </button>
 
-          <div className="w-px h-4 bg-zinc-850 mx-1" />
+          <div className="w-px h-4 bg-border-glass mx-1" />
 
           <button
             onClick={handleSaveFile}
@@ -363,8 +363,8 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
               saved
                 ? 'bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30'
                 : activeFile.dirty
-                ? 'bg-amber-500 text-black hover:bg-amber-600'
-                : 'bg-[#1a1a22] text-zinc-550 border border-zinc-800 hover:text-zinc-300'
+                ? 'bg-accent-primary text-zinc-950 hover:bg-accent-secondary'
+                : 'bg-bg-secondary text-text-muted border border-border-glass hover:text-text-primary hover:border-border-glass-hover'
             }`}
           >
             {saved ? <Check size={11} /> : <Save size={11} />}
@@ -374,7 +374,7 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
 
         {/* Content Area */}
         {mode === 'write' ? (
-          <div className="flex-grow flex flex-1 min-h-0 overflow-hidden bg-[#08080a]">
+          <div className="flex-grow flex flex-1 min-h-0 overflow-hidden bg-bg-tertiary">
             <Editor
               height="100%"
               language="markdown"
@@ -402,14 +402,14 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
                     { token: 'attribute.value', foreground: 'CE9178' }
                   ],
                   colors: {
-                    'editor.background': '#08080a',
+                    'editor.background': '#060609',
                     'editor.foreground': '#D4D4D4',
                     'editorCursor.foreground': '#AEAFAD',
                     'editor.lineHighlightBackground': '#141416',
                     'editorLineNumber.foreground': '#858585',
                     'editorLineNumber.activeForeground': '#C6C6C6',
                     'editor.selectionBackground': '#264F78',
-                    'minimap.background': '#08080a',
+                    'minimap.background': '#060609',
                     'editorIndentGuide.background': '#2c2c2e',
                     'editorIndentGuide.background1': '#2c2c2e',
                     'editorIndentGuide.activeBackground': '#4e4e50',
@@ -419,9 +419,9 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
               }}
               options={{
                 readOnly: false,
-                minimap: { enabled: true },
-                fontSize: 13,
-                fontFamily: 'Consolas, "Courier New", monospace',
+                minimap: { enabled: settings?.appearance?.workspace?.showMinimap ?? false },
+                fontSize: settings?.appearance?.typography?.codeFontSize ?? 12,
+                fontFamily: settings?.appearance?.typography?.codeFontFamily ?? "'JetBrains Mono', 'Fira Code', monospace",
                 lineNumbers: 'on',
                 folding: true,
                 scrollBeyondLastLine: false,
@@ -441,15 +441,15 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
             />
           </div>
         ) : (
-          <div className="flex-grow flex-1 min-h-0 overflow-hidden fade-in bg-[#08080a]">
+          <div className="flex-grow flex-1 min-h-0 overflow-hidden fade-in bg-bg-tertiary">
             <MarkdownPreview content={activeFile.content} />
           </div>
         )}
 
         {/* Status bar */}
-        <div className="flex items-center justify-between px-3 py-1 border-t border-zinc-800 bg-[#08080a] shrink-0 h-6">
+        <div className="flex items-center justify-between px-3 py-1 border-t border-border-glass bg-bg-tertiary shrink-0 h-6">
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 text-[10px] font-mono text-amber-500">
+            <span className="flex items-center gap-1 text-[10px] font-mono text-accent-primary">
               <ChevronRight size={9} />
               {activeFile.name}
             </span>
@@ -459,8 +459,8 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
           </div>
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-mono text-zinc-600">Markdown</span>
-            <span className="text-[10px] font-mono text-[#333344]">UTF-8</span>
-            <span className="flex items-center gap-1 text-[10px] font-mono text-[#333344]">
+            <span className="text-[10px] font-mono text-text-muted">UTF-8</span>
+            <span className="flex items-center gap-1 text-[10px] font-mono text-text-muted">
               <MapPin size={8} />
               Ln {lineCount}
             </span>
@@ -469,24 +469,24 @@ export const ProjectMemory: React.FC<ProjectMemoryProps> = ({
       </div>
 
       <style>{`
-        .markdown-preview h1.md-h1 { font-size: 1.5rem; font-weight: 700; color: #e2e2ea; margin: 1.5rem 0 0.75rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.5rem; }
-        .markdown-preview h2.md-h2 { font-size: 1.1rem; font-weight: 600; color: #ccccdd; margin: 1.25rem 0 0.5rem; }
-        .markdown-preview h3.md-h3 { font-size: 0.95rem; font-weight: 600; color: #aaaacc; margin: 1rem 0 0.4rem; }
-        .markdown-preview strong.md-bold { color: #f59e0b; font-weight: 600; }
-        .markdown-preview em.md-em { color: #888899; font-style: italic; }
-        .markdown-preview code.md-code { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); color: #22c55e; font-family: 'JetBrains Mono', monospace; font-size: 0.8em; padding: 0.1em 0.4em; border-radius: 3px; }
-        .markdown-preview .md-codeblock { background: #08080a; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; margin: 0.75rem 0; overflow: hidden; }
-        .markdown-preview .md-codeblock .md-lang { display: block; background: #0c0c0e; padding: 0.25rem 0.75rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; color: #f59e0b; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+        .markdown-preview h1.md-h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin: 1.5rem 0 0.75rem; border-bottom: 1px solid var(--border-glass); padding-bottom: 0.5rem; }
+        .markdown-preview h2.md-h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); margin: 1.25rem 0 0.5rem; }
+        .markdown-preview h3.md-h3 { font-size: 0.95rem; font-weight: 600; color: var(--text-muted); margin: 1rem 0 0.4rem; }
+        .markdown-preview strong.md-bold { color: var(--accent-primary, #f59e0b); font-weight: 600; }
+        .markdown-preview em.md-em { color: var(--text-muted); font-style: italic; }
+        .markdown-preview code.md-code { background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-glass); color: #22c55e; font-family: 'JetBrains Mono', monospace; font-size: 0.8em; padding: 0.1em 0.4em; border-radius: 3px; }
+        .markdown-preview .md-codeblock { background: var(--bg-tertiary); border: 1px solid var(--border-glass); border-radius: 6px; margin: 0.75rem 0; overflow: hidden; }
+        .markdown-preview .md-codeblock .md-lang { display: block; background: var(--bg-secondary); padding: 0.25rem 0.75rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; color: var(--accent-primary, #f59e0b); border-bottom: 1px solid var(--border-glass); }
         .markdown-preview .md-codeblock pre { margin: 0; padding: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #22c55e; line-height: 1.6; white-space: pre; overflow-x: auto; }
         .markdown-preview .md-li { padding: 0.15rem 0; display: flex; gap: 0.5rem; }
-        .markdown-preview .md-bullet { color: #f59e0b; font-size: 0.8em; margin-top: 0.2em; }
-        .markdown-preview .md-blockquote { border-left: 2px solid #f59e0b; padding: 0.25rem 0.75rem; color: #888899; background: #0c0c0e; margin: 0.5rem 0; }
-        .markdown-preview .md-hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 1.25rem 0; }
+        .markdown-preview .md-bullet { color: var(--accent-primary, #f59e0b); font-size: 0.8em; margin-top: 0.2em; }
+        .markdown-preview .md-blockquote { border-left: 2px solid var(--accent-primary, #f59e0b); padding: 0.25rem 0.75rem; color: var(--text-secondary); background: var(--bg-tertiary); margin: 0.5rem 0; }
+        .markdown-preview .md-hr { border: none; border-top: 1px solid var(--border-glass); margin: 1.25rem 0; }
         .markdown-preview .md-check { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
-        .markdown-preview .md-checkbox { font-family: 'JetBrains Mono', monospace; font-size: 0.8em; color: #555568; }
+        .markdown-preview .md-checkbox { font-family: 'JetBrains Mono', monospace; font-size: 0.8em; color: var(--text-muted); }
         .markdown-preview .md-check.done { color: #22c55e; }
         .markdown-preview .md-check.done .md-checkbox.checked { color: #22c55e; }
-        .markdown-preview .md-check:not(.done) { color: #888899; }
+        .markdown-preview .md-check:not(.done) { color: var(--text-muted); }
       `}</style>
     </div>
   );

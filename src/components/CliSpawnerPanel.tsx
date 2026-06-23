@@ -87,7 +87,7 @@ export const CliSpawnerPanel: React.FC = () => {
       {/* Header Row */}
       <div className="w-full flex items-center justify-between py-1.5 px-2.5 glass-panel bg-bg-secondary/20 border-b border-border-glass gap-3 h-[34px] relative z-20">
         <h2 className="text-[10px] font-bold uppercase tracking-wider text-zinc-200 font-mono flex items-center gap-1.5 select-none shrink-0">
-          <Terminal size={11} className="text-amber-500 animate-pulse" />
+          <Terminal size={11} className="text-blue-500 animate-pulse" />
           CLI Agent Swarm
         </h2>
         
@@ -97,7 +97,7 @@ export const CliSpawnerPanel: React.FC = () => {
             className={`flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider py-1.5 px-2.5 rounded-md transition-all duration-300 ${
               isExpanded 
                 ? 'bg-zinc-800 border border-zinc-700 text-zinc-450 hover:bg-zinc-750' 
-                : 'bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 hover:border-amber-500/30 cursor-pointer'
+                : 'bg-blue-500/10 border border-blue-500/20 text-blue-450 hover:bg-blue-500/20 hover:border-blue-500/30 cursor-pointer'
             }`}
           >
             {isExpanded ? 'Cancel' : <><Plus size={10} /> New Agent</>}
@@ -111,12 +111,12 @@ export const CliSpawnerPanel: React.FC = () => {
               terminals.length > 8 
                 ? 'opacity-40 cursor-not-allowed border-transparent text-zinc-650' 
                 : isAgentPanelPinned 
-                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-500 hover:bg-amber-500/20' 
+                  ? 'bg-blue-500/10 border-blue-500/20 text-blue-450 hover:bg-blue-500/20' 
                   : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
             }`}
             title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isAgentPanelPinned ? "Float Panel" : "Dock Panel"}
           >
-            {isAgentPanelPinned ? <Pin size={10} className="fill-amber-500" /> : <PinOff size={10} />}
+            {isAgentPanelPinned ? <Pin size={10} className="fill-blue-500 text-blue-500" /> : <PinOff size={10} />}
           </button>
         </div>
       </div>

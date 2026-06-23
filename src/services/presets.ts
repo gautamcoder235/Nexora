@@ -10,11 +10,11 @@ export interface AppearancePreset {
 export const NexoraDefaultPreset: AppearancePreset = {
   id: 'nexora-default',
   name: 'Nexora Default',
-  description: 'The standard premium amber and midnight look.',
+  description: 'The standard premium blue and pure black look.',
   appearance: {
     theme: {
       theme: 'Midnight',
-      accentColor: 'amber',
+      accentColor: 'blue',
       mode: 'dark',
       density: 'comfortable',
       transparency: 90,

@@ -23,6 +23,30 @@ fn gen_unique_id(prefix: &str) -> String {
     format!("{}-{}-{}", prefix, ms, counter)
 }
 
+fn parse_numstat_path(raw_path: &str) -> Vec<String> {
+    let trimmed = raw_path.trim().trim_matches('"');
+    if trimmed.contains(" => ") {
+        if let (Some(start_idx), Some(end_idx)) = (trimmed.find('{'), trimmed.find('}')) {
+            let prefix = &trimmed[..start_idx];
+            let suffix = &trimmed[end_idx + 1..];
+            let middle = &trimmed[start_idx + 1..end_idx];
+            let parts: Vec<&str> = middle.split(" => ").collect();
+            if parts.len() == 2 {
+                let old_path = format!("{}{}{}", prefix, parts[0].trim(), suffix);
+                let new_path = format!("{}{}{}", prefix, parts[1].trim(), suffix);
+                return vec![old_path, new_path];
+            }
+        } else {
+            // No curly braces, e.g., "old => new"
+            let parts: Vec<&str> = trimmed.split(" => ").collect();
+            if parts.len() == 2 {
+                return vec![parts[0].trim().to_string(), parts[1].trim().to_string()];
+            }
+        }
+    }
+    vec![trimmed.to_string()]
+}
+
 lazy_static! {
     static ref GLOBAL_MERGE_LOCK: Mutex<()> = Mutex::new(());
 }
@@ -130,6 +154,11 @@ pub async fn apply_merge_candidate(
         .output()
         .map_err(|e| e.to_string())?;
 
+    if !status_output.status.success() {
+        let err_msg = String::from_utf8_lossy(&status_output.stderr);
+        fail_merge_step!(&format!("Gate A Failed: git status command failed: {}", err_msg));
+    }
+
     let is_clean = status_output.stdout.is_empty();
     let precheck_report = json!({
         "clean": is_clean,
@@ -196,9 +225,9 @@ pub async fn apply_merge_candidate(
     let mut expected_files = Vec::new();
     let numstat_str = String::from_utf8_lossy(&numstat_output.stdout);
     for line in numstat_str.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
+        let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() >= 3 {
-            expected_files.push(parts[2].to_string());
+            expected_files.extend(parse_numstat_path(parts[2]));
         }
     }
 

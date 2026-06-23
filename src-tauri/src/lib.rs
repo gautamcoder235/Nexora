@@ -708,7 +708,7 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
     use std::io::Write;
 
     // Check if the control server is already running (hidden in the background)
-    if check_electron_ping() {
+    if check_electron_ping().await {
         if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
             let _ = stream.write_all(b"GET /show HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
         }
@@ -841,11 +841,19 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
 }
 
 #[tauri::command]
-fn check_electron_ping() -> bool {
+async fn check_electron_ping() -> bool {
     use std::net::SocketAddr;
     use std::time::Duration;
     if let Ok(addr) = "127.0.0.1:30120".parse::<SocketAddr>() {
-        std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+        match tokio::time::timeout(
+            Duration::from_millis(50),
+            tokio::net::TcpStream::connect(addr),
+        )
+        .await
+        {
+            Ok(Ok(_)) => true,
+            _ => false,
+        }
     } else {
         false
     }
@@ -1054,6 +1062,73 @@ struct SystemMetrics {
     ram_gb: f32,
 }
 
+fn get_git_branch_fallback(workspace_path: &str) -> Result<String, String> {
+    let path = std::path::Path::new(workspace_path).join(".git").join("HEAD");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let content = content.trim();
+            if content.starts_with("ref: ") {
+                let parts: Vec<&str> = content.split('/').collect();
+                if let Some(branch) = parts.last() {
+                    return Ok(branch.to_string());
+                }
+            } else {
+                return Ok(content[..std::cmp::min(7, content.len())].to_string());
+            }
+        }
+    }
+    let git_file_path = std::path::Path::new(workspace_path).join(".git");
+    if git_file_path.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&git_file_path) {
+            if content.starts_with("gitdir: ") {
+                let git_dir_path = content["gitdir: ".len()..].trim();
+                let resolved_git_dir = if std::path::Path::new(git_dir_path).is_absolute() {
+                    std::path::PathBuf::from(git_dir_path)
+                } else {
+                    std::path::Path::new(workspace_path).join(git_dir_path)
+                };
+                let head_path = resolved_git_dir.join("HEAD");
+                if head_path.exists() {
+                    if let Ok(head_content) = std::fs::read_to_string(head_path) {
+                        let head_content = head_content.trim();
+                        if head_content.starts_with("ref: ") {
+                            let parts: Vec<&str> = head_content.split('/').collect();
+                            if let Some(branch) = parts.last() {
+                                return Ok(branch.to_string());
+                            }
+                        } else {
+                            return Ok(head_content[..std::cmp::min(7, head_content.len())].to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Err("Not a git repository".to_string())
+}
+
+#[tauri::command]
+fn get_git_branch(workspace_path: String) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&workspace_path)
+        .output();
+
+    match output {
+        Ok(out) => {
+            if out.status.success() {
+                let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                Ok(branch)
+            } else {
+                get_git_branch_fallback(&workspace_path)
+            }
+        }
+        Err(_) => {
+            get_git_branch_fallback(&workspace_path)
+        }
+    }
+}
+
 #[tauri::command]
 fn get_system_metrics() -> SystemMetrics {
     let mut sys = get_system_info().lock().unwrap_or_else(|e| e.into_inner());
@@ -1070,6 +1145,7 @@ fn get_system_metrics() -> SystemMetrics {
 fn exit_app(app_handle: AppHandle) {
     app_handle.exit(0);
 }
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1128,6 +1204,7 @@ pub fn run() {
             set_terminal_visibility,
             get_terminal_metrics,
             get_system_metrics,
+            get_git_branch,
             swarm_worktrees::validate_git_repository,
             swarm_worktrees::create_worktree,
             swarm_worktrees::remove_worktree,

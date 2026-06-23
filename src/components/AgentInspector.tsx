@@ -45,6 +45,7 @@ export function AgentInspector() {
 
   const agents = useOrchestratorStore(s => s.agents);
   const tasks = useOrchestratorStore(s => s.tasks);
+  const settings = useOrchestratorStore(s => s.settings);
   const executions = useSwarmStore(s => s.executions);
 
   const [activeTab, setActiveTab] = useState<'task' | 'reasoning' | 'files' | 'terminal' | 'locks' | 'events' | 'checkpoints'>('task');
@@ -97,7 +98,7 @@ export function AgentInspector() {
   }, [agent, task, execution]);
 
   // Fetch execution database tables
-  const fetchData = async () => {
+  const fetchData = async (isSilent = false) => {
     if (!execution) {
       setDbLogs([]);
       setDbArtifacts([]);
@@ -105,7 +106,7 @@ export function AgentInspector() {
       setContractLogText('');
       return;
     }
-    setIsLoading(true);
+    if (!isSilent) setIsLoading(true);
     try {
       // 1. Fetch DB logs
       const logs = await invoke<LogLine[]>('get_execution_logs', { executionId: execution.id });
@@ -128,7 +129,7 @@ export function AgentInspector() {
     } catch (err) {
       console.warn("Error fetching inspector database details:", err);
     } finally {
-      setIsLoading(false);
+      if (!isSilent) setIsLoading(false);
     }
   };
 
@@ -170,12 +171,19 @@ export function AgentInspector() {
     }
   };
 
+  // Load executions list when inspector opens
+  useEffect(() => {
+    if (isOpen) {
+      useSwarmStore.getState().loadExecutions();
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen && execution) {
-      fetchData();
+      fetchData(false);
       fetchCheckpoints();
     }
-  }, [isOpen, execution, worktreePath]);
+  }, [isOpen, execution?.id, execution?.status, worktreePath]);
 
   // Real-time polling when execution is actively running or validating
   useEffect(() => {
@@ -185,11 +193,11 @@ export function AgentInspector() {
     if (!isExecuting) return;
 
     const pollInterval = setInterval(() => {
-      fetchData();
+      fetchData(true);
     }, 2000);
 
     return () => clearInterval(pollInterval);
-  }, [isOpen, execution]);
+  }, [isOpen, execution?.id, execution?.status]);
 
   // Periodic lock refetching and heartbeat ticking
   useEffect(() => {
@@ -246,28 +254,64 @@ export function AgentInspector() {
     }
   };
 
+  const avatarStyle = settings?.appearance?.agent?.avatarStyle || 'initials';
+  const showAgentStatusBadge = settings?.appearance?.agent?.showAgentStatusBadge !== false;
+  const compact = settings?.appearance?.agent?.compactCards ?? false;
+
+  const initials = agent.name.slice(0, 2).toUpperCase();
+  const statusColor = agent.status === 'running' ? 'bg-emerald-500' : agent.status === 'error' ? 'bg-rose-500' : agent.status === 'paused' ? 'bg-amber-500' : 'bg-zinc-500';
+  const isRunningStatus = agent.status === 'running';
+
+  const avatarElement = (() => {
+    if (avatarStyle === 'icon') {
+      return (
+        <div className={`rounded-xl flex items-center justify-center border bg-white/5 border-zinc-700 text-zinc-400 ${compact ? 'w-7 h-7' : 'w-9 h-9'}`}>
+          <Bot size={compact ? 14 : 20} />
+        </div>
+      );
+    }
+    if (avatarStyle === 'identicon') {
+      return (
+        <div className={`rounded-xl overflow-hidden grid grid-cols-2 gap-[1px] p-[1px] bg-white/5 border border-zinc-700 ${compact ? 'w-7 h-7' : 'w-9 h-9'}`}>
+          <div className="bg-sky-500 opacity-80" />
+          <div className="bg-zinc-700 opacity-60" />
+          <div className="bg-zinc-600 opacity-40" />
+          <div className="bg-sky-500 opacity-90" />
+        </div>
+      );
+    }
+    return (
+      <div className={`rounded-xl bg-white/5 border border-zinc-700 flex items-center justify-center font-bold text-zinc-300 ${compact ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm'}`}>
+        {initials}
+      </div>
+    );
+  })();
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center font-sans">
-      <div className="bg-[#0c0c0e] border border-zinc-800 rounded-xl w-full max-w-4xl h-[600px] flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden">
+    <div className={`fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center font-sans ${settings?.appearance?.agent?.animateAgentTransitions !== false ? "animate-in fade-in duration-200" : ""}`}>
+      <div className={`bg-[#0c0c0e] border border-zinc-800 rounded-xl w-full flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden ${compact ? "max-w-3xl h-[500px]" : "max-w-4xl h-[600px]"} ${settings?.appearance?.agent?.animateAgentTransitions !== false ? "animate-in zoom-in-95 duration-200" : ""}`}>
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-800 bg-[#0f0f12] flex justify-between items-center shrink-0">
+        <div className={`border-b border-zinc-800 bg-[#0f0f12] flex justify-between items-center shrink-0 ${compact ? "px-4 py-2.5" : "px-6 py-4"}`}>
           <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${
-              agent.status === 'running' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/50 border-zinc-700 text-zinc-400'
-            }`}>
-              <Bot size={20} />
+            <div className="relative">
+              {avatarElement}
+              {showAgentStatusBadge && (
+                <span className={`absolute -bottom-0.5 -right-0.5 rounded-full ${statusColor} border border-black/80 ${compact ? 'w-2 h-2' : 'w-2.5 h-2.5'} ${isRunningStatus ? 'animate-pulse' : ''}`} />
+              )}
             </div>
             <div>
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 {agent.name}
-                <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${
-                  agent.status === 'running' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 animate-pulse' :
-                  agent.status === 'error' ? 'bg-rose-500/10 text-rose-400 border-rose-500/25' :
-                  'bg-zinc-800 text-zinc-400 border-zinc-700'
-                }`}>
-                  {agent.status}
-                </span>
+                {showAgentStatusBadge && (
+                  <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${
+                    agent.status === 'running' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 animate-pulse' :
+                    agent.status === 'error' ? 'bg-rose-500/10 text-rose-400 border-rose-500/25' :
+                    'bg-zinc-800 text-zinc-400 border-zinc-700'
+                  }`}>
+                    {agent.status}
+                  </span>
+                )}
               </h2>
               <p className="text-[10px] text-zinc-500 font-mono">
                 Agent ID: {agent.id} | Role: {agent.role || 'Builder'}
@@ -294,10 +338,10 @@ export function AgentInspector() {
         </div>
 
         {/* Content Pane */}
-        <div className="flex-grow overflow-y-auto p-6 min-h-0 bg-[#08080a]">
+        <div className={`flex-grow overflow-y-auto min-h-0 bg-[#08080a] ${compact ? "p-4" : "p-6"}`}>
           {isLoading && (
             <div className="h-full w-full flex items-center justify-center">
-              <Loader2 size={24} className="animate-spin text-amber-500" />
+              <Loader2 size={24} className="animate-spin text-accent-primary" />
             </div>
           )}
 
@@ -324,7 +368,7 @@ export function AgentInspector() {
                           <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block font-mono">Scope constraints (Glob Rules)</span>
                           <div className="flex flex-wrap gap-1.5">
                             {contractData.allowedPatterns.map((pat: string) => (
-                              <span key={pat} className="bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-mono px-2 py-0.5 rounded">
+                              <span key={pat} className="bg-accent-primary/10 border border-accent-primary/20 text-accent-primary text-[10px] font-mono px-2 py-0.5 rounded">
                                 {pat}
                               </span>
                             ))}
@@ -351,7 +395,7 @@ export function AgentInspector() {
                           .filter(l => l.message.includes('thought') || l.message.includes('reasoning') || l.level === 'INFO')
                           .map((log) => (
                             <div key={log.id} className="p-3 bg-zinc-900/30 border border-zinc-800/80 rounded-lg flex items-start gap-3">
-                              <div className="w-5 h-5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center text-[10px] shrink-0 font-mono font-bold">
+                              <div className="w-5 h-5 rounded-full bg-accent-primary/10 text-accent-primary border border-accent-primary/20 flex items-center justify-center text-[10px] shrink-0 font-mono font-bold">
                                 ?
                               </div>
                               <div className="space-y-1">
@@ -413,8 +457,8 @@ export function AgentInspector() {
                   <div className="px-4 py-2 border-b border-zinc-800 bg-[#0d0d10] flex justify-between items-center select-none shrink-0 font-mono text-[10px] text-zinc-500">
                     <span>CWD: {worktreePath || 'unknown'}</span>
                     <button 
-                      onClick={fetchData} 
-                      className="text-amber-500 hover:text-amber-400 flex items-center gap-1.5"
+                      onClick={() => fetchData()} 
+                      className="text-accent-primary hover:text-accent-secondary flex items-center gap-1.5"
                     >
                       <RefreshCw size={10} /> Reload Log
                     </button>
@@ -446,7 +490,7 @@ export function AgentInspector() {
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 font-mono">Concurrency Write Locks</h3>
                     {locks.length > 0 && (
-                      <span className="text-[9px] uppercase font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      <span className="text-[9px] uppercase font-bold text-accent-primary bg-accent-primary/10 px-2 py-0.5 rounded border border-accent-primary/20">
                         {locks.length} files locked
                       </span>
                     )}
@@ -466,10 +510,10 @@ export function AgentInspector() {
                             </div>
                           </div>
                           <div className="text-right space-y-1">
-                            <div className="text-[10px] text-amber-400">
+                            <div className="text-[10px] text-accent-secondary">
                               Expires in: <span className="font-bold">{formatTime(lock.expiresInSecs)}</span>
                             </div>
-                            <div className="text-[9px] text-zinc-500">
+                            <div className="text-[10px] text-accent-primary">
                               Heartbeat: {lock.lastHeartbeatSecsAgo}s ago
                             </div>
                           </div>
@@ -493,7 +537,7 @@ export function AgentInspector() {
                       {dbEvents.map((evt) => (
                         <div key={evt.id} className="relative group">
                           {/* Dot marker */}
-                          <div className="absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full bg-zinc-900 border-2 border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+                          <div className="absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full bg-zinc-900 border-2 border-accent-primary shadow-[0_0_8px_var(--accent-primary)]" />
                           <div className="space-y-1">
                             <div className="flex items-center justify-between text-xs">
                               <span className="text-zinc-200 font-bold uppercase tracking-wide font-mono">{evt.event_type}</span>
@@ -525,7 +569,7 @@ export function AgentInspector() {
                       <div key={chk.id} className="p-4 bg-zinc-900/40 border border-zinc-800 rounded-lg flex items-center justify-between text-xs">
                         <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center border ${
-                            chk.status === 'active' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-zinc-800/80 text-zinc-400 border-zinc-700'
+                            chk.status === 'active' ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' : 'bg-zinc-800/80 text-zinc-400 border-zinc-700'
                           }`}>
                             <CheckCircle size={14} />
                           </div>
@@ -540,7 +584,7 @@ export function AgentInspector() {
                           <button
                             onClick={() => handleRevertCheckpoint(chk.id)}
                             disabled={revertingId !== null}
-                            className="bg-zinc-900 border border-zinc-800 hover:border-amber-500/40 hover:bg-amber-500/5 hover:text-amber-500 disabled:opacity-40 text-zinc-400 text-[10px] font-mono px-3 py-1.5 rounded transition-all cursor-pointer"
+                            className="bg-zinc-900 border border-zinc-800 hover:border-accent-primary/40 hover:bg-accent-primary/5 hover:text-accent-primary disabled:opacity-40 text-zinc-400 text-[10px] font-mono px-3 py-1.5 rounded transition-all cursor-pointer"
                           >
                             {revertingId === chk.id ? 'Reverting...' : 'Revert State'}
                           </button>
@@ -571,7 +615,7 @@ function TabButton({ active, onClick, icon, label }: TabButtonProps) {
       onClick={onClick}
       className={`h-[30px] px-3 rounded text-[10px] font-bold tracking-wider uppercase border transition-all flex items-center gap-1.5 cursor-pointer ${
         active
-          ? 'border-amber-500 text-amber-500 bg-amber-500/5'
+          ? 'border-accent-primary text-accent-primary bg-accent-primary/5'
           : 'border-transparent text-zinc-500 hover:text-zinc-300'
       }`}
     >

@@ -266,7 +266,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
             <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block">Agent Worktree</label>
             <button 
               onClick={loadWorktrees}
-              className="text-[9px] text-amber-500 hover:text-amber-400 font-semibold cursor-pointer"
+              className="text-[9px] text-accent-primary hover:text-accent-secondary font-semibold cursor-pointer"
             >
               Refresh
             </button>
@@ -274,7 +274,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
           <select 
             value={selectedWorktreePath} 
             onChange={(e) => setSelectedWorktreePath(e.target.value)}
-            className="w-full bg-[#121215] border border-zinc-800 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-amber-500 text-zinc-300 outline-none"
+            className="w-full bg-[#121215] border border-zinc-800 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-primary text-zinc-300 outline-none"
           >
             {worktrees.length === 0 ? (
               <option value="">-- No Active Worktrees --</option>
@@ -306,7 +306,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
             onClick={() => setActiveSubTab('editor')}
             className={`flex-1 h-7 flex items-center justify-center gap-1.5 rounded text-[11px] font-semibold transition-all cursor-pointer ${
               activeSubTab === 'editor'
-                ? 'bg-amber-500/10 border border-amber-500/30 text-amber-500 font-bold'
+                ? 'bg-accent-primary/10 border border-accent-primary/30 text-accent-primary font-bold'
                 : 'text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent'
             }`}
           >
@@ -317,7 +317,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
             onClick={() => setActiveSubTab('validation')}
             className={`flex-1 h-7 flex items-center justify-center gap-1.5 rounded text-[11px] font-semibold transition-all cursor-pointer ${
               activeSubTab === 'validation'
-                ? 'bg-amber-500/10 border border-amber-500/30 text-amber-500 font-bold'
+                ? 'bg-accent-primary/10 border border-accent-primary/30 text-accent-primary font-bold'
                 : 'text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent'
             }`}
           >
@@ -357,7 +357,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
             <button
               onClick={handleRunValidation}
               disabled={isValidating || !selectedWorktreePath}
-              className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-black font-bold text-[11px] py-1.5 px-3 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              className="w-full bg-accent-primary hover:bg-accent-secondary disabled:opacity-40 text-black font-bold text-[11px] py-1.5 px-3 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
               {isValidating ? (
                 <>
@@ -391,7 +391,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
                     onClick={() => setSelectedValidationStep(step.step_name)}
                     className={`w-full text-left p-2 rounded text-xs flex items-center justify-between border transition-all ${
                       isSelected
-                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 font-semibold'
+                        ? 'bg-accent-primary/10 border-accent-primary/40 text-accent-primary font-semibold'
                         : 'bg-zinc-900/40 border-transparent hover:bg-zinc-800/40 text-zinc-350'
                     }`}
                   >
@@ -465,7 +465,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
                     <button
                       onClick={handleSave}
                       disabled={saveStatus === 'saving'}
-                      className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black font-bold text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors cursor-pointer"
+                      className="bg-accent-primary hover:bg-accent-secondary disabled:opacity-50 text-black font-bold text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors cursor-pointer"
                     >
                       <Save size={12} className="mr-1.5" />
                       Save to Worktree
@@ -478,7 +478,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
               <div className="flex-grow w-full bg-[#08080a] min-h-0 relative">
                 {isFileLoading ? (
                   <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
-                    <Loader2 size={16} className="animate-spin text-amber-500 mr-2" />
+                    <Loader2 size={16} className="animate-spin text-accent-primary mr-2" />
                     Loading file from worktree...
                   </div>
                 ) : selectedFilePath?.endsWith('.md') && editorMode === 'preview' ? (
@@ -551,7 +551,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
             <div className="flex flex-col h-full overflow-hidden">
               <div className="bg-[#0c0c0e]/80 border-b border-zinc-800 px-4 flex justify-between items-center select-none h-11 shrink-0">
                 <div className="flex items-center gap-2">
-                  <Terminal size={13} className="text-amber-500" />
+                  <Terminal size={13} className="text-accent-primary" />
                   <span className="font-mono text-xs text-zinc-200">Terminal Validation Output: {selectedStepData.step_name}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -564,7 +564,7 @@ export function WorkspaceExplorer({ repoPath }: Props) {
                 </div>
               </div>
               
-              <div className="flex-grow bg-black p-4 overflow-y-auto font-mono text-xs text-amber-500/80 leading-normal selection:bg-amber-500/20 selection:text-amber-400">
+              <div className="flex-grow bg-black p-4 overflow-y-auto font-mono text-xs text-accent-primary/80 leading-normal selection:bg-accent-primary/20 selection:text-accent-secondary">
                 <pre className="whitespace-pre-wrap break-all select-text">
                   {selectedStepData.output || 'Step executed successfully with no output.'}
                 </pre>
@@ -635,9 +635,9 @@ function DirectoryTreeRecursive({
                     className={`text-zinc-500 shrink-0 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`}
                   />
                   {isExpanded ? (
-                    <FolderOpen size={13} className="text-amber-500/80 fill-amber-500/10 shrink-0" />
+                    <FolderOpen size={13} className="text-accent-primary/80 fill-accent-primary/10 shrink-0" />
                   ) : (
-                    <Folder size={13} className="text-amber-500/80 fill-amber-500/10 shrink-0" />
+                    <Folder size={13} className="text-accent-primary/80 fill-accent-primary/10 shrink-0" />
                   )}
                   <span className="truncate">{node.name}</span>
                 </span>
@@ -666,7 +666,7 @@ function DirectoryTreeRecursive({
               onClick={() => onFileSelect(relPath, node.path)}
               className={`w-full text-left text-xs font-mono py-1 px-2 flex items-center transition-colors cursor-pointer rounded-sm outline-none ${
                 isSelected 
-                  ? 'bg-amber-500/10 text-amber-400 font-semibold border-l-2 border-amber-500' 
+                  ? 'bg-accent-primary/10 text-accent-secondary font-semibold border-l-2 border-accent-primary' 
                   : 'text-zinc-400 hover:bg-zinc-900/40 hover:text-zinc-200'
               }`}
             >
@@ -722,7 +722,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
 
     // Inline Code: `code`
-    html = html.replace(/`(.*?)`/g, '<code class="bg-[#121215] border border-zinc-800 px-1.5 py-0.5 rounded text-amber-500 font-mono text-[11px]">$1</code>');
+    html = html.replace(/`(.*?)`/g, '<code class="bg-[#121215] border border-zinc-800 px-1.5 py-0.5 rounded text-accent-primary font-mono text-[11px]">$1</code>');
 
     return <span dangerouslySetInnerHTML={{ __html: html }} />;
   };
@@ -821,7 +821,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
           note: 'border-blue-500 bg-blue-500/5 text-blue-300',
           tip: 'border-emerald-500 bg-emerald-500/5 text-emerald-300',
           important: 'border-purple-500 bg-purple-500/5 text-purple-300',
-          warning: 'border-amber-500 bg-amber-500/5 text-amber-300',
+          warning: 'border-warning bg-warning/5 text-warning',
           caution: 'border-rose-500 bg-rose-500/5 text-rose-300',
         };
         renderedElements.push(

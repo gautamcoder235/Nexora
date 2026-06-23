@@ -511,11 +511,55 @@ export const SettingsModal: React.FC = () => {
     { id: 'Light', name: 'Light Minimal', bg: '#f4f4f5', cardBg: '#ffffff', text: '#18181b', accent: '#2563eb' }
   ];
 
+  // Helper for custom live preview settings
+  const getAccentColorHex = (accentId: string, customHex?: string) => {
+    if (accentId === 'custom' && customHex) {
+      return customHex;
+    }
+    const colorMap: Record<string, string> = {
+      amber: '#f59e0b',
+      blue: '#3b82f6',
+      emerald: '#10b981',
+      red: '#ef4444',
+      violet: '#8b5cf6',
+      cyan: '#06b6d4',
+      pink: '#ec4899',
+    };
+    return colorMap[accentId] || '#f59e0b';
+  };
+
+  const hexToRgba = (hex: string, alpha: number) => {
+    if (!hex || !hex.startsWith('#')) return `rgba(15, 15, 21, ${alpha})`;
+    let h = hex.substring(1);
+    if (h.length === 3) {
+      h = h.split('').map(char => char + char).join('');
+    }
+    const r = parseInt(h.substring(0, 2), 16) || 0;
+    const g = parseInt(h.substring(2, 4), 16) || 0;
+    const b = parseInt(h.substring(4, 6), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  const getCornerRadiusValue = (radiusKey: string) => {
+    const map: Record<string, string> = {
+      sharp: '0px',
+      small: '4px',
+      medium: '8px',
+      large: '16px',
+    };
+    return map[radiusKey] || '8px';
+  };
+
+  const getThemeData = (themeId: string) => {
+    const found = themesPreviewData.find(t => t.id === themeId);
+    return found || themesPreviewData[1]; // default to Midnight
+  };
+
   if (!isSettingsModalOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center">
-      <div className="glass-modal glass-noise-base w-[950px] h-[680px] flex overflow-hidden border border-border-glass">
+      <div className={`glass-modal glass-noise-base h-[680px] flex overflow-hidden border border-border-glass transition-all duration-300 ${activeCategory === 'appearance' ? 'w-[1100px]' : 'w-[950px]'}`}>
         
         {/* Left Sidebar Navigation */}
         <div className="w-[280px] bg-[#070709]/75 border-r border-border-glass flex flex-col">
@@ -681,12 +725,14 @@ export const SettingsModal: React.FC = () => {
             <X size={20} />
           </button>
           
-          <div className="p-8 flex-1 overflow-y-auto space-y-6 font-mono text-[13px]">
+          <div className={activeCategory === 'appearance' 
+            ? "flex-1 overflow-hidden flex flex-col font-mono text-[13px] relative animate-in fade-in duration-200" 
+            : "p-8 flex-1 overflow-y-auto space-y-6 font-mono text-[13px]"}>
             
             {/* Live Performance Warnings Alert */}
-            {activeWarnings.length > 0 && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded text-xs space-y-1.5 animate-in fade-in duration-200">
-                <div className="flex items-center gap-2 text-amber-400 font-semibold uppercase tracking-wider text-[10px]">
+            {activeCategory !== 'appearance' && activeWarnings.length > 0 && (
+              <div className="p-3 bg-warning/10 border border-warning/20 rounded text-xs space-y-1.5 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 text-warning font-semibold uppercase tracking-wider text-[10px]">
                   <AlertTriangle size={13} />
                   Performance Warning Banner
                 </div>
@@ -887,7 +933,7 @@ export const SettingsModal: React.FC = () => {
                     type="checkbox" 
                     checked={localSettings.appearance.terminal.hardwareAcceleration}
                     onChange={(e) => updateLocalNested('appearance.terminal.hardwareAcceleration', e.target.checked)}
-                    className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                    className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                   />
                 </div>
 
@@ -1062,7 +1108,23 @@ export const SettingsModal: React.FC = () => {
               </div>
             )}            {/* 7. APPEARANCE CATEGORY WITH SUB-TABS */}
             {activeCategory === 'appearance' && (
-              <div className="space-y-6">
+              <div className="flex flex-1 min-h-0 overflow-hidden divide-x divide-border-glass">
+                {/* 55% Control Section */}
+                <div className="w-[55%] overflow-y-auto p-8 space-y-6 flex flex-col">
+                  {/* Warnings inside controls */}
+                  {activeWarnings.length > 0 && (
+                    <div className="p-3 bg-warning/10 border border-warning/20 rounded text-xs space-y-1.5 animate-in fade-in duration-200 mb-2">
+                      <div className="flex items-center gap-2 text-warning font-semibold uppercase tracking-wider text-[10px]">
+                        <AlertTriangle size={13} />
+                        Performance Warning Banner
+                      </div>
+                      <ul className="list-disc list-inside text-zinc-300 space-y-1 pl-1 font-sans leading-relaxed">
+                        {activeWarnings.map((w, idx) => (
+                          <li key={idx}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 <div className="border-b border-border-glass pb-3 mb-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1641,7 +1703,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.layout.showTerminalTitleBar}
                         onChange={(e) => updateLocalNested('appearance.layout.showTerminalTitleBar', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
                   </div>
@@ -1666,7 +1728,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.workspace.showGitBranch}
                         onChange={(e) => updateLocalNested('appearance.workspace.showGitBranch', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1686,7 +1748,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.workspace.showMinimap}
                         onChange={(e) => updateLocalNested('appearance.workspace.showMinimap', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1706,7 +1768,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.workspace.showActivityBar}
                         onChange={(e) => updateLocalNested('appearance.workspace.showActivityBar', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1726,7 +1788,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.workspace.showStatusBar}
                         onChange={(e) => updateLocalNested('appearance.workspace.showStatusBar', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1811,7 +1873,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.terminal.cursorBlink}
                         onChange={(e) => updateLocalNested('appearance.terminal.cursorBlink', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1831,7 +1893,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.terminal.copyOnSelect}
                         onChange={(e) => updateLocalNested('appearance.terminal.copyOnSelect', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1896,7 +1958,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.agent.showAgentStatusBadge}
                         onChange={(e) => updateLocalNested('appearance.agent.showAgentStatusBadge', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1916,7 +1978,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.agent.animateAgentTransitions}
                         onChange={(e) => updateLocalNested('appearance.agent.animateAgentTransitions', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1936,7 +1998,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.agent.compactCards}
                         onChange={(e) => updateLocalNested('appearance.agent.compactCards', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
                   </div>
@@ -1961,7 +2023,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.accessibility.screenReaderMode}
                         onChange={(e) => updateLocalNested('appearance.accessibility.screenReaderMode', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -1981,7 +2043,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.accessibility.highContrastMode}
                         onChange={(e) => updateLocalNested('appearance.accessibility.highContrastMode', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -2006,7 +2068,7 @@ export const SettingsModal: React.FC = () => {
                             updateLocalNested('appearance.theme.animationLevel', 'none');
                           }
                         }}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -2028,7 +2090,7 @@ export const SettingsModal: React.FC = () => {
                         onChange={(e) => {
                           updateLocalNested('appearance.accessibility.disableGlassmorphism', e.target.checked);
                         }}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -2048,7 +2110,7 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.accessibility.increaseContrast}
                         onChange={(e) => updateLocalNested('appearance.accessibility.increaseContrast', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
 
@@ -2068,11 +2130,338 @@ export const SettingsModal: React.FC = () => {
                         type="checkbox" 
                         checked={localSettings.appearance.accessibility.accessibleTermBell}
                         onChange={(e) => updateLocalNested('appearance.accessibility.accessibleTermBell', e.target.checked)}
-                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                        className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                       />
                     </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 45% Live Preview Section */}
+                <div className="w-[45%] bg-[#020203]/25 p-8 flex flex-col items-center justify-center relative overflow-y-auto" style={{
+                  backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)',
+                  backgroundSize: '16px 16px'
+                }}>
+                  {/* Style definition for keyframes */}
+                  <style dangerouslySetInnerHTML={{__html: `
+                    @keyframes preview-cursor-blink {
+                      0%, 100% { opacity: 1; }
+                      50% { opacity: 0; }
+                    }
+                    .animate-cursor-blink {
+                      animation: preview-cursor-blink 1s step-end infinite;
+                    }
+                  `}} />
+
+                  {/* Live Preview Panel Card */}
+                  <div className="w-full max-w-[350px] p-4 bg-[#08080c]/60 border border-white/[0.08] rounded-xl flex flex-col gap-4 shadow-2xl relative select-none">
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Eye size={12} className="text-zinc-400" />
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider font-sans">Live Preview</span>
+                      </div>
+                      <span className="text-[8px] bg-accent-primary/10 text-accent-primary border border-accent-primary/20 px-1.5 py-0.5 rounded font-mono font-semibold animate-pulse">
+                        Active
+                      </span>
+                    </div>
+
+                    {/* Window Frame Mockup */}
+                    <div 
+                      className="w-full aspect-[4/3] flex flex-col border overflow-hidden shadow-lg transition-all duration-300"
+                      style={{
+                        backgroundColor: hexToRgba(getThemeData(localSettings.appearance.theme.theme).bg, localSettings.appearance.theme.transparency / 100),
+                        backdropFilter: (localSettings.appearance.theme.backgroundBlur === 'low' ? 'blur(6px)' : localSettings.appearance.theme.backgroundBlur === 'high' ? 'blur(24px)' : 'blur(12px)'),
+                        borderRadius: getCornerRadiusValue(localSettings.appearance.theme.cornerRadius),
+                        borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)',
+                        color: getThemeData(localSettings.appearance.theme.theme).text
+                      }}
+                    >
+                      {/* Window Header */}
+                      <div className="h-6 flex items-center justify-between border-b px-2 select-none" style={{ 
+                        borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                        backgroundColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)'
+                      }}>
+                        {/* OS dots */}
+                        <div className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#ff5f56]" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#ffbd2e]" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#27c93f]" />
+                        </div>
+                        {/* Title */}
+                        <span className="text-[7px] text-zinc-500 font-sans tracking-wide">
+                          nexora-workspace
+                        </span>
+                        {/* Empty right block */}
+                        <div className="w-9" />
+                      </div>
+
+                      {/* Main Workspace split row */}
+                      <div className="flex-1 flex min-h-0 relative">
+                        
+                        {/* 1. Activity Bar */}
+                        {localSettings.appearance.workspace.showActivityBar && (
+                          <div 
+                            className="w-5 flex flex-col items-center py-1.5 gap-2 border-r"
+                            style={{ 
+                              borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                              backgroundColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.01)' : 'rgba(255,255,255,0.01)'
+                            }}
+                          >
+                            <div className="w-2.5 h-2.5 rounded flex items-center justify-center" style={{ backgroundColor: getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor) }}>
+                              <Layers size={6} className="text-white" />
+                            </div>
+                            <div className="w-2.5 h-2.5 rounded bg-zinc-700/30 flex items-center justify-center">
+                              <Terminal size={6} className="text-zinc-500" />
+                            </div>
+                            <div className="w-2.5 h-2.5 rounded bg-zinc-700/30 flex items-center justify-center mt-auto">
+                              <Cpu size={6} className="text-zinc-500" />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. File Explorer / Agent Sidebar */}
+                        <div 
+                          className="flex-1 flex min-h-0"
+                          style={{
+                            flexDirection: localSettings.appearance.workspace.sidebarPosition === 'right' ? 'row-reverse' : 'row'
+                          }}
+                        >
+                          {/* Sidebar Container */}
+                          <div 
+                            className="w-18 flex flex-col p-1.5 gap-1.5 border-r"
+                            style={{ 
+                              borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                              backgroundColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.01)' : 'rgba(255,255,255,0.01)',
+                              borderLeftWidth: localSettings.appearance.workspace.sidebarPosition === 'right' ? '1px' : '0px',
+                              borderRightWidth: localSettings.appearance.workspace.sidebarPosition === 'right' ? '0px' : '1px'
+                            }}
+                          >
+                            <span className="text-[7px] text-zinc-500 font-bold uppercase tracking-wider font-sans">Agents</span>
+                            
+                            {/* Mock Agent 1 */}
+                            <div className="flex items-center gap-1.5">
+                              <div className="relative">
+                                {(() => {
+                                  const avatarStyle = localSettings.appearance.agent.avatarStyle || 'initials';
+                                  const accentHex = getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor);
+                                  if (avatarStyle === 'icon') {
+                                    return (
+                                      <div className="w-4.5 h-4.5 rounded bg-white/5 flex items-center justify-center text-zinc-400 border border-white/[0.05]">
+                                        <Cpu size={8} />
+                                      </div>
+                                    );
+                                  }
+                                  if (avatarStyle === 'identicon') {
+                                    return (
+                                      <div className="w-4.5 h-4.5 rounded overflow-hidden grid grid-cols-2 gap-[0.5px] p-[0.5px] bg-white/5 border border-white/[0.05]">
+                                        <div style={{ backgroundColor: accentHex }} className="opacity-80" />
+                                        <div className="bg-zinc-700 opacity-60" />
+                                        <div className="bg-zinc-600 opacity-40" />
+                                        <div style={{ backgroundColor: accentHex }} className="opacity-90" />
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div className="w-4.5 h-4.5 rounded bg-white/5 flex items-center justify-center text-[7px] font-bold text-zinc-400 border border-white/[0.05]">
+                                      CO
+                                    </div>
+                                  );
+                                })()}
+                                {localSettings.appearance.agent.showAgentStatusBadge && (
+                                  <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 border border-black/40 animate-pulse" />
+                                )}
+                              </div>
+                              <span className="text-[7px] text-zinc-400 truncate max-w-[38px] font-sans">Coder</span>
+                            </div>
+                            
+                            {/* Mock Agent 2 */}
+                            <div className="flex items-center gap-1.5">
+                              <div className="relative">
+                                {(() => {
+                                  const avatarStyle = localSettings.appearance.agent.avatarStyle || 'initials';
+                                  const accentHex = getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor);
+                                  if (avatarStyle === 'icon') {
+                                    return (
+                                      <div className="w-4.5 h-4.5 rounded bg-white/5 flex items-center justify-center text-zinc-400 border border-white/[0.05]">
+                                        <Cpu size={8} />
+                                      </div>
+                                    );
+                                  }
+                                  if (avatarStyle === 'identicon') {
+                                    return (
+                                      <div className="w-4.5 h-4.5 rounded overflow-hidden grid grid-cols-2 gap-[0.5px] p-[0.5px] bg-white/5 border border-white/[0.05]">
+                                        <div style={{ backgroundColor: accentHex }} className="opacity-80" />
+                                        <div className="bg-zinc-700 opacity-60" />
+                                        <div className="bg-zinc-600 opacity-40" />
+                                        <div style={{ backgroundColor: accentHex }} className="opacity-90" />
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div className="w-4.5 h-4.5 rounded bg-white/5 flex items-center justify-center text-[7px] font-bold text-zinc-400 border border-white/[0.05]">
+                                      PL
+                                    </div>
+                                  );
+                                })()}
+                                {localSettings.appearance.agent.showAgentStatusBadge && (
+                                  <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 border border-black/40" />
+                                )}
+                              </div>
+                              <span className="text-[7px] text-zinc-400 truncate max-w-[38px] font-sans">Planner</span>
+                            </div>
+                          </div>
+
+                          {/* 3. Editor & Terminal Workspace */}
+                          <div className="flex-1 flex flex-col min-h-0">
+                            
+                            {/* Mock Editor */}
+                            <div className="flex-1 flex flex-col min-h-0 bg-white/[0.005]">
+                              {/* Editor Tabs */}
+                              <div className="h-5 border-b flex items-center justify-between" style={{ borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}>
+                                <div className="flex h-full">
+                                  <div 
+                                    className="px-2 h-full text-[7.5px] text-zinc-200 border-t flex items-center gap-1 bg-white/[0.02]"
+                                    style={{ borderTopColor: getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor) }}
+                                  >
+                                    <FileCode2 size={8} style={{ color: getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor) }} />
+                                    <span>main.tsx</span>
+                                  </div>
+                                  <div className="px-2 h-full text-[7.5px] text-zinc-500 flex items-center gap-1">
+                                    <span>styles.css</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Editor Content Area */}
+                              <div className="flex-1 flex min-h-0">
+                                <div 
+                                  className="flex-1 p-2 leading-normal overflow-hidden select-none whitespace-pre"
+                                  style={{
+                                    fontFamily: localSettings.appearance.typography.codeFontFamily,
+                                    fontSize: Math.max(7, Math.min(11, localSettings.appearance.typography.codeFontSize * 0.65)),
+                                    lineHeight: '1.2'
+                                  }}
+                                >
+                                  <div>
+                                    <span className="text-purple-400 font-semibold">const</span>{' '}
+                                    <span style={{ color: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? '#2563eb' : getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor) }}>agent</span>{' '}
+                                    = <span className="text-emerald-400">"Coder"</span>;
+                                  </div>
+                                  <div>
+                                    <span className="text-purple-400 font-semibold">if</span> (running) {'{'}
+                                  </div>
+                                  <div className="pl-2">
+                                    <span>console.log(agent);</span>
+                                  </div>
+                                  <div>{'}'}</div>
+                                </div>
+
+                                {/* Minimap */}
+                                {localSettings.appearance.workspace.showMinimap && (
+                                  <div className="w-3 border-l flex flex-col gap-[1.5px] p-[1.5px] opacity-35 bg-white/[0.01]" style={{ borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}>
+                                    <div className="h-0.5 bg-zinc-500 rounded-sm" />
+                                    <div className="h-1 bg-zinc-500 rounded-sm w-[75%]" />
+                                    <div className="h-0.5 bg-zinc-500 rounded-sm" />
+                                    <div className="h-1 bg-zinc-500 rounded-sm w-[90%]" />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Separator / Spacer gap */}
+                            <div 
+                              style={{ 
+                                height: `calc(${localSettings.appearance.workspace.paneSpacing}px * 0.15)`,
+                                backgroundColor: 'transparent'
+                              }} 
+                            />
+
+                            {/* Mock Terminal */}
+                            <div className="h-[75px] border-t flex flex-col bg-black/[0.15]" style={{ borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}>
+                              {/* Terminal Header */}
+                              {localSettings.appearance.layout.showTerminalTitleBar && (
+                                <div className="h-4.5 px-1.5 flex items-center justify-between bg-white/[0.01] border-b" style={{ borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}>
+                                  <span className="text-[6px] text-zinc-500 font-sans font-semibold uppercase">terminal (zsh)</span>
+                                </div>
+                              )}
+                              
+                              {/* Terminal Content */}
+                              <div 
+                                className="flex-1 p-1.5 select-none leading-normal"
+                                style={{
+                                  fontFamily: localSettings.appearance.typography.terminalFontFamily,
+                                  fontSize: Math.max(6.5, Math.min(10.5, localSettings.appearance.typography.terminalFontSize * 0.65)),
+                                  color: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? '#27272a' : '#e4e4e7',
+                                  lineHeight: '1.2'
+                                }}
+                              >
+                                <div className="flex items-center gap-0.5">
+                                  <span style={{ color: getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor) }} className="font-bold">~ $ </span>
+                                  <span>nexora dev</span>
+                                </div>
+                                <div className="text-zinc-500">✔ Loaded plugins</div>
+                                <div className="flex items-center">
+                                  <span>Listening on :3000</span>
+                                  {(() => {
+                                    const cursorStyle = localSettings.appearance.terminal.cursorStyle;
+                                    const cursorBlink = localSettings.appearance.terminal.cursorBlink;
+                                    const accentHex = getAccentColorHex(localSettings.appearance.theme.accentColor, localSettings.appearance.theme.customAccentColor);
+                                    let cursorClass = "inline-block align-middle ml-0.5 ";
+                                    if (cursorBlink) {
+                                      cursorClass += "animate-cursor-blink";
+                                    }
+                                    let style: React.CSSProperties = {
+                                      backgroundColor: accentHex,
+                                    };
+                                    if (cursorStyle === 'block') {
+                                      style.width = '6px';
+                                      style.height = '11px';
+                                    } else if (cursorStyle === 'underline') {
+                                      style.width = '6px';
+                                      style.height = '2px';
+                                      style.marginTop = '9px';
+                                    } else { // 'bar'
+                                      style.width = '2px';
+                                      style.height = '11px';
+                                    }
+                                    return <span className={cursorClass} style={style} />;
+                                  })()}
+                                </div>
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* Mock Status Bar */}
+                      {localSettings.appearance.workspace.showStatusBar && (
+                        <div 
+                          className="h-3.5 px-1.5 border-t flex items-center justify-between text-[5.5px] text-zinc-500 font-sans select-none" 
+                          style={{ 
+                            borderColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                            backgroundColor: getThemeData(localSettings.appearance.theme.theme).id === 'Light' ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)'
+                          }}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                            <span>Preview Online</span>
+                          </div>
+                          {localSettings.appearance.workspace.showGitBranch && (
+                            <div className="flex items-center gap-0.5 opacity-85">
+                              <span className="font-mono">git:</span>
+                              <span className="font-semibold text-zinc-400">main</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    </div>
+
                   </div>
-                )}
+                </div>
               </div>
             )}
           </div>

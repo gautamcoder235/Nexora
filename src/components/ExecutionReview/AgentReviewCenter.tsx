@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useChangesetStore } from '../../stores/changesetStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { X, ChevronRight, ChevronDown, Folder, FolderOpen, File } from 'lucide-react';
@@ -100,6 +100,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const applyChangesetTransaction = useChangesetStore(s => s.applyChangesetTransaction);
   const rollbackChangeset = useChangesetStore(s => s.rollbackChangeset);
   const terminals = useOrchestratorStore(s => s.terminals);
+  const settings = useOrchestratorStore(s => s.settings);
 
   const activeTab = useChangesetStore(s => s.activeReviewTab);
   const setActiveTab = useChangesetStore(s => s.setActiveReviewTab);
@@ -122,16 +123,32 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   }, [projects, activeWorkspaceId]);
 
   const [editedFileContent, setEditedFileContent] = useState<string>('');
+  const [debouncedEditedContent, setDebouncedEditedContent] = useState<string>('');
   const [editorTab, setEditorTab] = useState<'preview' | 'edit'>('preview');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [hasAutoExpanded, setHasAutoExpanded] = useState<boolean>(false);
   const [editorRef, setEditorRef] = useState<any>(null);
   const [monacoRef, setMonacoRef] = useState<any>(null);
 
-  // Reset auto-expand tracking when workspace changes
+  const loadedPaths = useRef<Set<string>>(new Set());
+
+  // Reset auto-expand tracking and loaded paths when workspace changes
   useEffect(() => {
     setHasAutoExpanded(false);
+    loadedPaths.current.clear();
   }, [activeWorkspaceId]);
+
+  // Debounce the file content edits to avoid UI rendering lag during fast typing
+  useEffect(() => {
+    if (editedFileContent === workspaceFileContent) {
+      setDebouncedEditedContent(editedFileContent);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedEditedContent(editedFileContent);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [editedFileContent, workspaceFileContent]);
 
   useEffect(() => {
     if (selectedFilePath?.toLowerCase().endsWith('.md')) {
@@ -224,7 +241,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     if (!editorRef || !monacoRef) return;
     
     const originalLines = workspaceFileContent.split('\n');
-    const editedLines = editedFileContent.split('\n');
+    const editedLines = debouncedEditedContent.split('\n');
     
     const newDecorations: any[] = [];
     const oldDecorations = editorRef.gitDecorations || [];
@@ -263,13 +280,14 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     }
     
     editorRef.gitDecorations = editorRef.deltaDecorations(oldDecorations, newDecorations);
-  }, [editedFileContent, workspaceFileContent, editorRef, monacoRef]);
+  }, [debouncedEditedContent, workspaceFileContent, editorRef, monacoRef]);
 
   // Load root directories for active projects when switching to workspace tab
   useEffect(() => {
     if (activeTab === 'workspace' && activeProjects.length > 0) {
       activeProjects.forEach(async (project) => {
-        if (!dirContents[project.path]) {
+        if (!loadedPaths.current.has(project.path)) {
+          loadedPaths.current.add(project.path);
           try {
             const nodes = await invoke<FileNode[]>('list_directory', { dirPath: project.path });
             setDirContents(prev => ({
@@ -277,12 +295,13 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
               [project.path]: nodes
             }));
           } catch (err) {
+            loadedPaths.current.delete(project.path);
             console.error(`Error loading root directory for project ${project.name}:`, err);
           }
         }
       });
     }
-  }, [activeTab, activeProjects, dirContents]);
+  }, [activeTab, activeProjects]);
 
   // Auto-expand single project once when switching to workspace tab
   useEffect(() => {
@@ -423,7 +442,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
           </button>
           <button
             onClick={() => setActiveTab('worktree_explorer')}
-            className="flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer bg-amber-500/15 text-amber-550 border border-amber-500/35 font-bold"
+            className="flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer bg-blue-500/15 text-blue-400 border border-blue-500/35 font-bold"
           >
             Worktree Explorer
           </button>
@@ -482,7 +501,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
             onClick={() => setActiveTab('changeset')}
             className={`flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer ${
               activeTab === 'changeset'
-                ? 'bg-amber-500/10 border border-amber-500/30 text-amber-500 font-bold'
+                ? 'bg-blue-500/10 border border-blue-500/30 text-blue-400 font-bold'
                 : 'text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent'
             }`}
           >
@@ -492,7 +511,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
             onClick={() => setActiveTab('workspace')}
             className={`flex-1 h-7 flex items-center justify-center rounded text-[11px] font-semibold transition-all cursor-pointer ${
               activeTab === 'workspace'
-                ? 'bg-amber-500/10 border border-amber-500/30 text-amber-500 font-bold'
+                ? 'bg-blue-500/10 border border-blue-500/30 text-blue-400 font-bold'
                 : 'text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent'
             }`}
           >
@@ -572,7 +591,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                   <span className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border ${
                     activeChangeset.validationStatus === 'passed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                     activeChangeset.validationStatus === 'failed' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                    activeChangeset.validationStatus === 'running' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse' :
+                    activeChangeset.validationStatus === 'running' ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20 animate-pulse' :
                     'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
                   }`}>
                     {activeChangeset.validationStatus || 'idle'}
@@ -624,7 +643,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                     <span className="text-xs">🔍</span>
                     <span className="text-xs font-semibold text-zinc-350">Reviewer Agent (Audit)</span>
                   </div>
-                  <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-mono">
+                  <span className="text-[10px] bg-blue-500/10 border border-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-mono">
                     {activeChangeset.comments.filter(c => c.agent_name !== 'Tester Agent' && c.agent_name !== 'Architect Agent').length} issues
                   </span>
                 </div>
@@ -690,7 +709,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                   <div key={project.id} className="flex flex-col">
                     <button
                       onClick={() => toggleDir(project.path)}
-                      className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm focus-visible:ring-1 focus-visible:ring-amber-500/50 outline-none font-bold"
+                      className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm focus-visible:ring-1 focus-visible:ring-blue-500/50 outline-none font-bold"
                     >
                       <span className="flex items-center gap-1.5">
                         <ChevronDown
@@ -698,9 +717,9 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                           className={`text-zinc-500 shrink-0 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`}
                         />
                         {isExpanded ? (
-                          <FolderOpen size={14} className="text-amber-500/80 fill-amber-500/10 shrink-0" />
+                          <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
                         ) : (
-                          <Folder size={14} className="text-amber-500/80 fill-amber-500/10 shrink-0" />
+                          <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
                         )}
                         <span className="truncate">{project.name}</span>
                       </span>
@@ -807,7 +826,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                 } else if (isFileLoading) {
                   return (
                     <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
-                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-amber-500 mr-2"></div>
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500 mr-2"></div>
                       Loading file content...
                     </div>
                   );
@@ -825,7 +844,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                                 onClick={() => setEditorTab('preview')}
                                 className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${
                                   editorTab === 'preview'
-                                    ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
+                                    ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
                                     : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
                                 }`}
                               >
@@ -835,7 +854,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                                 onClick={() => setEditorTab('edit')}
                                 className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${
                                   editorTab === 'edit'
-                                    ? 'bg-amber-500/15 text-amber-500 font-bold border border-amber-500/30'
+                                    ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
                                     : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
                                 }`}
                               >
@@ -857,7 +876,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                             <button
                               onClick={handleSave}
                               disabled={saveStatus === 'saving'}
-                              className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black font-bold text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors cursor-pointer"
+                              className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-bold text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors cursor-pointer"
                             >
                               Save Changes
                             </button>
@@ -932,9 +951,9 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                             }}
                             options={{
                               readOnly: false,
-                              minimap: { enabled: true },
-                              fontSize: 13,
-                              fontFamily: 'Consolas, "Courier New", monospace',
+                              minimap: { enabled: settings?.appearance?.workspace?.showMinimap ?? false },
+                              fontSize: settings?.appearance?.typography?.codeFontSize ?? 12,
+                              fontFamily: settings?.appearance?.typography?.codeFontFamily ?? "'JetBrains Mono', 'Fira Code', monospace",
                               lineNumbers: 'on',
                               folding: true,
                               scrollBeyondLastLine: false,
@@ -1039,7 +1058,7 @@ export function DirectoryTree({
             <div key={node.path} className="flex flex-col">
               <button
                 onClick={() => toggleDir(node.path)}
-                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm focus-visible:ring-1 focus-visible:ring-amber-500/50 outline-none"
+                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm focus-visible:ring-1 focus-visible:ring-blue-500/50 outline-none"
                 aria-expanded={isExpanded}
               >
                 <span 
@@ -1051,9 +1070,9 @@ export function DirectoryTree({
                     className={`text-zinc-500 shrink-0 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`}
                   />
                   {isExpanded ? (
-                    <FolderOpen size={14} className="text-amber-500/80 fill-amber-500/10 shrink-0" />
+                    <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
                   ) : (
-                    <Folder size={14} className="text-amber-500/80 fill-amber-500/10 shrink-0" />
+                    <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
                   )}
                   <span className="truncate">{node.name}</span>
                 </span>
@@ -1077,9 +1096,9 @@ export function DirectoryTree({
             <button
               key={node.path}
               onClick={() => onFileSelect(relPath, node.path)}
-              className={`w-full text-left text-xs font-mono py-1.5 px-2 flex items-center transition-colors cursor-pointer rounded-sm focus-visible:ring-1 focus-visible:ring-amber-500/50 outline-none ${
+              className={`w-full text-left text-xs font-mono py-1.5 px-2 flex items-center transition-colors cursor-pointer rounded-sm focus-visible:ring-1 focus-visible:ring-blue-500/50 outline-none ${
                 isSelected 
-                  ? 'bg-amber-500/10 text-amber-400 font-semibold border-l-2 border-amber-500' 
+                  ? 'bg-blue-500/10 text-blue-400 font-semibold border-l-2 border-blue-500' 
                   : 'text-zinc-400 hover:bg-zinc-900/40 hover:text-zinc-200'
               }`}
             >

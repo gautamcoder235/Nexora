@@ -342,7 +342,11 @@ pub fn recover_swarm_state(
                         Some("merged"),
                     );
                 } else {
-                    // Reset half-applied patches
+                    // Reset half-applied patches safely by stashing untracked/dirty files first
+                    let _ = std::process::Command::new("git")
+                        .args(["stash", "-u", "-m", &format!("Nexora Recovery Backup for {}", exec_id)])
+                        .current_dir(&repo_path)
+                        .status();
                     let _ = std::process::Command::new("git")
                         .args(["reset", "--hard"])
                         .current_dir(&repo_path)

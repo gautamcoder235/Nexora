@@ -280,7 +280,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   appearance: {
     theme: {
       theme: 'Midnight',
-      accentColor: 'amber',
+      accentColor: 'blue',
       mode: 'dark',
       density: 'comfortable',
       transparency: 90,

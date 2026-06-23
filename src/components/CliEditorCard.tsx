@@ -109,7 +109,7 @@ export const CliEditorCard: React.FC<CliEditorCardProps> = ({
                 type="checkbox"
                 checked={!!(caps as any)[cap]}
                 onChange={(e) => onUpdate('capabilities', { ...caps, [cap]: e.target.checked })}
-                className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
               />
               <span className="capitalize">{cap}</span>
             </label>

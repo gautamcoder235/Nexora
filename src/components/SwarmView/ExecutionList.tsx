@@ -14,7 +14,7 @@ function StatusDot({ status }: { status: string }) {
   const base = "w-2 h-2 rounded-full flex-shrink-0 mt-1";
   if (status === "completed") return <div className={`${base} bg-emerald-500`} />;
   if (status === "failed") return <div className={`${base} bg-red-500`} />;
-  if (status === "running") return <div className={`${base} bg-amber-400 animate-pulse`} />;
+  if (status === "running") return <div className={`${base} bg-accent-primary animate-pulse`} />;
   if (status === "validating") return <div className={`${base} bg-sky-400 animate-pulse`} />;
   if (status === "pending_review" || status === "approved" || status === "rejected")
     return <div className={`${base} bg-indigo-500`} />;
@@ -35,7 +35,7 @@ function ValidationBar({ passed, total, current }: { passed: number; total: numb
               key={gate}
               title={gate}
               className={`h-[3px] flex-1 rounded-full transition-colors ${
-                isDone ? "bg-emerald-500" : isActive ? "bg-amber-400 animate-pulse" : "bg-zinc-700"
+                isDone ? "bg-emerald-500" : isActive ? "bg-accent-primary animate-pulse" : "bg-zinc-700"
               }`}
             />
           );

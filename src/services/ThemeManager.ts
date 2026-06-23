@@ -153,7 +153,7 @@ export class ThemeManager {
     this.applyBaseTheme(theme, settings.theme);
 
     // 3. Accent color layer
-    this.applyAccent(settings.theme?.accentColor || 'amber', settings.theme?.customAccentColor);
+    this.applyAccent(settings.theme?.accentColor || 'blue', settings.theme?.customAccentColor);
 
     // 4. Density layer
     this.applyDensity(settings.theme?.density || 'comfortable');
@@ -238,16 +238,16 @@ export class ThemeManager {
       pink: { hex: '#ec4899', rgb: '236, 72, 153', hover: '#db2777' }
     };
 
-    let targetHex = '#f59e0b';
-    let targetRgb = '245, 158, 11';
-    let targetHover = '#d97706';
+    let targetHex = '#3b82f6';
+    let targetRgb = '59, 130, 246';
+    let targetHover = '#2563eb';
 
     if (accentColor === 'custom' && customAccentColor) {
       targetHex = customAccentColor;
       targetRgb = this.hexToRgb(customAccentColor);
       targetHover = customAccentColor; // Simplification
     } else {
-      const preset = accentPresets[accentColor] || accentPresets.amber;
+      const preset = accentPresets[accentColor] || accentPresets.blue;
       targetHex = preset.hex;
       targetRgb = preset.rgb;
       targetHover = preset.hover;

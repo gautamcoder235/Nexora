@@ -16,11 +16,11 @@ function getRelativeTime(dateString: string) {
 
 function getPriorityConfig(p: Priority | undefined) {
   switch (p) {
-    case 'critical': return { icon: AlertOctagon, color: 'text-[#ef4444]', label: 'Critical' };
-    case 'high': return { icon: AlertTriangle, color: 'text-[#f97316]', label: 'High' };
-    case 'medium': return { icon: Star, color: 'text-[#f59e0b]', label: 'Medium' };
-    case 'low': return { icon: Star, color: 'text-[#38bdf8]', label: 'Low' };
-    default: return { icon: Star, color: 'text-[#38bdf8]', label: 'None' };
+    case 'critical': return { icon: AlertOctagon, color: 'text-red-500', label: 'Critical' };
+    case 'high': return { icon: AlertTriangle, color: 'text-orange-500', label: 'High' };
+    case 'medium': return { icon: Star, color: 'text-amber-500', label: 'Medium' };
+    case 'low': return { icon: Star, color: 'text-sky-400', label: 'Low' };
+    default: return { icon: Star, color: 'text-zinc-500', label: 'None' };
   }
 }
 

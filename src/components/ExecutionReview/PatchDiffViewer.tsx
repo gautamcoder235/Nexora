@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { DiffEditor } from '@monaco-editor/react';
+import React, { useState, useEffect } from 'react';
+import Editor, { DiffEditor } from '@monaco-editor/react';
 import { ArtifactInfo } from '../../types/executionReview';
 import { getLanguageFromPath } from '../../utils/language';
 
@@ -12,6 +12,30 @@ interface Props {
 
 export function PatchDiffViewer({ artifacts, originalContent, proposedContent, filePath }: Props) {
   const [viewMode, setViewMode] = useState<'inline' | 'split'>('split');
+  const [patchContent, setPatchContent] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!artifacts) return;
+    const patchArtifact = artifacts.find(a => a.artifact_type === 'patch');
+    if (!patchArtifact) return;
+
+    const loadPatch = async () => {
+      setIsLoading(true);
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const content = await invoke<string>('read_project_file', { path: patchArtifact.file_path });
+        setPatchContent(content);
+      } catch (err) {
+        console.error("Error reading patch content for viewer:", err);
+        setPatchContent(`Error loading patch:\n${err}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadPatch();
+  }, [artifacts]);
 
   if (artifacts) {
     const patchArtifact = artifacts.find(a => a.artifact_type === 'patch');
@@ -27,13 +51,29 @@ export function PatchDiffViewer({ artifacts, originalContent, proposedContent, f
         <div className="bg-bg-secondary/40 border-b border-border-glass px-4 flex justify-between items-center select-none h-11 shrink-0">
           <h4 className="text-xs font-semibold text-zinc-350">Generated Patch</h4>
         </div>
-        <div className="p-4">
-          <div className="text-sm text-zinc-400 font-mono bg-[#050507] p-4 rounded border border-border-glass">
-            <p className="mb-2 italic text-zinc-500">// Patch Artifact Metadata</p>
-            <p className="text-zinc-400">  Artifact ID: {patchArtifact.id}</p>
-            <p className="text-zinc-400">  Checksum: {patchArtifact.checksum}</p>
-            <p className="text-zinc-400">  Size: {patchArtifact.size_bytes} bytes</p>
-          </div>
+        <div className="h-96 w-full relative border-t border-border-glass bg-[#08080a]">
+          {isLoading ? (
+            <div className="flex h-full w-full items-center justify-center text-white">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-accent-primary"></div>
+            </div>
+          ) : (
+            <Editor
+              height="100%"
+              language="diff"
+              value={patchContent}
+              options={{
+                readOnly: true,
+                minimap: { enabled: true },
+                scrollBeyondLastLine: false,
+                fontSize: 12,
+                fontFamily: 'Consolas, "Courier New", monospace',
+                lineNumbers: 'on',
+                folding: true,
+                automaticLayout: true,
+              }}
+              theme="vscode-dark"
+            />
+          )}
         </div>
       </div>
     );

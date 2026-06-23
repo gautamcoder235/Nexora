@@ -162,9 +162,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   // Sync the ref synchronously during render to prevent layout reflow race conditions
   isAnimatingRef.current = isAnimating;
 
-  const terminals = useOrchestratorStore((s) => s.terminals);
   const settings = useOrchestratorStore((s) => s.settings);
-  const termSession = terminals.find((t) => t.id === paneId);
+  const termSession = useOrchestratorStore((s) => s.terminals.find((t) => t.id === paneId));
 
   // Dynamic terminal theme updates on theme switch
   useEffect(() => {

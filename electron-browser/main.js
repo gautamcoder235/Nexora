@@ -791,36 +791,19 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 
   mainWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      mainWindow.hide();
-      
-      // Also hide/destroy site settings window when browser window hides
-      if (settingsWindow && !settingsWindow.isDestroyed()) {
-        try {
-          settingsWindow.destroy();
-        } catch (e) {}
-      }
-      if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
-        try {
-          hoverPreviewWindow.destroy();
-        } catch (e) {}
-        hoverPreviewWindow = null;
-      }
-    } else {
-      // Destroy site settings window if it exists
-      if (settingsWindow && !settingsWindow.isDestroyed()) {
-        try {
-          settingsWindow.destroy();
-        } catch (e) {}
-      }
-      if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
-        try {
-          hoverPreviewWindow.destroy();
-        } catch (e) {}
-      }
-      process.exit(0);
+    // Destroy helper windows if they exist
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      try {
+        settingsWindow.destroy();
+      } catch (e) {}
     }
+    if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
+      try {
+        hoverPreviewWindow.destroy();
+      } catch (e) {}
+    }
+    // Quit app completely to release memory and free up port 30120
+    app.quit();
   });
 
   mainWindow.once('ready-to-show', () => {

@@ -72,6 +72,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
   onOpenLogs,
   onInspect
 }) => {
+  const settings = useOrchestratorStore(s => s.settings);
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ x: number; y: number } | null>(null);
   const [isEditingProject, setIsEditingProject] = useState(false);
@@ -87,7 +88,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
     isDragging,
   } = useSortable({ 
     id: agent.id,
-    transition: {
+    transition: settings?.appearance?.agent?.animateAgentTransitions === false ? null : {
       duration: 350,
       easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
     }
@@ -151,20 +152,20 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
 
     switch (status) {
       case "running":
-        colorClass = "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]";
+        colorClass = "bg-[var(--agent-status-success)] shadow-[0_0_6px_var(--agent-status-success)]";
         text = "Running";
         pulseDot = true;
         break;
       case "paused":
-        colorClass = "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]";
+        colorClass = "bg-[var(--agent-status-paused)] shadow-[0_0_6px_var(--agent-status-paused)]";
         text = "Waiting";
         break;
       case "error":
-        colorClass = "bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]";
+        colorClass = "bg-[var(--agent-status-error)] shadow-[0_0_6px_var(--agent-status-error)]";
         text = "Error";
         break;
       default:
-        colorClass = "bg-zinc-500 shadow-none";
+        colorClass = "bg-[var(--agent-status-idle)] shadow-none";
         text = "Idle";
         break;
     }
@@ -182,85 +183,147 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
     );
   };
 
+  const avatarStyle = settings?.appearance?.agent?.avatarStyle || 'initials';
+  const showAgentStatusBadge = settings?.appearance?.agent?.showAgentStatusBadge !== false;
+  const compact = settings?.appearance?.agent?.compactCards ?? false;
+
+  const initials = agent.name.slice(0, 2).toUpperCase();
+  const statusColor = agent.status === 'running' ? 'bg-emerald-500' : agent.status === 'error' ? 'bg-rose-500' : agent.status === 'paused' ? 'bg-amber-500' : 'bg-zinc-500';
+  const isRunningStatus = agent.status === 'running';
+
+  const avatarElement = (() => {
+    if (avatarStyle === 'icon') {
+      return (
+        <div className={`rounded bg-white/5 border border-border-glass flex items-center justify-center text-zinc-400 ${compact ? 'w-5 h-5' : 'w-7 h-7'}`}>
+          <Bot size={compact ? 10 : 14} />
+        </div>
+      );
+    }
+    if (avatarStyle === 'identicon') {
+      return (
+        <div className={`rounded overflow-hidden grid grid-cols-2 gap-[1px] p-[1px] bg-white/5 border border-border-glass ${compact ? 'w-5 h-5' : 'w-7 h-7'}`}>
+          <div className="bg-sky-500 opacity-80" />
+          <div className="bg-zinc-700 opacity-60" />
+          <div className="bg-zinc-600 opacity-40" />
+          <div className="bg-sky-500 opacity-90" />
+        </div>
+      );
+    }
+    return (
+      <div className={`rounded bg-white/5 border border-border-glass flex items-center justify-center font-bold text-zinc-300 ${compact ? 'w-5 h-5 text-[8px]' : 'w-7 h-7 text-[10px]'}`}>
+        {initials}
+      </div>
+    );
+  })();
+
   return (
     <div ref={setNodeRef} style={style} className="h-full relative">
       <div
         onClick={() => {
-          onInspect();
+          if (isRunning) {
+            EventBus.publish("terminal:highlight", { agentId: agent.id });
+          }
         }}
-        className={`glass-card p-3 flex flex-col justify-between gap-3 transition-all duration-250 relative min-h-[195px] h-full overflow-visible select-none cursor-pointer ${
-          isRunning ? "glass-card--active" : ""
+        className={`glass-card flex flex-col justify-between transition-all duration-250 relative h-full overflow-visible select-none ${
+          compact ? "p-2 gap-1.5 min-h-[140px]" : "p-3 gap-3 min-h-[195px]"
+        } ${
+          isRunning ? "glass-card--active cursor-pointer" : ""
         } ${isHighlighted ? "border-accent-primary shadow-[var(--shadow-glow)]" : ""} ${
           isDragging ? "shadow-2xl border-accent-primary/40 opacity-80 scale-[0.97]" : "scale-100"
         }`}
       >
         {/* TOP HEADER ZONE */}
-        <div className="flex items-start gap-1.5 flex-shrink-0 min-w-0">
-          <div
-            {...attributes}
-            {...listeners}
-            className="cursor-grab active:cursor-grabbing text-zinc-550 hover:text-accent-primary p-0.5 rounded transition-colors flex-shrink-0 touch-none mt-[1.5px]"
-            onClick={(e) => e.stopPropagation()}
-            title="Drag to reorder"
+        <div className="flex items-start justify-between gap-1.5 flex-shrink-0 min-w-0">
+          <div className="flex items-start gap-1.5 min-w-0 flex-1">
+            <div
+              {...attributes}
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing text-zinc-550 hover:text-accent-primary p-0.5 rounded transition-colors flex-shrink-0 touch-none mt-[1.5px]"
+              onClick={(e) => e.stopPropagation()}
+              title="Drag to reorder"
+            >
+              <GripVertical size={11} />
+            </div>
+
+            {/* Avatar block */}
+            <div className="relative flex-shrink-0">
+              {avatarElement}
+              {showAgentStatusBadge && (
+                <span className={`absolute -bottom-0.5 -right-0.5 rounded-full ${statusColor} border border-black/80 ${compact ? 'w-1.5 h-1.5' : 'w-2 h-2'} ${isRunningStatus ? 'animate-pulse' : ''}`} />
+              )}
+            </div>
+
+            <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+              <span className={`font-bold text-zinc-100 truncate block leading-snug ${compact ? "text-xs" : "text-[13px]"}`} title={agent.name}>
+                {agent.name}
+              </span>
+              <span className={`text-zinc-500 truncate block font-sans ${compact ? "text-[8.5px]" : "text-[9.5px]"}`}>
+                {agent.role || agent.groupId || "AI Coding Assistant"}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onInspect();
+            }}
+            className="p-1 rounded text-zinc-500 hover:text-accent-primary hover:bg-white/5 transition-colors cursor-pointer flex-shrink-0 mt-[1px]"
+            title="Inspect Agent"
           >
-            <GripVertical size={11} />
-          </div>
-          <div className="flex flex-col min-w-0 flex-1 gap-0.5">
-            <span className="text-[13px] font-bold text-zinc-100 truncate block leading-snug" title={agent.name}>
-              {agent.name}
-            </span>
-            <span className="text-[9.5px] text-zinc-500 truncate block font-sans">
-              {agent.role || agent.groupId || "AI Coding Assistant"}
-            </span>
-          </div>
+            <Bot size={compact ? 11 : 13} />
+          </button>
         </div>
 
         {/* CAPABILITIES */}
-        <div className="flex flex-wrap gap-1">
-          {agent.capabilities.coding && (
-            <span className="glass-badge text-[8.5px]">
-              ⌨️ Coding
-            </span>
-          )}
-          {agent.capabilities.review && (
-            <span className="glass-badge text-[8.5px]">
-              🔍 Review
-            </span>
-          )}
-          {agent.capabilities.planning && (
-            <span className="glass-badge glass-badge--accent text-[8.5px]">
-              🧠 Planning
-            </span>
-          )}
-          {agent.capabilities.testing && (
-            <span className="glass-badge text-[8.5px]">
-              🧪 Testing
-            </span>
-          )}
-        </div>
+        {!compact && (
+          <div className="flex flex-wrap gap-1">
+            {agent.capabilities.coding && (
+              <span className="glass-badge text-[8.5px]">
+                ⌨️ Coding
+              </span>
+            )}
+            {agent.capabilities.review && (
+              <span className="glass-badge text-[8.5px]">
+                🔍 Review
+              </span>
+            )}
+            {agent.capabilities.planning && (
+              <span className="glass-badge glass-badge--accent text-[8.5px]">
+                🧠 Planning
+              </span>
+            )}
+            {agent.capabilities.testing && (
+              <span className="glass-badge text-[8.5px]">
+                🧪 Testing
+              </span>
+            )}
+          </div>
+        )}
 
         {/* METRICS ROW */}
-        <div className="grid grid-cols-3 gap-1 text-center bg-black/20 border border-border-glass rounded-md p-1.5 flex-shrink-0 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]">
+        <div className={`grid grid-cols-3 gap-1 text-center bg-black/20 border border-border-glass rounded-md flex-shrink-0 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)] ${compact ? "p-1" : "p-1.5"}`}>
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tasks</span>
-            <span className="text-[11px] font-semibold text-zinc-200 truncate">{tasksCount}</span>
+            <span className={`font-semibold text-zinc-200 truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>{tasksCount}</span>
           </div>
           <div className="flex flex-col gap-0.5 border-x border-border-glass min-w-0">
             <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Tokens</span>
-            <span className="text-[11px] font-semibold text-zinc-200 truncate">
+            <span className={`font-semibold text-zinc-200 truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>
               {isRunning ? "12K" : "84K"}
             </span>
           </div>
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[8px] uppercase font-bold text-zinc-500 font-mono tracking-wider truncate">Activity</span>
-            <span className="text-[11px] font-semibold text-zinc-200 truncate">
+            <span className={`font-semibold text-zinc-200 truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>
               {isRunning ? formatRuntime(runtimeSeconds) : formatLastActiveHours(agent.lastActive)}
             </span>
           </div>
         </div>
 
         {/* FOOTER ZONE */}
-        <div className="flex flex-col gap-2.5 flex-shrink-0">
+        <div className={`flex flex-col flex-shrink-0 ${compact ? "gap-1.5" : "gap-2.5"}`}>
           <div className="flex items-center justify-between text-[10px] select-none gap-2">
             {isEditingProject ? (
               <div className="flex flex-col min-w-0 flex-1">
@@ -293,20 +356,20 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
                 className="flex flex-col cursor-pointer group/proj min-w-0 flex-1"
                 title="Click to edit project assignment"
               >
-                <span className="text-[11px] font-semibold text-zinc-200 group-hover/proj:text-accent-primary transition-colors truncate block">
+                <span className={`font-semibold text-zinc-200 group-hover/proj:text-accent-primary transition-colors truncate block ${compact ? "text-[10px]" : "text-[11px]"}`}>
                   {proj ? proj.name : "Unassigned"}
                 </span>
-                <span className="text-[9px] text-zinc-500 font-sans">
+                <span className={`text-zinc-500 font-sans ${compact ? "text-[8px]" : "text-[9px]"}`}>
                   Current Project
                 </span>
               </div>
             )}
 
-            {renderStatusIndicator(agent.status)}
+            {showAgentStatusBadge && renderStatusIndicator(agent.status)}
           </div>
 
           {/* Card Footer Actions */}
-          <div className="pt-3 border-t border-border-glass flex gap-2 relative" onClick={(e) => e.stopPropagation()}>
+          <div className={`border-t border-border-glass flex gap-2 relative ${compact ? "pt-1.5" : "pt-3"}`} onClick={(e) => e.stopPropagation()}>
             <div className="flex-grow flex items-center justify-between gap-2 min-w-0">
               <div className="flex-1 min-w-0">
                 {isRunning ? (
@@ -316,7 +379,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
                       e.stopPropagation();
                       onStop(agent);
                     }}
-                    className="glass-button glass-button--danger w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
+                    className={`glass-button glass-button--danger w-full !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1 ${compact ? "h-[26px]" : "h-[34px]"}`}
                   >
                     <Square size={10} className="fill-current shrink-0" />
                     <span className="truncate">Stop</span>
@@ -328,7 +391,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
                       e.stopPropagation();
                       onStart(agent);
                     }}
-                    className="glass-button glass-button--accent w-full h-[34px] !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1"
+                    className={`glass-button glass-button--accent w-full !text-[10px] uppercase tracking-wider min-w-0 overflow-hidden px-1 ${compact ? "h-[26px]" : "h-[34px]"}`}
                   >
                     <Play size={10} className="fill-current shrink-0" />
                     <span className="truncate">Launch</span>
@@ -365,7 +428,7 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
                     setDropdownPos({ x: xPos, y: yPos });
                     setShowDropdown(true);
                   }}
-                  className={`p-2 rounded border border-border-glass h-[34px] w-[34px] flex items-center justify-center transition-colors cursor-pointer ${showDropdown ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 text-zinc-400 hover:text-zinc-200'}`}
+                  className={`p-2 rounded border border-border-glass flex items-center justify-center transition-colors cursor-pointer ${showDropdown ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 text-zinc-400 hover:text-zinc-200'} ${compact ? "h-[26px] w-[26px]" : "h-[34px] w-[34px]"}`}
                   title="More Actions"
                 >
                   <MoreVertical size={12} />
@@ -475,6 +538,7 @@ export const AgentGrid: React.FC = () => {
   const projects = useOrchestratorStore(useShallow((s) => s.projects));
   const agents = useOrchestratorStore(useShallow((s) => s.agents));
   const tasks = useOrchestratorStore(useShallow((s) => s.tasks));
+  const settings = useOrchestratorStore(useShallow((s) => s.settings));
   const deleteAgent = useOrchestratorStore((s) => s.deleteAgent);
   const updateAgent = useOrchestratorStore((s) => s.updateAgent);
   const createAgent = useOrchestratorStore((s) => s.createAgent);
@@ -707,7 +771,7 @@ export const AgentGrid: React.FC = () => {
           onDragCancel={() => setDragOverId(null)}
         >
           <SortableContext items={filteredAgents.map((a) => a.id)} strategy={rectSortingStrategy}>
-            <div className="flex-grow flex-1 overflow-y-auto min-h-0 pr-1 border border-border-glass rounded-lg bg-bg-primary/20 p-1.5 grid grid-cols-2 gap-2 auto-rows-max">
+            <div className={`flex-grow flex-1 overflow-y-auto min-h-0 pr-1 border border-border-glass rounded-lg bg-bg-primary/20 grid grid-cols-2 auto-rows-max ${settings?.appearance?.agent?.compactCards ? "p-1 gap-1" : "p-1.5 gap-2"}`}>
               {filteredAgents.map((agent: AgentProfile) => {
                 const proj = activeProjects.find((p: Project) => p.id === agent.projectId);
                 const isRunning = agent.status === "running";
@@ -752,14 +816,14 @@ export const AgentGrid: React.FC = () => {
             <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center font-mono">
               <div className="glass-modal p-5 w-[380px] shadow-2xl space-y-4">
                 <div className="border-b border-border-glass pb-2 flex justify-between items-center">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-warning flex items-center gap-1.5">
                     <AlertCircle size={14} />
                     CLI Missing: {plugin?.name || selectedInstallGuide}
                   </h3>
                   <button onClick={() => setSelectedInstallGuide(null)} className="text-zinc-500 hover:text-zinc-300">✕</button>
                 </div>
                 <p className="text-[11px] text-zinc-400 leading-relaxed">
-                  The binary <code className="text-amber-500">{plugin?.cliCommand}</code> was not detected on your system PATH. Please run the install command below to configure it:
+                  The binary <code className="text-accent-primary">{plugin?.cliCommand}</code> was not detected on your system PATH. Please run the install command below to configure it:
                 </p>
                 <div className="bg-black/40 border border-border-glass/40 rounded p-2.5 text-[10px] text-zinc-350 break-all select-text font-mono relative group">
                   {plugin?.installHelp?.command || "npm install -g @claudecode/cli"}

@@ -49,8 +49,16 @@ pub fn validate_ownership(
         if line.len() > 3 {
             // git status --porcelain format: "XY filename"
             // We just need the filename part, which starts at index 3
-            let filename = &line[3..];
-            modified_files.push(filename.to_string());
+            let filename_part = &line[3..];
+            let filename_trimmed = filename_part.trim().replace("\"", "");
+            if filename_trimmed.contains(" -> ") {
+                let parts: Vec<&str> = filename_trimmed.split(" -> ").collect();
+                for part in parts {
+                    modified_files.push(part.trim().to_string());
+                }
+            } else {
+                modified_files.push(filename_trimmed);
+            }
         }
     }
 

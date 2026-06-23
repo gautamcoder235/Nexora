@@ -229,7 +229,7 @@ export const ActivityBar: React.FC = () => {
                           setShowRenameWsModal(true);
                           setShowWsMenu(false);
                         }}
-                        className="p-1 text-zinc-400 hover:text-amber-500 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                        className="p-1 text-zinc-400 hover:text-blue-500 hover:bg-white/5 rounded transition-colors cursor-pointer"
                         title="Rename Workspace"
                       >
                         <Edit2 size={11} />
@@ -303,7 +303,7 @@ export const ActivityBar: React.FC = () => {
               title="Project Repositories"
             >
               <FolderPlus size={20} />
-              <div className="absolute -top-0.5 -right-0.5 px-1 min-w-4 h-4 rounded-full bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-[8px] font-bold text-purple-300">
+              <div className="absolute -top-0.5 -right-0.5 px-1 min-w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-[8px] font-bold text-blue-300">
                 {activeProjects.length}
               </div>
             </button>
@@ -514,7 +514,7 @@ export const ActivityBar: React.FC = () => {
                           setShowRenameProjModal(true);
                           setShowProjMenu(false);
                         }}
-                        className="p-1 text-zinc-400 hover:text-amber-500 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                        className="p-1 text-zinc-400 hover:text-blue-500 hover:bg-white/5 rounded transition-colors cursor-pointer"
                         title="Rename Project"
                       >
                         <Edit2 size={11} />
@@ -566,7 +566,7 @@ export const ActivityBar: React.FC = () => {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
             <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <Edit2 size={16} className="text-amber-500" />
+              <Edit2 size={16} className="text-blue-500" />
               Rename Project Repository
             </h3>
             <div className="space-y-1.5">
@@ -608,7 +608,7 @@ export const ActivityBar: React.FC = () => {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
             <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <Edit2 size={16} className="text-amber-500" />
+              <Edit2 size={16} className="text-blue-500" />
               Rename Workspace Session
             </h3>
             <div className="space-y-1.5">

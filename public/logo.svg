@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="logoBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="60%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+  <path d="M49,23 L44,23 C38.5,23 34,27.5 34,33 L34,42 C34,46.4 26,46.4 26,50 C26,53.6 34,53.6 34,58 L34,67 C34,72.5 38.5,77 44,77 L49,77" fill="none" stroke="url(#logoBlueGrad)" stroke-width="12" stroke-linecap="butt" stroke-linejoin="round" />
+  <path d="M80,29 L50,39 L56,45 L42,59 L50,67 L64,53 L70,59 Z" fill="url(#logoBlueGrad)" />
+</svg>

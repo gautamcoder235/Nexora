@@ -19,22 +19,11 @@ export function SwarmView() {
     loadExecutions,
   } = useSwarmStore();
 
-  const unsubscribeRef = useRef<(() => void) | null>(null);
   const [agents, setAgents] = React.useState<AgentRow[]>([]);
 
-  // Start adaptive polling when SwarmView mounts
   useEffect(() => {
-    const events = createExecutionEvents();
-    unsubscribeRef.current = events.subscribe((execs) => {
-      useSwarmStore.setState({ executions: execs, isLoading: false });
-    });
-
     // Load agents for the launch form
     invoke<AgentRow[]>("get_all_agents").then(setAgents).catch(() => {});
-
-    return () => {
-      if (unsubscribeRef.current) unsubscribeRef.current();
-    };
   }, []);
 
   const runningCount = executions.filter(e => e.status === "running" || e.status === "validating").length;
