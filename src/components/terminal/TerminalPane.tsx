@@ -321,8 +321,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     term.attachCustomKeyEventHandler((arg) => {
       // Allow app-level shortcuts to bubble up to the window listener
       if (arg.type === 'keydown') {
-        console.log("[Terminal Keydown] Key:", arg.key, "Code:", arg.code, "Ctrl:", arg.ctrlKey, "Meta:", arg.metaKey);
-        
         const currentSettings = useOrchestratorStore.getState().settings;
         const shortcuts = { ...DEFAULT_APP_SETTINGS.shortcuts, ...(currentSettings?.shortcuts || {}) };
         
@@ -340,9 +338,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
           if (needsAlt !== arg.altKey) return false;
           
           if (key === ',') return arg.key === ',';
-          const match = arg.key.toLowerCase() === key || arg.code.toLowerCase() === 'key' + key;
-          console.log(`[Terminal Shortcut Check] shortcutString: ${shortcutString}, match: ${match}, key: ${key}, arg.key: ${arg.key}, arg.code: ${arg.code}`);
-          return match;
+          return arg.key.toLowerCase() === key || arg.code.toLowerCase() === 'key' + key;
         };
 
         const isAppShortcut = 
