@@ -344,6 +344,13 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             heartbeat_at INTEGER NOT NULL
         );
         ",
+        // Version 11: Add token/cost metadata to executions table
+        "
+        ALTER TABLE executions ADD COLUMN tokens_prompt INTEGER DEFAULT 0;
+        ALTER TABLE executions ADD COLUMN tokens_completion INTEGER DEFAULT 0;
+        ALTER TABLE executions ADD COLUMN tokens_total INTEGER DEFAULT 0;
+        ALTER TABLE executions ADD COLUMN estimated_cost REAL DEFAULT 0.0;
+        ",
     ];
 
     for (i, migration) in migrations.iter().enumerate() {

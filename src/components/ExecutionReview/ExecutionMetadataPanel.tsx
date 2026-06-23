@@ -31,6 +31,13 @@ export function ExecutionMetadataPanel({ metadata, validationRun }: Props) {
       {renderField('Head Commit', metadata.head_commit, true)}
       
       <div className="my-6 border-t border-gray-800"></div>
+      
+      {renderField('Prompt Tokens', metadata.tokens_prompt?.toLocaleString())}
+      {renderField('Completion Tokens', metadata.tokens_completion?.toLocaleString())}
+      {renderField('Total Tokens', metadata.tokens_total?.toLocaleString())}
+      {renderField('Estimated Cost', `$${metadata.estimated_cost?.toFixed(4)}`)}
+
+      <div className="my-6 border-t border-gray-800"></div>
 
       {renderField('Created At', new Date(metadata.started_at).toLocaleString())}
       {renderField('Completed At', metadata.ended_at ? new Date(metadata.ended_at).toLocaleString() : null)}

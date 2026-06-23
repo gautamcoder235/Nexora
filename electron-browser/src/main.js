@@ -38,6 +38,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const newTabBtn = document.getElementById("new-tab-btn");
   const tabsList = document.getElementById("tabs-list");
 
+  const tabThumbnails = {};
   let currentPickedDetails = null;
 
   // Navigation handlers
@@ -274,25 +275,27 @@ window.addEventListener("DOMContentLoaded", () => {
     tabEl.draggable = true;
 
     tabEl.innerHTML = `
-      <div class="tab-icon">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="2" y1="12" x2="22" y2="12"></line>
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-        </svg>
+      <div class="tab-inner">
+        <div class="tab-icon">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+        </div>
+        <span class="tab-title" id="tab-title-${tab.id}">${tab.title}</span>
+        <button class="tab-close-btn" id="tab-close-${tab.id}">
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
-      <span class="tab-title" id="tab-title-${tab.id}">${tab.title}</span>
-      <button class="tab-close-btn" id="tab-close-${tab.id}">
-        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
     `;
 
     // Switch focus on click
     tabEl.addEventListener("click", (e) => {
-      if (e.target.classList.contains("tab-close-btn")) return;
+      if (e.target.closest(".tab-close-btn")) return;
       window.electron.send("switch-tab", tab.id);
     });
 
@@ -301,6 +304,39 @@ window.addEventListener("DOMContentLoaded", () => {
     closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       window.electron.send("close-tab", tab.id);
+    });
+
+    // Tab hover preview event handlers
+    let hoverTimeout = null;
+
+    tabEl.addEventListener("mouseenter", () => {
+      const cachedThumbnail = tabThumbnails[tab.id];
+      if (cachedThumbnail) {
+        if (hoverTimeout) clearTimeout(hoverTimeout);
+        
+        hoverTimeout = setTimeout(() => {
+          const rect = tabEl.getBoundingClientRect();
+          const tabTitleSpan = document.getElementById(`tab-title-${tab.id}`);
+          const title = tabTitleSpan ? tabTitleSpan.textContent : tab.title;
+
+          // Position window: x is center of tab, y is bottom of tab + offset
+          // Adjust x by -98px to center a 196px width window
+          const x = Math.round(rect.left + (rect.width / 2) - 98);
+          const y = Math.round(rect.bottom + 6);
+
+          window.electron.send("show-tab-hover-preview", {
+            x,
+            y,
+            title,
+            thumbnail: cachedThumbnail
+          });
+        }, 150); // 150ms hover intent delay
+      }
+    });
+
+    tabEl.addEventListener("mouseleave", () => {
+      if (hoverTimeout) clearTimeout(hoverTimeout);
+      window.electron.send("hide-tab-hover-preview");
     });
 
     // HTML5 Drag and Drop events for reordering
@@ -496,4 +532,209 @@ window.addEventListener("DOMContentLoaded", () => {
   window.electron.on('settings-popup-closed', () => {
     siteSettingsBtn.classList.remove("active");
   });
+
+  // ==========================================================================
+  // CSS SELECTOR TESTER WIRING
+  // ==========================================================================
+  const selectorTesterInput = document.getElementById("selector-tester-input");
+  const selectorTesterResults = document.getElementById("selector-tester-results");
+
+  let testSelectorTimeout = null;
+  
+  const runSelectorTest = () => {
+    const selector = selectorTesterInput.value.trim();
+    if (!selector) {
+      selectorTesterResults.classList.add("hidden");
+      window.electron.send("test-selector", ""); // Clears highlights
+      return;
+    }
+
+    window.electron.send("test-selector", selector);
+  };
+
+  selectorTesterInput.addEventListener("input", () => {
+    if (testSelectorTimeout) clearTimeout(testSelectorTimeout);
+    testSelectorTimeout = setTimeout(runSelectorTest, 250); // Debounce to prevent lag
+  });
+
+  const testerMatchesList = document.getElementById("tester-matches-list");
+
+  window.electron.on("selector-test-result", (result) => {
+    selectorTesterResults.classList.remove("hidden");
+    testerMatchesList.innerHTML = "";
+    
+    if (result.count === -1) {
+      selectorTesterResults.textContent = "Invalid selector";
+      selectorTesterResults.classList.add("error");
+      testerMatchesList.classList.add("hidden");
+    } else {
+      selectorTesterResults.classList.remove("error");
+      selectorTesterResults.textContent = `${result.count} match${result.count === 1 ? '' : 'es'}`;
+      
+      if (result.matchesList && result.matchesList.length > 0) {
+        testerMatchesList.classList.remove("hidden");
+        result.matchesList.forEach(item => {
+          const card = document.createElement("div");
+          card.className = "tester-match-card";
+          
+          card.innerHTML = `
+            <div class="tester-match-header">
+              <span class="tester-match-tag">${item.tag}</span>
+              ${item.id ? `<span class="tester-match-id">${item.id}</span>` : ''}
+              ${item.classes ? `<span class="tester-match-classes">${item.classes}</span>` : ''}
+            </div>
+            ${item.text ? `<div class="tester-match-text">${item.text}</div>` : ''}
+          `;
+          
+          card.addEventListener("mouseenter", () => {
+            window.electron.send("hover-tester-match", item.index);
+          });
+          
+          card.addEventListener("mouseleave", () => {
+            window.electron.send("clear-hover-tester-match");
+          });
+          
+          card.addEventListener("click", () => {
+            document.querySelectorAll(".tester-match-card").forEach(c => c.classList.remove("active"));
+            card.classList.add("active");
+            window.electron.send("click-tester-match", item.index);
+          });
+          
+          testerMatchesList.appendChild(card);
+        });
+      } else {
+        testerMatchesList.classList.add("hidden");
+      }
+    }
+  });
+
+  // Clear tester input and results when pick mode changes or sidebar toggles
+  pickModeCheckbox.addEventListener("change", () => {
+    selectorTesterInput.value = "";
+    selectorTesterResults.classList.add("hidden");
+    testerMatchesList.innerHTML = "";
+    testerMatchesList.classList.add("hidden");
+    window.electron.send("test-selector", "");
+  });
+
+  // ==========================================================================
+  // DEVICE EMULATION VIEWPORT WIRING
+  // ==========================================================================
+  const emulationBtn = document.getElementById("emulation-btn");
+  const emulationMenu = document.getElementById("emulation-menu");
+  const emulationMenuItems = document.querySelectorAll(".emulation-menu-item");
+
+  if (emulationBtn && emulationMenu) {
+    emulationBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      emulationMenu.classList.toggle("show");
+      emulationBtn.classList.toggle("active");
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener("click", (e) => {
+      if (!emulationMenu.contains(e.target) && !emulationBtn.contains(e.target)) {
+        emulationMenu.classList.remove("show");
+        emulationBtn.classList.remove("active");
+      }
+    });
+
+    emulationMenuItems.forEach(item => {
+      item.addEventListener("click", () => {
+        const mode = item.getAttribute("data-value");
+        
+        // Update active class on menu items
+        emulationMenuItems.forEach(btn => btn.classList.remove("active"));
+        item.classList.add("active");
+
+        // Update the main button's SVG icon to match the selected mode's icon
+        const selectedSvg = item.querySelector("svg");
+        const mainSvg = emulationBtn.querySelector("svg");
+        if (selectedSvg && mainSvg) {
+          mainSvg.outerHTML = selectedSvg.outerHTML;
+        }
+
+        // Show/hide active mode dot on the main button
+        if (mode !== "responsive") {
+          emulationBtn.classList.add("custom-active");
+        } else {
+          emulationBtn.classList.remove("custom-active");
+        }
+
+        // Send IPC event
+        window.electron.send("set-emulation-mode", mode);
+
+        // Close menu
+        emulationMenu.classList.remove("show");
+        emulationBtn.classList.remove("active");
+      });
+    });
+  }
+
+  // ==========================================================================
+  // CUSTOM ALERT MODAL WIRING (SHELL UI)
+  // ==========================================================================
+  const alertModal = document.getElementById("alert-modal");
+  const alertBody = document.getElementById("alert-body");
+  const alertOkBtn = document.getElementById("alert-ok-btn");
+  const alertCloseBtn = document.getElementById("alert-close-btn");
+
+  if (alertModal && alertBody && alertOkBtn && alertCloseBtn) {
+    window.alert = function(message) {
+      alertBody.textContent = message;
+      alertModal.classList.add("active");
+    };
+
+    const closeAlertModal = () => {
+      alertModal.classList.remove("active");
+    };
+
+    alertOkBtn.addEventListener("click", closeAlertModal);
+    alertCloseBtn.addEventListener("click", closeAlertModal);
+
+    alertModal.addEventListener("click", (e) => {
+      if (e.target === alertModal) {
+        closeAlertModal();
+      }
+    });
+  }
+
+  // ==========================================================================
+  // TAB THUMBNAIL CACHE LISTENER
+  // ==========================================================================
+  window.electron.on("tab-thumbnail", (data) => {
+    tabThumbnails[data.id] = data.thumbnail;
+  });
+
+  // ==========================================================================
+  // LOCAL PORT DETECTOR WIRING
+  // ==========================================================================
+  const portNotification = document.getElementById("port-detector-notification");
+  const detectedPortNum = document.getElementById("detected-port-num");
+  const openPortBtn = document.getElementById("open-detected-port-btn");
+  const closePortBtn = document.getElementById("close-port-notification");
+  let activeDetectedPort = null;
+
+  window.electron.on("port-detected", (port) => {
+    activeDetectedPort = port;
+    if (detectedPortNum && portNotification) {
+      detectedPortNum.textContent = port;
+      portNotification.classList.add("show");
+    }
+  });
+
+  if (openPortBtn && portNotification) {
+    openPortBtn.addEventListener("click", () => {
+      if (activeDetectedPort) {
+        window.electron.send("create-tab", `http://localhost:${activeDetectedPort}`);
+      }
+      portNotification.classList.remove("show");
+    });
+  }
+
+  if (closePortBtn && portNotification) {
+    closePortBtn.addEventListener("click", () => {
+      portNotification.classList.remove("show");
+    });
+  }
 });

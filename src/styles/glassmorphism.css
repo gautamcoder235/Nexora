@@ -537,3 +537,17 @@ textarea.glass-input {
     inset 0 1px 1px rgba(255, 255, 255, 0.2),
     0 0 70px rgba(245, 158, 11, 0.08) !important;
 }
+
+/* Glassmorphism performance optimizations */
+body.disable-glassmorphism {
+  --glass-blur: 0px !important;
+  --glass-blur-lg: 0px !important;
+  --glass-blur-modal: 0px !important;
+  --glass-opacity-panel: 0.95 !important;
+}
+
+body.disable-glassmorphism *,
+body.resizing * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

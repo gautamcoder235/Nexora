@@ -193,6 +193,7 @@ export interface AccessibilitySettings {
   reducedMotion?: boolean;
   increaseContrast?: boolean;
   accessibleTermBell?: boolean;
+  disableGlassmorphism?: boolean;
 }
 
 export interface WorkspaceLayoutSettings {
@@ -325,7 +326,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
       highContrastMode: false,
       reducedMotion: false,
       increaseContrast: false,
-      accessibleTermBell: false
+      accessibleTermBell: false,
+      disableGlassmorphism: false
     },
     layout: {
       layoutMode: 'grid',

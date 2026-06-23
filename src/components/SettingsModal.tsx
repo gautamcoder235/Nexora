@@ -2011,6 +2011,28 @@ export const SettingsModal: React.FC = () => {
                     </div>
 
                     <div 
+                      id="acc-disable-glassmorphism"
+                      className={`flex items-center justify-between py-2 border-b border-[#232329]/30 p-2 rounded transition-all duration-300 ${
+                        highlightedOptionId === 'acc-disable-glassmorphism' 
+                          ? 'bg-accent-primary/10 ring-1 ring-accent-primary/30 border border-accent-primary/20' 
+                          : 'border border-transparent'
+                      }`}
+                    >
+                      <div className="font-sans">
+                        <label className="text-xs text-zinc-355 font-medium block">Disable Glassmorphism (Performance Mode)</label>
+                        <p className="text-[10px] text-zinc-555 font-medium">Turn off all backdrop blurs and transparency effects to optimize GPU compositing.</p>
+                      </div>
+                      <input 
+                        type="checkbox" 
+                        checked={localSettings.appearance.accessibility.disableGlassmorphism || false}
+                        onChange={(e) => {
+                          updateLocalNested('appearance.accessibility.disableGlassmorphism', e.target.checked);
+                        }}
+                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <div 
                       id="acc-increase-contrast"
                       className={`flex items-center justify-between py-2 border-b border-[#232329]/30 p-2 rounded transition-all duration-300 ${
                         highlightedOptionId === 'acc-increase-contrast' 

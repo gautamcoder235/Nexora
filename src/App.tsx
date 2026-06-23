@@ -2,12 +2,12 @@ import React, { useEffect, useState, useRef } from "react";
 import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentGrid } from "./components/AgentGrid";
-import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { TaskCenter } from "./components/TaskCenter";
 import { ProjectMemory } from "./components/ProjectMemory";
-import { SwarmView } from "./components/SwarmView/SwarmView";
-import { AgentReviewCenter } from "./components/ExecutionReview/AgentReviewCenter";
+const TerminalWorkspace = React.lazy(() => import("./components/TerminalWorkspace").then(m => ({ default: m.TerminalWorkspace })));
+const SwarmView = React.lazy(() => import("./components/SwarmView/SwarmView").then(m => ({ default: m.SwarmView })));
+const AgentReviewCenter = React.lazy(() => import("./components/ExecutionReview/AgentReviewCenter").then(m => ({ default: m.AgentReviewCenter })));
 import { AgentInspector } from "./components/AgentInspector";
 import { useOrchestratorStore } from "./stores/orchestratorStore";
 import { useSwarmStore } from "./stores/swarmStore";
@@ -122,6 +122,32 @@ function App() {
       if (isTaskPanelPinned) setTaskPanelPinned(false);
     }
   }, [terminals.length, isAgentPanelPinned, isTaskPanelPinned, setAgentPanelPinned, setTaskPanelPinned]);
+
+  // Handle Glassmorphism accessibility setting and resize-performance class bindings
+  useEffect(() => {
+    if (settings?.appearance?.accessibility?.disableGlassmorphism) {
+      document.body.classList.add('disable-glassmorphism');
+    } else {
+      document.body.classList.remove('disable-glassmorphism');
+    }
+  }, [settings?.appearance?.accessibility?.disableGlassmorphism]);
+
+  useEffect(() => {
+    let resizeTimer: any = null;
+    const handleResize = () => {
+      document.body.classList.add('resizing');
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        document.body.classList.remove('resizing');
+      }, 150);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeTimer) clearTimeout(resizeTimer);
+    };
+  }, []);
 
   const [initName, setInitName] = useState("");
   const [showRenameWsModal, setShowRenameWsModal] = useState(false);
@@ -1296,7 +1322,9 @@ function App() {
                 className="flex-shrink-0 overflow-hidden"
                 style={{ height: `${swarmPanelHeight}px` }}
               >
-                <SwarmView />
+                <React.Suspense fallback={<div className="h-full flex items-center justify-center text-zinc-500 font-mono text-xs">Loading Swarm Control Center...</div>}>
+                  <SwarmView />
+                </React.Suspense>
               </div>
             </>
           )}
@@ -1304,7 +1332,9 @@ function App() {
           {/* Bottom Panel (Terminal Workspace / Web Browser split) */}
           <div className="flex-1 min-w-0 min-h-0 flex flex-row gap-1 relative overflow-hidden">
             <div className="flex-1 min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
-              <TerminalWorkspace />
+              <React.Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 font-mono text-xs">Loading terminal workspace...</div>}>
+                <TerminalWorkspace />
+              </React.Suspense>
             </div>
 
             {/* Backdrop overlay for unpinned browser panel */}
@@ -1401,10 +1431,12 @@ function App() {
                   }`}
                   style={{ width: 'var(--review-panel-width)', maxWidth: '100%' }}
                 >
-                  <AgentReviewCenter
-                    repoPath={projects.find(p => p.id === selectedProjectId)?.path || activeWs.rootPath}
-                    onClose={() => setReviewCenterOpen(false)}
-                  />
+                  <React.Suspense fallback={<div className="h-full flex items-center justify-center text-zinc-500 font-mono text-xs">Loading review center...</div>}>
+                    <AgentReviewCenter
+                      repoPath={projects.find(p => p.id === selectedProjectId)?.path || activeWs.rootPath}
+                      onClose={() => setReviewCenterOpen(false)}
+                    />
+                  </React.Suspense>
                 </div>
               </>
             )}

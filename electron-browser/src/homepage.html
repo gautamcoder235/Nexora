@@ -1001,6 +1001,22 @@
     </div>
   </div>
 
+  <!-- Custom Alert Modal Overlay -->
+  <div class="modal-overlay" id="alert-modal">
+    <div class="modal-content" style="max-width: 400px;">
+      <div class="modal-header">
+        <div class="modal-title" id="alert-title">Notification</div>
+        <button class="modal-close" id="alert-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" id="alert-body" style="padding: 1rem 0; font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; text-align: left;">
+        Message
+      </div>
+      <div class="form-actions" style="margin-top: 1rem;">
+        <button type="button" class="btn-primary" id="alert-ok-btn" style="background: var(--purple-accent, #c084fc); box-shadow: 0 4px 12px rgba(192, 132, 252, 0.25);">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function updateClock() {
       const now = new Date();
@@ -1456,6 +1472,31 @@
     confirmModal.addEventListener('click', (e) => {
       if (e.target === confirmModal) {
         closeConfirmModal();
+      }
+    });
+
+    // Custom Alert Overlay wiring
+    const alertModal = document.getElementById('alert-modal');
+    const alertBody = document.getElementById('alert-body');
+    const alertOkBtn = document.getElementById('alert-ok-btn');
+    const alertCloseBtn = document.getElementById('alert-close-btn');
+
+    window.alert = function(message) {
+      alertBody.textContent = message;
+      alertModal.classList.add('active');
+    };
+
+    const closeAlertModal = () => {
+      alertModal.classList.remove('active');
+    };
+
+    alertOkBtn.addEventListener('click', closeAlertModal);
+    alertCloseBtn.addEventListener('click', closeAlertModal);
+
+    // Close alert modal when clicking outside
+    alertModal.addEventListener('click', (e) => {
+      if (e.target === alertModal) {
+        closeAlertModal();
       }
     });
   </script>

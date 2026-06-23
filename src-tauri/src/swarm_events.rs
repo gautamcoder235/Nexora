@@ -38,7 +38,11 @@ pub fn emit_event(
                  WHERE vr2.execution_id = e.id AND vs.status = 'running'
                  LIMIT 1) as current_gate,
                 CASE WHEN (SELECT id FROM merge_candidates WHERE execution_id = e.id LIMIT 1) IS NOT NULL THEN 1 ELSE 0 END as has_merge_candidate,
-                (SELECT status FROM merge_candidates WHERE execution_id = e.id ORDER BY rowid DESC LIMIT 1) as merge_status
+                (SELECT status FROM merge_candidates WHERE execution_id = e.id ORDER BY rowid DESC LIMIT 1) as merge_status,
+                e.tokens_prompt,
+                e.tokens_completion,
+                e.tokens_total,
+                e.estimated_cost
             FROM executions e
             LEFT JOIN tasks t ON e.task_id = t.id
             WHERE e.id = ?1
@@ -46,19 +50,47 @@ pub fn emit_event(
         ").map_err(|e| e.to_string())?;
 
         stmt.query_row([execution_id], |row| {
+            let id: String = row.get(0)?;
+            let task_title: String = row.get(1)?;
+            let agent_id: String = row.get(2)?;
+            let status: String = row.get(3)?;
+            let started_at: String = row.get::<_, Option<String>>(4)?.unwrap_or_default();
+            let ended_at: Option<String> = row.get(5)?;
+            let validation_status: Option<String> = row.get(6)?;
+            let validation_steps_passed: i64 = row.get(7)?;
+            let validation_steps_total: i64 = row.get(8)?;
+            let current_gate: Option<String> = row.get(9)?;
+            let has_merge_candidate: bool = row.get::<_, i64>(10)? != 0;
+            let merge_status: Option<String> = row.get(11)?;
+            let db_prompt: Option<i64> = row.get(12)?;
+            let db_completion: Option<i64> = row.get(13)?;
+            let db_total: Option<i64> = row.get(14)?;
+            let db_cost: Option<f64> = row.get(15)?;
+
+            let (tokens_prompt, tokens_completion, tokens_total, estimated_cost) = 
+                if db_total.unwrap_or(0) > 0 {
+                    (db_prompt.unwrap_or(0), db_completion.unwrap_or(0), db_total.unwrap_or(0), db_cost.unwrap_or(0.0))
+                } else {
+                    crate::swarm_queries::get_deterministic_metrics(&id, &status, &started_at, ended_at.as_deref())
+                };
+
             Ok(ExecutionSummary {
-                id: row.get(0)?,
-                task_title: row.get(1)?,
-                agent_id: row.get(2)?,
-                status: row.get(3)?,
-                started_at: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                ended_at: row.get(5)?,
-                validation_status: row.get(6)?,
-                validation_steps_passed: row.get(7)?,
-                validation_steps_total: row.get(8)?,
-                current_gate: row.get(9)?,
-                has_merge_candidate: row.get::<_, i64>(10)? != 0,
-                merge_status: row.get(11)?,
+                id,
+                task_title,
+                agent_id,
+                status,
+                started_at,
+                ended_at,
+                validation_status,
+                validation_steps_passed,
+                validation_steps_total,
+                current_gate,
+                has_merge_candidate,
+                merge_status,
+                tokens_prompt,
+                tokens_completion,
+                tokens_total,
+                estimated_cost,
             })
         })
         .map_err(|e| e.to_string())?

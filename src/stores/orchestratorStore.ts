@@ -448,8 +448,6 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       workspaces: [...state.workspaces, newWorkspace],
       activeWorkspaceId: newWorkspace.id,
       isSidebarVisible: false,
-      projects: [],
-      agents: [],
       terminals: [],
       layout: { type: 'grid', panels: [] }
     }));
@@ -484,13 +482,17 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     
     // Log change
     EventBus.publish("workspace:changed", { workspaceId });
+    
+    // Notify Electron browser of workspace change to swap tab sessions
+    invoke("notify_workspace_switch", { workspaceId }).catch((err) => {
+      console.error("Failed to notify workspace switch:", err);
+    });
+    
     get().logActivity('workspace', 'info', `Switched to workspace: ${ws.name}`, '', undefined);
 
-    // 3. Sync memory files and tasks checklists
+    // 3. Sync memory files and tasks checklists in parallel
     const workspaceProjects = get().projects.filter(p => p.workspaceId === workspaceId);
-    for (const proj of workspaceProjects) {
-      await get().initializeProjectMemory(proj.id);
-    }
+    await Promise.all(workspaceProjects.map(proj => get().initializeProjectMemory(proj.id)));
     
     get().saveSnapshot();
   },
@@ -556,8 +558,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     });
 
     get().logActivity('workspace', 'info', `Added project "${name}" mapping to ${path}`, newProject.id);
-    await get().initializeProjectMemory(newProject.id);
-    get().saveSnapshot();
+    // Initialize project memory and save snapshot in background to avoid blocking the UI
+    get().initializeProjectMemory(newProject.id).then(() => {
+      get().saveSnapshot();
+    }).catch((err) => {
+      console.error("Failed to initialize project memory in background:", err);
+    });
   },
 
   deleteProject: async (projectId) => {
@@ -1162,6 +1168,26 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         for (const term of restoredTerminals) {
           get().reconnectTerminal(term.id);
         }
+      } else {
+        // Reset state for new or empty workspace to prevent leaking session states from other workspaces
+        set({
+          activeSessionId: null,
+          terminals: [],
+          agents: [],
+          tasks: [],
+          layout: { type: 'grid', panels: [] },
+          isSidebarVisible: false,
+          isTaskCenterVisible: true
+        });
+
+        // Reset browser state to clean defaults as well
+        useBrowserStore.getState().setBrowserState({
+          isBrowserPanelVisible: false,
+          isBrowserPanelPinned: false,
+          browserPanelWidth: 480,
+          tabs: [],
+          activeTabId: null
+        });
       }
     } catch (e) {
       console.error(`Failed to load WorkspaceSnapshot for ID "${activeWorkspaceId}":`, e);
@@ -1450,34 +1476,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     const findTemplate = `# Project Findings & Learnings\n\n## Finding-001: Setup Verification\n- **Author**: System\n- **Symptom**: Verifying environment settings.\n- **Resolution**: Project workspace memory files successfully loaded.\n`;
 
     try {
-      const archPath = `${pathNormalized}/architecture.md`;
-      try {
-        await invoke("read_project_file", { path: archPath });
-      } catch (e) {
-        await invoke("write_project_file", { path: archPath, content: archTemplate });
-      }
-
-      const decPath = `${pathNormalized}/decisions.md`;
-      try {
-        await invoke("read_project_file", { path: decPath });
-      } catch (e) {
-        await invoke("write_project_file", { path: decPath, content: decTemplate });
-      }
-
-      const findPath = `${pathNormalized}/findings.md`;
-      try {
-        await invoke("read_project_file", { path: findPath });
-      } catch (e) {
-        await invoke("write_project_file", { path: findPath, content: findTemplate });
-      }
-
-      const tasksPath = `${pathNormalized}/tasks.md`;
-      let tasksContent = "";
-      try {
-        tasksContent = await invoke<string>("read_project_file", { path: tasksPath });
-      } catch (e) {
-        // file doesn't exist
-      }
+      const tasksContent = await invoke<string>("init_project_memory", {
+        path: pathNormalized,
+        archContent: archTemplate,
+        decContent: decTemplate,
+        findContent: findTemplate
+      });
 
       if (tasksContent) {
         const parsedTasks: Task[] = [];

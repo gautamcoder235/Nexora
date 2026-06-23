@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { BrowserTab, BrowserHistoryItem } from "../types";
+import { invoke } from "@tauri-apps/api/core";
 
 interface BrowserState {
   tabs: BrowserTab[];
@@ -162,31 +163,29 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
     if (isElectronConnected) {
       // Optimistically toggle off connection state for instant UI responsiveness
       set({ isElectronConnected: false });
-      fetch("http://localhost:30120/close").catch((err) => {
+      invoke("close_electron_browser").catch((err) => {
         console.error("Failed to close electron browser:", err);
       });
     } else {
-      import("@tauri-apps/api/core").then(({ invoke }) => {
-        invoke("launch_electron_browser").then(() => {
-          // Rapidly poll the ping endpoint every 100ms for up to 2 seconds to establish connection instantly
-          let attempts = 0;
-          const interval = setInterval(async () => {
-            attempts++;
-            if (attempts > 20 || get().isElectronConnected) {
+      invoke("launch_electron_browser").then(() => {
+        // Rapidly poll the ping endpoint every 100ms for up to 2 seconds to establish connection instantly
+        let attempts = 0;
+        const interval = setInterval(async () => {
+          attempts++;
+          if (attempts > 20 || get().isElectronConnected) {
+            clearInterval(interval);
+            return;
+          }
+          try {
+            const connected = await invoke<boolean>("check_electron_ping");
+            if (connected) {
+              set({ isElectronConnected: true });
               clearInterval(interval);
-              return;
             }
-            try {
-              const connected = await invoke<boolean>("check_electron_ping");
-              if (connected) {
-                set({ isElectronConnected: true });
-                clearInterval(interval);
-              }
-            } catch (_) {}
-          }, 100);
-        }).catch((err) => {
-          console.error("Failed to launch electron browser:", err);
-        });
+          } catch (_) {}
+        }, 100);
+      }).catch((err) => {
+        console.error("Failed to launch electron browser:", err);
       });
     }
   },

@@ -8,6 +8,7 @@ import { OwnershipReportViewer } from './OwnershipReportViewer';
 import { ExecutionLogDrawer } from './ExecutionLogDrawer';
 import { ExecutionMetadataPanel } from './ExecutionMetadataPanel';
 import { ArtifactExplorer } from './ArtifactExplorer';
+import { SwarmGraph } from '../SwarmView/SwarmGraph';
 
 interface Props {
   executionId: string | null;
@@ -224,6 +225,9 @@ export function ExecutionReviewWorkspace({ executionId, onClose }: Props) {
             </div>
           </div>
         )}
+        <div className="mt-6">
+          <SwarmGraph metadata={metadata} validationRun={validationRun} />
+        </div>
 
         <div className="mt-8">
           <h3 className="text-lg font-medium mb-4 text-zinc-200">Validation Pipeline</h3>

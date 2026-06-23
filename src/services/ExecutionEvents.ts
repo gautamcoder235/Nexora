@@ -13,6 +13,10 @@ export interface ExecutionSummary {
   current_gate: string | null;
   has_merge_candidate: boolean;
   merge_status: string | null;
+  tokens_prompt: number;
+  tokens_completion: number;
+  tokens_total: number;
+  estimated_cost: number;
 }
 
 export interface ExecutionEventInfo {

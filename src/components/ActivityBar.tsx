@@ -6,6 +6,7 @@ import { useSwarmStore } from "../stores/swarmStore";
 import { useBrowserStore } from "../stores/browserStore";
 import { useChangesetStore } from "../stores/changesetStore";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export const ActivityBar: React.FC = () => {
   const {
@@ -47,6 +48,10 @@ export const ActivityBar: React.FC = () => {
   const [renameWsId, setRenameWsId] = useState<string | null>(null);
   const [renameWsName, setRenameWsName] = useState("");
 
+  const [droppedPath, setDroppedPath] = useState<string | null>(null);
+  const [droppedName, setDroppedName] = useState("");
+  const [showImportModal, setShowImportModal] = useState(false);
+
   const wsMenuRef = useRef<HTMLDivElement>(null);
   const wsPopoverRef = useRef<HTMLDivElement>(null);
   const wsButtonRef = useRef<HTMLButtonElement>(null);
@@ -76,6 +81,30 @@ export const ActivityBar: React.FC = () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showWsMenu, showProjMenu]);
+
+  // Drag and Drop folder import listener
+  useEffect(() => {
+    const unlisten = listen<{ paths: string[] }>("tauri://drag-drop", async (event) => {
+      const paths = event.payload.paths;
+      if (paths && paths.length > 0) {
+        const folderPath = paths[0];
+        
+        // Extract folder name from the absolute path
+        const lastSlash = Math.max(folderPath.lastIndexOf("/"), folderPath.lastIndexOf("\\"));
+        const folderName = lastSlash !== -1 ? folderPath.substring(lastSlash + 1) : folderPath;
+        
+        if (folderName) {
+          setDroppedPath(folderPath);
+          setDroppedName(folderName);
+          setShowImportModal(true);
+        }
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   const handleCreateWs = async () => {
     if (!wsName.trim()) return;
@@ -610,6 +639,80 @@ export const ActivityBar: React.FC = () => {
               >
                 Save Changes
               </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Drag & Drop Import Modal */}
+      {showImportModal && createPortal(
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center font-mono animate-in fade-in duration-200">
+          <div className="glass-modal glass-noise-base p-6 w-[420px] shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+              <FolderPlus size={16} className="text-accent-primary" />
+              Import Dropped Folder
+            </h3>
+            
+            <div className="text-[10px] text-zinc-550 space-y-1">
+              <div>
+                <span className="font-bold uppercase tracking-wider text-zinc-500">Path:</span>{' '}
+                <span className="font-mono bg-white/5 px-1 py-0.5 rounded break-all select-all text-zinc-400">{droppedPath}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-wider">Import Name</label>
+              <input
+                type="text"
+                value={droppedName}
+                onChange={(e) => setDroppedName(e.target.value)}
+                placeholder="e.g. my-awesome-project"
+                className="glass-input text-xs py-1.5 px-3"
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end pt-3 border-t border-border-glass select-none">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="bg-transparent hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 border border-border-glass hover:border-border-glass-hover font-bold text-[10px] uppercase py-1.5 px-4 rounded transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              
+              <button
+                onClick={async () => {
+                  if (!droppedName.trim() || !droppedPath) return;
+                  try {
+                    await createWorkspace(droppedName, droppedPath);
+                    setShowImportModal(false);
+                  } catch (err) {
+                    console.error("Failed to import workspace from drop:", err);
+                  }
+                }}
+                disabled={!droppedName.trim()}
+                className="bg-accent-primary hover:bg-accent-secondary text-black font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow transition-all cursor-pointer disabled:opacity-50"
+              >
+                Import Workspace
+              </button>
+
+              {activeWorkspaceId && (
+                <button
+                  onClick={async () => {
+                    if (!droppedName.trim() || !droppedPath) return;
+                    try {
+                      await addProject(droppedName, droppedPath);
+                      setShowImportModal(false);
+                    } catch (err) {
+                      console.error("Failed to import project from drop:", err);
+                    }
+                  }}
+                  disabled={!droppedName.trim()}
+                  className="bg-purple-650 hover:bg-purple-600 text-white font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow transition-all cursor-pointer border border-purple-500/20 disabled:opacity-50"
+                >
+                  Add as Project
+                </button>
+              )}
             </div>
           </div>
         </div>,

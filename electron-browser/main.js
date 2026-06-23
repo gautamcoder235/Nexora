@@ -5,6 +5,11 @@ const http = require('http');
 // Set theme source to dark for native widgets and media queries
 nativeTheme.themeSource = 'dark';
 
+let isQuitting = false;
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 // Start control server on port 30120
 function startControlServer() {
   const server = http.createServer((req, res) => {
@@ -72,9 +77,24 @@ function startControlServer() {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok' }));
     } else if (parsedUrl.pathname === '/close') {
+      isQuitting = true;
       app.quit();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok' }));
+    } else if (parsedUrl.pathname === '/show') {
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    } else if (parsedUrl.pathname === '/workspace-switch') {
+      const workspaceId = parsedUrl.searchParams.get('workspaceId');
+      if (workspaceId) {
+        handleWorkspaceSwitch(workspaceId);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', workspaceId }));
     } else if (parsedUrl.pathname === '/ping') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', activeTabId, tabsCount: tabs.length }));
@@ -101,6 +121,7 @@ function startControlServer() {
 
 let mainWindow;
 let isSidebarOpen = false;
+let emulationMode = 'responsive';
 let isPickModeActive = false;
 let activePickerTabId = null;
 
@@ -110,6 +131,7 @@ let activeTabId = null;
 let tabIdCounter = 0;
 
 const fs = require('fs');
+const net = require('net');
 
 // History management
 let history = [];
@@ -165,6 +187,34 @@ function saveHistory() {
     fs.writeFileSync(filePath, JSON.stringify(history, null, 2), 'utf8');
   } catch (err) {
     console.error('Failed to save history:', err);
+  }
+}
+
+// Workspace session management
+let currentWorkspaceId = null;
+
+function getWorkspaceSessionsPath() {
+  return path.join(app.getPath('userData'), 'nexora_workspace_sessions.json');
+}
+
+function loadWorkspaceSessions() {
+  try {
+    const filePath = getWorkspaceSessionsPath();
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    }
+  } catch (err) {
+    console.error('Failed to load workspace sessions:', err);
+  }
+  return {};
+}
+
+function saveWorkspaceSessions(sessions) {
+  try {
+    const filePath = getWorkspaceSessionsPath();
+    fs.writeFileSync(filePath, JSON.stringify(sessions, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save workspace sessions:', err);
   }
 }
 
@@ -580,6 +630,34 @@ async function stopPickerOnTab(tabId) {
 }
 
 let settingsWindow = null;
+let hoverPreviewWindow = null;
+
+function createHoverPreviewWindow() {
+  if (hoverPreviewWindow) return;
+
+  hoverPreviewWindow = new BrowserWindow({
+    width: 196,
+    height: 160,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    hasShadow: false
+  });
+
+  hoverPreviewWindow.loadFile(path.join(__dirname, 'src', 'hover-preview.html'));
+
+  hoverPreviewWindow.on('closed', () => {
+    hoverPreviewWindow = null;
+  });
+}
 
 function showSettingsWindow(x, y, tabId, url) {
   if (settingsWindow) {
@@ -708,19 +786,42 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 
-  mainWindow.on('close', () => {
-    // Destroy site settings window if it exists
-    if (settingsWindow && !settingsWindow.isDestroyed()) {
-      try {
-        settingsWindow.destroy();
-      } catch (e) {}
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      
+      // Also hide/destroy site settings window when browser window hides
+      if (settingsWindow && !settingsWindow.isDestroyed()) {
+        try {
+          settingsWindow.destroy();
+        } catch (e) {}
+      }
+      if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
+        try {
+          hoverPreviewWindow.destroy();
+        } catch (e) {}
+        hoverPreviewWindow = null;
+      }
+    } else {
+      // Destroy site settings window if it exists
+      if (settingsWindow && !settingsWindow.isDestroyed()) {
+        try {
+          settingsWindow.destroy();
+        } catch (e) {}
+      }
+      if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
+        try {
+          hoverPreviewWindow.destroy();
+        } catch (e) {}
+      }
+      process.exit(0);
     }
-
-    process.exit(0);
   });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    createHoverPreviewWindow();
   });
 
   // Main window keystroke listener for Ctrl+T, Ctrl+W
@@ -753,42 +854,9 @@ function createWindow() {
   });
 }
 
-// Tab Creation
-function createTab(urlToLoad) {
-  const id = ++tabIdCounter;
-  
-  const view = new WebContentsView({
-    webPreferences: {
-      sandbox: true,
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
-    }
-  });
-
-  // Set background color to prevent white flash during resize/load
-  try {
-    view.setBackgroundColor('#0c0c0e');
-  } catch (e) {
-    console.error('Failed to set WebContentsView background color:', e);
-  }
-
-  const tab = {
-    id,
-    view,
-    title: 'Nexora Browser',
-    url: urlToLoad || 'homepage.html'
-  };
-
-  tabs.push(tab);
-
-  // Load URL
-  if (tab.url === 'homepage.html') {
-    const homepagePath = path.join(__dirname, 'src', 'homepage.html');
-    view.webContents.loadFile(homepagePath);
-  } else {
-    view.webContents.loadURL(tab.url).catch(() => {});
-  }
+function bindTabEvents(tab) {
+  const id = tab.id;
+  const view = tab.view;
 
   // Intercept hotkeys inside the tab webContents
   view.webContents.on('before-input-event', (event, input) => {
@@ -836,6 +904,7 @@ function createTab(urlToLoad) {
         startPickerOnTab(id);
       }
     }
+    captureTabThumbnail(id);
   });
 
   view.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -851,6 +920,63 @@ function createTab(urlToLoad) {
       }
     }
   });
+}
+
+function captureTabThumbnail(id) {
+  const tab = tabs.find(t => t.id === id);
+  if (!tab || !tab.view) return;
+  setTimeout(() => {
+    try {
+      if (tab.view && !tab.view.webContents.isDestroyed()) {
+        tab.view.webContents.capturePage().then(image => {
+          if (tab.view && !tab.view.webContents.isDestroyed()) {
+            const dataUrl = image.toDataURL();
+            sendToRenderer('tab-thumbnail', { id, thumbnail: dataUrl });
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  }, 400); // 400ms delay to allow content rendering
+}
+
+// Tab Creation
+function createTab(urlToLoad) {
+  const id = ++tabIdCounter;
+  
+  const view = new WebContentsView({
+    webPreferences: {
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+
+  // Set background color to prevent white flash during resize/load
+  try {
+    view.setBackgroundColor('#0c0c0e');
+  } catch (e) {
+    console.error('Failed to set WebContentsView background color:', e);
+  }
+
+  const tab = {
+    id,
+    view,
+    title: 'Nexora Browser',
+    url: urlToLoad || 'homepage.html'
+  };
+
+  tabs.push(tab);
+
+  bindTabEvents(tab);
+
+  // Load URL
+  if (tab.url === 'homepage.html') {
+    const homepagePath = path.join(__dirname, 'src', 'homepage.html');
+    view.webContents.loadFile(homepagePath);
+  } else {
+    view.webContents.loadURL(tab.url).catch(() => {});
+  }
 
   // Notify renderer to create tab button element
   sendToRenderer('tab-created', { id, title: tab.title, url: tab.url });
@@ -861,6 +987,84 @@ function createTab(urlToLoad) {
   return tab;
 }
 
+// Workspace tab swapping
+function handleWorkspaceSwitch(newWorkspaceId) {
+  const sessions = loadWorkspaceSessions();
+
+  // Save current tabs for previous workspace
+  if (currentWorkspaceId) {
+    sessions[currentWorkspaceId] = tabs.map(t => t.url);
+    saveWorkspaceSessions(sessions);
+  }
+
+  currentWorkspaceId = newWorkspaceId;
+
+  const newTabUrls = sessions[newWorkspaceId] || ['homepage.html'];
+  const tabsToClose = [...tabs];
+  const newCreatedTabIds = [];
+
+  newTabUrls.forEach(url => {
+    const id = ++tabIdCounter;
+    const view = new WebContentsView({
+      webPreferences: {
+        sandbox: true,
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js')
+      }
+    });
+
+    try {
+      view.setBackgroundColor('#0c0c0e');
+    } catch (e) {}
+
+    const tab = {
+      id,
+      view,
+      title: 'Nexora Browser',
+      url
+    };
+
+    tabs.push(tab);
+    newCreatedTabIds.push(id);
+
+    bindTabEvents(tab);
+
+    if (tab.url === 'homepage.html') {
+      const homepagePath = path.join(__dirname, 'src', 'homepage.html');
+      view.webContents.loadFile(homepagePath);
+    } else {
+      view.webContents.loadURL(tab.url).catch(() => {});
+    }
+
+    sendToRenderer('tab-created', { id, title: tab.title, url: tab.url });
+  });
+
+  // Switch to first newly created tab
+  if (newCreatedTabIds.length > 0) {
+    switchTab(newCreatedTabIds[0]);
+  }
+
+  // Close old tabs
+  tabsToClose.forEach(oldTab => {
+    const index = tabs.findIndex(t => t.id === oldTab.id);
+    if (index !== -1) {
+      if (oldTab.id === activeTabId) {
+        mainWindow.contentView.removeChildView(oldTab.view);
+      }
+      try {
+        oldTab.view.webContents.destroy();
+      } catch (e) {}
+      tabs.splice(index, 1);
+      sendToRenderer('tab-closed', oldTab.id);
+    }
+  });
+
+  if (tabs.length === 0) {
+    createTab();
+  }
+}
+
 // Tab Switching
 function switchTab(id) {
   if (activeTabId === id) return;
@@ -869,6 +1073,10 @@ function switchTab(id) {
   const newTab = tabs.find(t => t.id === id);
 
   if (!newTab) return;
+
+  if (oldTab) {
+    captureTabThumbnail(oldTab.id);
+  }
 
   // Manage pick mode state across tabs
   if (isPickModeActive) {
@@ -935,10 +1143,28 @@ function updateViewBounds() {
 
   const activeTab = tabs.find(t => t.id === activeTabId);
   if (activeTab && activeTab.view) {
-    // 90px header height accounts for 38px tab bar + 52px nav bar
-    const viewWidth = isSidebarOpen ? Math.max(0, width - 380) : width;
-    const viewHeight = Math.max(0, height - 90);
-    activeTab.view.setBounds({ x: 0, y: 90, width: viewWidth, height: viewHeight });
+    // 96px header height accounts for 44px tab bar + 52px nav bar
+    const availableWidth = isSidebarOpen ? Math.max(0, width - 380) : width;
+    const availableHeight = Math.max(0, height - 96);
+
+    let viewWidth = availableWidth;
+    let viewHeight = availableHeight;
+
+    if (emulationMode === 'mobile') {
+      viewWidth = Math.min(375, availableWidth);
+      viewHeight = Math.min(720, availableHeight);
+    } else if (emulationMode === 'tablet') {
+      viewWidth = Math.min(768, availableWidth);
+      viewHeight = Math.min(960, availableHeight);
+    } else if (emulationMode === 'desktop') {
+      viewWidth = Math.min(1440, availableWidth);
+      viewHeight = Math.min(900, availableHeight);
+    }
+
+    const x = Math.max(0, Math.floor((availableWidth - viewWidth) / 2));
+    const y = 96 + Math.max(0, Math.floor((availableHeight - viewHeight) / 2));
+
+    activeTab.view.setBounds({ x, y, width: viewWidth, height: viewHeight });
   }
 }
 
@@ -1021,6 +1247,47 @@ ipcMain.on('browser-navigate', (event, inputUrl) => {
 // Element Picker IPC Handlers
 ipcMain.on('toggle-sidebar', (event, isOpen) => {
   isSidebarOpen = isOpen;
+  updateViewBounds();
+});
+
+ipcMain.on('test-selector', (event, selector) => {
+  const activeTab = tabs.find(t => t.id === activeTabId);
+  if (activeTab && activeTab.view) {
+    activeTab.view.webContents.send('highlight-selector', selector);
+  }
+});
+
+ipcMain.on('selector-test-result', (event, result) => {
+  sendToRenderer('selector-test-result', result);
+});
+
+ipcMain.on('click-tester-match', (event, index) => {
+  const activeTab = tabs.find(t => t.id === activeTabId);
+  if (activeTab && activeTab.view) {
+    activeTab.view.webContents.send('click-tester-match', index);
+  }
+});
+
+ipcMain.on('hover-tester-match', (event, index) => {
+  const activeTab = tabs.find(t => t.id === activeTabId);
+  if (activeTab && activeTab.view) {
+    activeTab.view.webContents.send('hover-tester-match', index);
+  }
+});
+
+ipcMain.on('clear-hover-tester-match', (event) => {
+  const activeTab = tabs.find(t => t.id === activeTabId);
+  if (activeTab && activeTab.view) {
+    activeTab.view.webContents.send('clear-hover-tester-match');
+  }
+});
+
+ipcMain.on('selector-test-click', (event, details) => {
+  sendToRenderer('pick-completed', details);
+});
+
+ipcMain.on('set-emulation-mode', (event, mode) => {
+  emulationMode = mode;
   updateViewBounds();
 });
 
@@ -1138,9 +1405,9 @@ ipcMain.on('reset-site-permissions', (event, { tabId, url }) => {
 
 ipcMain.on('show-settings-popup', (event, { x, y, tabId, url }) => {
   if (!mainWindow) return;
-  const [winX, winY] = mainWindow.getPosition();
-  const screenX = winX + x - 10;
-  const screenY = winY + y + 5;
+  const contentBounds = mainWindow.getContentBounds();
+  const screenX = contentBounds.x + x;
+  const screenY = contentBounds.y + y;
   showSettingsWindow(screenX, screenY, tabId, url);
 });
 
@@ -1196,6 +1463,36 @@ ipcMain.on('close-tab', (event, id) => {
   closeTab(id);
 });
 
+ipcMain.on('show-tab-hover-preview', (event, { x, y, title, thumbnail }) => {
+  if (!mainWindow) return;
+  if (!hoverPreviewWindow || hoverPreviewWindow.isDestroyed()) {
+    createHoverPreviewWindow();
+  }
+
+  if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
+    const contentBounds = mainWindow.getContentBounds();
+    const screenX = contentBounds.x + x;
+    const screenY = contentBounds.y + y;
+
+    try {
+      hoverPreviewWindow.setPosition(screenX, screenY);
+      if (!hoverPreviewWindow.isVisible()) {
+        hoverPreviewWindow.showInactive();
+      }
+      hoverPreviewWindow.webContents.send('update-hover-preview', { title, thumbnail });
+    } catch (e) {}
+  }
+});
+
+ipcMain.on('hide-tab-hover-preview', () => {
+  if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
+    try {
+      hoverPreviewWindow.hide();
+      hoverPreviewWindow.webContents.send('clear-hover-preview');
+    } catch (e) {}
+  }
+});
+
 ipcMain.on('reorder-tabs', (event, newIdOrder) => {
   const reorderedTabs = [];
   newIdOrder.forEach(id => {
@@ -1240,6 +1537,44 @@ app.whenReady().then(() => {
 
   startControlServer();
   createWindow();
+
+  // Local Ports Monitor
+  const devPorts = [3000, 3001, 3002, 5173, 5174, 8000, 8080, 8081];
+  const activePorts = new Set();
+
+  function checkPortActive(port) {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      const onError = () => {
+        socket.destroy();
+        resolve(false);
+      };
+      socket.setTimeout(250);
+      socket.on('error', onError);
+      socket.on('timeout', onError);
+      socket.connect(port, '127.0.0.1', () => {
+        socket.destroy();
+        resolve(true);
+      });
+    });
+  }
+
+  async function scanLocalPorts() {
+    for (const port of devPorts) {
+      const isListening = await checkPortActive(port);
+      const wasListening = activePorts.has(port);
+
+      if (isListening && !wasListening) {
+        activePorts.add(port);
+        sendToRenderer('port-detected', port);
+      } else if (!isListening && wasListening) {
+        activePorts.delete(port);
+      }
+    }
+  }
+
+  // Scan every 4 seconds
+  setInterval(scanLocalPorts, 4000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -705,6 +705,39 @@ async fn browser_reload(app_handle: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<String>) -> Result<(), String> {
     use std::process::Command;
+    use std::io::Write;
+
+    // Check if the control server is already running (hidden in the background)
+    if check_electron_ping() {
+        if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
+            let _ = stream.write_all(b"GET /show HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
+        }
+        
+        // If a URL was specified, navigate to it
+        if let Some(u) = url.as_ref() {
+            if !u.trim().is_empty() {
+                if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
+                    let mut encoded = String::new();
+                    for b in u.trim().bytes() {
+                        match b {
+                            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                                encoded.push(b as char);
+                            }
+                            _ => {
+                                encoded.push_str(&format!("%{:02X}", b));
+                            }
+                        }
+                    }
+                    let req = format!(
+                        "GET /navigate?url={} HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n",
+                        encoded
+                    );
+                    let _ = stream.write_all(req.as_bytes());
+                }
+            }
+        }
+        return Ok(());
+    }
     
     let mut electron_dir = None;
 
@@ -815,6 +848,32 @@ fn check_electron_ping() -> bool {
         std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
     } else {
         false
+    }
+}
+
+#[tauri::command]
+async fn notify_workspace_switch(workspace_id: String) -> Result<(), String> {
+    use std::io::Write;
+    if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
+        let req = format!(
+            "GET /workspace-switch?workspaceId={} HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n",
+            workspace_id
+        );
+        let _ = stream.write_all(req.as_bytes());
+        Ok(())
+    } else {
+        Err("Electron control server not running".to_string())
+    }
+}
+
+#[tauri::command]
+async fn close_electron_browser() -> Result<(), String> {
+    use std::io::Write;
+    if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
+        let _ = stream.write_all(b"GET /close HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
+        Ok(())
+    } else {
+        Err("Electron control server not running".to_string())
     }
 }
 
@@ -954,6 +1013,41 @@ fn write_project_file(path: String, content: String) -> Result<(), String> {
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn init_project_memory(
+    path: String,
+    arch_content: String,
+    dec_content: String,
+    find_content: String,
+) -> Result<String, String> {
+    let path_normalized = path.replace("\\", "/");
+    
+    let arch_path = format!("{}/architecture.md", path_normalized);
+    if !std::path::Path::new(&arch_path).exists() {
+        if let Some(parent) = std::path::Path::new(&arch_path).parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(&arch_path, arch_content).map_err(|e| e.to_string())?;
+    }
+    
+    let dec_path = format!("{}/decisions.md", path_normalized);
+    if !std::path::Path::new(&dec_path).exists() {
+        fs::write(&dec_path, dec_content).map_err(|e| e.to_string())?;
+    }
+    
+    let find_path = format!("{}/findings.md", path_normalized);
+    if !std::path::Path::new(&find_path).exists() {
+        fs::write(&find_path, find_content).map_err(|e| e.to_string())?;
+    }
+    
+    let tasks_path = format!("{}/tasks.md", path_normalized);
+    if std::path::Path::new(&tasks_path).exists() {
+        fs::read_to_string(&tasks_path).map_err(|e| e.to_string())
+    } else {
+        Ok(String::new())
+    }
+}
+
 #[derive(serde::Serialize)]
 struct SystemMetrics {
     cpu: f32,
@@ -1012,6 +1106,8 @@ pub fn run() {
             browser_reload,
             launch_electron_browser,
             check_electron_ping,
+            notify_workspace_switch,
+            close_electron_browser,
             open_browser_devtools,
             inject_picker_into_webview,
             remove_picker_from_webview,
@@ -1027,6 +1123,7 @@ pub fn run() {
             check_cli_tool,
             read_project_file,
             write_project_file,
+            init_project_memory,
             list_directory,
             set_terminal_visibility,
             get_terminal_metrics,

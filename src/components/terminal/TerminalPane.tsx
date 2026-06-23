@@ -12,6 +12,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { ThemeManager } from '../../services/ThemeManager';
 import { DEFAULT_APP_SETTINGS } from '../../types';
 import { TerminalBufferManager } from '../../services/TerminalBufferManager';
 import { terminalMetricsCollector } from '../../services/TerminalMetrics';
@@ -165,8 +166,41 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   const settings = useOrchestratorStore((s) => s.settings);
   const termSession = terminals.find((t) => t.id === paneId);
 
+  // Dynamic terminal theme updates on theme switch
+  useEffect(() => {
+    if (!termRef.current) return;
+    const activeTheme = ThemeManager.getTheme(settings.appearance?.theme?.theme || 'Midnight');
+    const termTheme = activeTheme.terminal;
+    termRef.current.options.theme = {
+      background: termTheme.background,
+      foreground: termTheme.foreground,
+      cursor: termTheme.cursor,
+      black: termTheme.black,
+      red: termTheme.red,
+      green: termTheme.green,
+      yellow: termTheme.yellow,
+      blue: termTheme.blue,
+      magenta: termTheme.magenta,
+      cyan: termTheme.cyan,
+      white: termTheme.white,
+      brightBlack: termTheme.brightBlack,
+      brightRed: termTheme.brightRed,
+      brightGreen: termTheme.brightGreen,
+      brightYellow: termTheme.brightYellow,
+      brightBlue: termTheme.brightBlue,
+      brightMagenta: termTheme.brightMagenta,
+      brightCyan: termTheme.brightCyan,
+      brightWhite: termTheme.brightWhite,
+      cursorAccent: termTheme.cursorAccent,
+      selectionBackground: termTheme.selectionBackground,
+    };
+  }, [settings.appearance?.theme]);
+
   useEffect(() => {
     if (!containerRef.current) return;
+
+    const activeTheme = ThemeManager.getTheme(settings.appearance?.theme?.theme || 'Midnight');
+    const termTheme = activeTheme.terminal;
 
     // Initialize interactive xterm.js instance
     const term = new Terminal({
@@ -175,25 +209,27 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       fontSize: settings.appearance?.typography?.terminalFontSize ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontSize,
       fontFamily: settings.appearance?.typography?.terminalFontFamily ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontFamily,
       theme: {
-        background: '#000000',
-        foreground: '#e2e8f0',
-        cursor: '#f59e0b',
-        black: '#0f0f15',
-        red: '#ef4444',
-        green: '#10b981',
-        yellow: '#f59e0b',
-        blue: '#3b82f6',
-        magenta: '#f59e0b',
-        cyan: '#06b6d4',
-        white: '#cbd5e1',
-        brightBlack: '#475569',
-        brightRed: '#f87171',
-        brightGreen: '#34d399',
-        brightYellow: '#fbbf24',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#fbbf24',
-        brightCyan: '#22d3ee',
-        brightWhite: '#f1f5f9',
+        background: termTheme.background,
+        foreground: termTheme.foreground,
+        cursor: termTheme.cursor,
+        black: termTheme.black,
+        red: termTheme.red,
+        green: termTheme.green,
+        yellow: termTheme.yellow,
+        blue: termTheme.blue,
+        magenta: termTheme.magenta,
+        cyan: termTheme.cyan,
+        white: termTheme.white,
+        brightBlack: termTheme.brightBlack,
+        brightRed: termTheme.brightRed,
+        brightGreen: termTheme.brightGreen,
+        brightYellow: termTheme.brightYellow,
+        brightBlue: termTheme.brightBlue,
+        brightMagenta: termTheme.brightMagenta,
+        brightCyan: termTheme.brightCyan,
+        brightWhite: termTheme.brightWhite,
+        cursorAccent: termTheme.cursorAccent,
+        selectionBackground: termTheme.selectionBackground,
       },
       allowProposedApi: true,
       disableStdin: false, // Enable user keyboard input

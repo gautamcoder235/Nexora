@@ -42,6 +42,10 @@ export interface ExecutionMetadata {
   ended_at: string | null;
   validation_run_id: string | null;
   status: string;
+  tokens_prompt: number;
+  tokens_completion: number;
+  tokens_total: number;
+  estimated_cost: number;
 }
 
 export interface MergeCandidateInfo {
