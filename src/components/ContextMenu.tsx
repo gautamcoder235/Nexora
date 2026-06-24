@@ -218,37 +218,37 @@ export const ContextMenu: React.FC = () => {
           
           <button
             onClick={handleCopy}
-            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
-              <Copy size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+              <Copy size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
               <span>Copy Selection</span>
             </div>
-            <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">Ctrl+C</span>
+            <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">Ctrl+C</span>
           </button>
 
           <button
             onClick={handlePaste}
-            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
-              <Clipboard size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+              <Clipboard size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
               <span>Paste to Shell</span>
             </div>
-            <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">Ctrl+V</span>
+            <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">Ctrl+V</span>
           </button>
 
           <div className="h-[1px] bg-[#232329]/60 my-1 mx-1.5" />
 
           <button
             onClick={handleToggleTerminalFocus}
-            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+            className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
               {terminalIsFocused ? (
-                <Minimize2 size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+                <Minimize2 size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
               ) : (
-                <Maximize2 size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+                <Maximize2 size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
               )}
               <span>{terminalIsFocused ? "Exit Focus Mode" : "Focus Session"}</span>
             </div>
@@ -272,46 +272,46 @@ export const ContextMenu: React.FC = () => {
       {/* Global Actions */}
       <button
         onClick={handleToggleSidebar}
-        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <Bot size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+          <Bot size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
           <span>{isSidebarVisible ? "Collapse Sidebar" : "Expand Sidebar"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{sidebarShortcut}</span>
+        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{sidebarShortcut}</span>
       </button>
 
       <button
         onClick={handleToggleTaskCenter}
-        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <ClipboardList size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+          <ClipboardList size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
           <span>{isTaskCenterVisible ? "Hide Task Center" : "Show Task Center"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{taskCenterShortcut}</span>
+        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{taskCenterShortcut}</span>
       </button>
 
       <button
         onClick={handleToggleBrowserPanel}
-        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <Globe size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+          <Globe size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
           <span>{isBrowserPanelVisible ? "Hide Web Browser" : "Show Web Browser"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{browserShortcut}</span>
+        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{browserShortcut}</span>
       </button>
 
       <button
         onClick={handleToggleReviewCenter}
-        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+        className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <GitPullRequest size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+          <GitPullRequest size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
           <span>{isReviewCenterOpen ? "Hide Review Center" : "Show Review Center"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-purple-400/70 font-mono">{reviewCenterShortcut}</span>
+        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{reviewCenterShortcut}</span>
       </button>
 
       {/* Change Layout with submenus */}
@@ -321,13 +321,13 @@ export const ContextMenu: React.FC = () => {
         onMouseLeave={() => setShowSubmenu(false)}
       >
         <button
-          className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-purple-500/10 hover:text-purple-400 text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
+          className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
         >
           <div className="flex items-center gap-2">
-            <LayoutGrid size={13} className="text-zinc-400 group-hover:text-purple-400 transition-colors" />
+            <LayoutGrid size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
             <span>Multiplexer Layout</span>
           </div>
-          <ChevronRight size={12} className="text-zinc-500 group-hover:text-purple-400 transition-colors" />
+          <ChevronRight size={12} className="text-zinc-500 group-hover:text-accent-primary transition-colors" />
         </button>
 
         {showSubmenu && (
@@ -339,33 +339,33 @@ export const ContextMenu: React.FC = () => {
               onClick={() => handleLayoutChange("grid")}
               className={`w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md text-left transition-all duration-100 cursor-pointer flex items-center gap-2 group ${
                 layout.type === "grid" 
-                  ? "bg-purple-500/10 text-purple-400 font-medium" 
-                  : "hover:bg-purple-500/10 hover:text-purple-400"
+                  ? "bg-accent-primary/10 text-accent-primary font-medium" 
+                  : "hover:bg-accent-primary/10 hover:text-accent-primary"
               }`}
             >
-              <LayoutGrid size={12} className={layout.type === "grid" ? "text-purple-400" : "text-zinc-400 group-hover:text-purple-400"} />
+              <LayoutGrid size={12} className={layout.type === "grid" ? "text-accent-primary" : "text-zinc-400 group-hover:text-accent-primary"} />
               <span>Grid Layout</span>
             </button>
             <button
               onClick={() => handleLayoutChange("vertical")}
               className={`w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md text-left transition-all duration-100 cursor-pointer flex items-center gap-2 group ${
                 layout.type === "vertical" 
-                  ? "bg-purple-500/10 text-purple-400 font-medium" 
-                  : "hover:bg-purple-500/10 hover:text-purple-400"
+                  ? "bg-accent-primary/10 text-accent-primary font-medium" 
+                  : "hover:bg-accent-primary/10 hover:text-accent-primary"
               }`}
             >
-              <Columns2 size={12} className={layout.type === "vertical" ? "text-purple-400" : "text-zinc-400 group-hover:text-purple-400"} />
+              <Columns2 size={12} className={layout.type === "vertical" ? "text-accent-primary" : "text-zinc-400 group-hover:text-accent-primary"} />
               <span>Vertical Splits</span>
             </button>
             <button
               onClick={() => handleLayoutChange("horizontal")}
               className={`w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md text-left transition-all duration-100 cursor-pointer flex items-center gap-2 group ${
                 layout.type === "horizontal" 
-                  ? "bg-purple-500/10 text-purple-400 font-medium" 
-                  : "hover:bg-purple-500/10 hover:text-purple-400"
+                  ? "bg-accent-primary/10 text-accent-primary font-medium" 
+                  : "hover:bg-accent-primary/10 hover:text-accent-primary"
               }`}
             >
-              <Rows2 size={12} className={layout.type === "horizontal" ? "text-purple-400" : "text-zinc-400 group-hover:text-purple-400"} />
+              <Rows2 size={12} className={layout.type === "horizontal" ? "text-accent-primary" : "text-zinc-400 group-hover:text-accent-primary"} />
               <span>Horizontal Splits</span>
             </button>
           </div>
@@ -379,14 +379,14 @@ export const ContextMenu: React.FC = () => {
         <div className="space-y-1">
           <div className="flex items-center justify-between text-zinc-500">
             <span className="flex items-center gap-1.5">
-              <Cpu size={10} className="text-purple-500/80 animate-pulse" />
+              <Cpu size={10} className="text-accent-primary/80 animate-pulse" />
               CPU LOAD
             </span>
-            <span className="text-purple-400 font-semibold">{mockCpu}%</span>
+            <span className="text-accent-primary font-semibold">{mockCpu}%</span>
           </div>
           <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
             <div 
-              className="bg-gradient-to-r from-purple-500 to-fuchsia-500 h-full transition-all duration-500 ease-out" 
+              className="bg-gradient-to-r from-accent-primary to-accent-secondary h-full transition-all duration-500 ease-out" 
               style={{ width: `${mockCpu}%` }}
             />
           </div>
@@ -395,14 +395,14 @@ export const ContextMenu: React.FC = () => {
         <div className="space-y-1">
           <div className="flex items-center justify-between text-zinc-500">
             <span className="flex items-center gap-1.5">
-              <HardDrive size={10} className="text-purple-500/80" />
+              <HardDrive size={10} className="text-accent-primary/80" />
               RAM USAGE
             </span>
-            <span className="text-purple-400 font-semibold">{mockRam} GB</span>
+            <span className="text-accent-primary font-semibold">{mockRam} GB</span>
           </div>
           <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
             <div 
-              className="bg-gradient-to-r from-purple-500 to-fuchsia-500 h-full transition-all duration-500 ease-out" 
+              className="bg-gradient-to-r from-accent-primary to-accent-secondary h-full transition-all duration-500 ease-out" 
               style={{ width: `${(mockRam / 8) * 100}%` }}
             />
           </div>
