@@ -257,23 +257,7 @@ export interface AppSettings {
   terminalScrollbackLimit?: number;
 }
 
-const isWindows = typeof window !== 'undefined' && (
-  window.navigator.userAgent.toLowerCase().includes('win') ||
-  window.navigator.platform.toLowerCase().includes('win')
-);
-
-export const getDefaultCustomCLIs = (): CustomCLI[] => [
-  {
-    id: "agy",
-    name: "Antigravity CLI (agy)",
-    command: "agy",
-    args: [],
-    checkCmd: "agy --version",
-    installCommand: isWindows 
-      ? "powershell -Command \"irm https://antigravity.google/cli/install.ps1 | iex\""
-      : "curl -fsSL https://antigravity.google/cli/install.sh | bash"
-  }
-];
+export const getDefaultCustomCLIs = (): CustomCLI[] => [];
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 2,

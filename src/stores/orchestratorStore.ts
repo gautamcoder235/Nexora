@@ -346,15 +346,17 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           }
 
           // Migration: merge new default custom CLIs into loaded settings if they are missing
-          const defaultCLIs = DEFAULT_APP_SETTINGS.customCLIs || [];
-          const existingCLIs = mergedSettings.customCLIs || [];
-          const mergedCLIs = [...existingCLIs];
-          for (const dCli of defaultCLIs) {
-            if (!mergedCLIs.some(c => c.id === dCli.id)) {
-              mergedCLIs.push(dCli);
+          if (data.settings && data.settings.customCLIs === undefined) {
+            const defaultCLIs = DEFAULT_APP_SETTINGS.customCLIs || [];
+            const existingCLIs = mergedSettings.customCLIs || [];
+            const mergedCLIs = [...existingCLIs];
+            for (const dCli of defaultCLIs) {
+              if (!mergedCLIs.some(c => c.id === dCli.id)) {
+                mergedCLIs.push(dCli);
+              }
             }
+            mergedSettings.customCLIs = mergedCLIs;
           }
-          mergedSettings.customCLIs = mergedCLIs;
 
           // Version 1 to Version 2 AppSettings Migration
           const currentVersion = mergedSettings.version || 1;
