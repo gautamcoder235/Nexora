@@ -1199,7 +1199,7 @@ ipcMain.on('browser-forward', () => {
 ipcMain.on('browser-reload', () => {
   const activeTab = tabs.find(t => t.id === activeTabId);
   if (activeTab && activeTab.view) {
-    activeTab.view.webContents.reload();
+    activeTab.view.webContents.reloadIgnoringCache();
   }
 });
 
