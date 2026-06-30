@@ -72,8 +72,14 @@ export const ContextMenu: React.FC = () => {
 
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
-      // Don't intercept right clicks on editable elements, inputs, textareas or inside monaco editor
       const target = e.target as HTMLElement;
+
+      if (target.closest('.nexora-team-theme')) {
+        e.preventDefault();
+        return;
+      }
+
+      // Don't intercept right clicks on editable elements, inputs, textareas or inside monaco editor
       if (
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||

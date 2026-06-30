@@ -414,9 +414,16 @@ pub fn spawn_agent_session(
         .map_err(|e| format!("Agent not found: {}", e))?;
 
     // 3. Agent Pre-Flight Validation
-    let pre_flight = std::process::Command::new(&agent_cmd)
-        .arg("--version")
-        .output();
+    let mut cmd = std::process::Command::new(&agent_cmd);
+    cmd.arg("--version");
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    
+    let pre_flight = cmd.output();
 
     if pre_flight.is_err() {
         drop(conn_guard);
@@ -454,6 +461,8 @@ pub fn spawn_agent_session(
         Some(agent_cmd.clone()),
         None,
         Some(cwd),
+        None,
+        None,
         None,
         None,
         None,

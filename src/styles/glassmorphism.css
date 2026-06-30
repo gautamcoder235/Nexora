@@ -518,7 +518,10 @@ textarea.glass-input {
   -webkit-backdrop-filter: none !important;
 }
 
-.is-dragging iframe {
+.is-dragging iframe,
+.is-dragging .terminal-pane,
+.is-dragging .terminal-workspace,
+.is-dragging canvas {
   pointer-events: none !important;
 }
 
@@ -765,3 +768,9 @@ body.resizing * {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+
+/* Custom Activity Bar button rounded corner styling */
+.activity-bar-btn {
+  border-radius: 12px !important;
+}
+

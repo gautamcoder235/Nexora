@@ -17,4 +17,10 @@ export interface AgentPlugin {
   projectId?: string;
   startupInstructions?: string[];
   rolePreset?: string;
+  resumeArgs?: string[];
+  autoResponders?: { pattern: string; response: string }[];
+  conversationParser?: {
+    pattern: string;
+    argsTemplate: string[];
+  };
 }

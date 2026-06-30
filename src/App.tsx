@@ -1,16 +1,19 @@
 import React, { useEffect, useState, useRef } from "react";
 import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal, GitBranch } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
+import { TitleBar } from "./components/TitleBar";
 import { AgentGrid } from "./components/AgentGrid";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { TaskCenter } from "./components/TaskCenter";
 import { ProjectMemory } from "./components/ProjectMemory";
 const TerminalWorkspace = React.lazy(() => import("./components/TerminalWorkspace").then(m => ({ default: m.TerminalWorkspace })));
-const SwarmView = React.lazy(() => import("./components/SwarmView/SwarmView").then(m => ({ default: m.SwarmView })));
+
+const TeamDashboard = React.lazy(() => import("./components/NexoraTeam/TeamDashboard").then(m => ({ default: m.TeamDashboard })));
 const AgentReviewCenter = React.lazy(() => import("./components/ExecutionReview/AgentReviewCenter").then(m => ({ default: m.AgentReviewCenter })));
 import { AgentInspector } from "./components/AgentInspector";
 import { useOrchestratorStore } from "./stores/orchestratorStore";
-import { useSwarmStore } from "./stores/swarmStore";
+
+import { useTeamStore } from "./stores/teamStore";
 import { useBrowserStore } from "./stores/browserStore";
 import { useChangesetStore } from "./stores/changesetStore";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
@@ -119,7 +122,7 @@ function App() {
     };
   }, [activeWs?.rootPath]);
 
-  const activityBarWidth = settings?.appearance?.workspace?.showActivityBar !== false ? 56 : 0;
+  const activityBarWidth = settings?.appearance?.workspace?.showActivityBar !== false ? 48 : 0;
   const paneSpacing = settings?.appearance?.workspace?.paneSpacing ?? 8;
   const createWorkspace = useOrchestratorStore(s => s.createWorkspace);
   const terminals = useOrchestratorStore(useShallow(s => s.terminals));
@@ -250,11 +253,11 @@ function App() {
   const [isActivityFeedExpanded, setIsActivityFeedExpanded] = useState(false);
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const [isHeightDragging, setIsHeightDragging] = useState(false);
-  const [isSwarmDragging, setIsSwarmDragging] = useState(false);
+  const [isTeamDragging, setIsTeamDragging] = useState(false);
   const [isBrowserDragging, setIsBrowserDragging] = useState(false);
   const [isReviewDragging, setIsReviewDragging] = useState(false);
 
-  const { isSwarmPanelVisible, swarmPanelHeight, setSwarmPanelHeight } = useSwarmStore();
+  const { isTeamPanelVisible, teamPanelHeight, setTeamPanelHeight } = useTeamStore();
   const { isBrowserPanelVisible, isBrowserPanelPinned, browserPanelWidth, setBrowserPanelWidth, toggleBrowserPanel, toggleBrowserPanelPinned } = useBrowserStore();
 
   // Power User Top Right Panel (Tasks/Memory) state
@@ -466,20 +469,22 @@ function App() {
     return () => window.removeEventListener('resize', handleWindowResize);
   }, [topPanelHeight, sidebarWidth, setTopPanelHeight, setSidebarWidth]);
 
+
+
   useEffect(() => {
-    if (!isSwarmDragging) return;
+    if (!isTeamDragging) return;
 
     let frameId: number;
     const handleMouseMove = (e: MouseEvent) => {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(() => {
-        setSwarmPanelHeight(Math.max(200, Math.min(e.clientY - 80, 700)));
+        setTeamPanelHeight(Math.max(200, Math.min(window.innerHeight - e.clientY - 48, window.innerHeight - 100)));
       });
     };
     
     const handleMouseUp = () => {
       if (frameId) cancelAnimationFrame(frameId);
-      setIsSwarmDragging(false);
+      setIsTeamDragging(false);
       useOrchestratorStore.getState().saveSnapshot();
     };
 
@@ -490,7 +495,7 @@ function App() {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isSwarmDragging, setSwarmPanelHeight]);
+  }, [isTeamDragging, setTeamPanelHeight]);
 
   const startBrowserResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -596,7 +601,7 @@ function App() {
       const shortcuts = { ...DEFAULT_APP_SETTINGS.shortcuts, ...(state.settings?.shortcuts || {}) };
 
       const checkShortcut = (shortcutString: string | undefined) => {
-        if (!shortcutString) return false;
+        if (!shortcutString || shortcutString.toLowerCase() === 'none') return false;
         const parts = shortcutString.toLowerCase().split('+').map(s => s.trim());
         const key = parts[parts.length - 1];
         const needsCtrl = parts.includes('ctrl') || parts.includes('cmd');
@@ -614,7 +619,7 @@ function App() {
         if (needsAlt !== e.altKey) return false;
         
         if (key === ',') return e.key === ',';
-        return e.key.toLowerCase() === key || e.code.toLowerCase() === 'key' + key;
+        return e.key.toLowerCase() === key || (e.code || '').toLowerCase() === 'key' + key;
       };
 
       if (checkShortcut(shortcuts.toggleSidebar)) {
@@ -650,12 +655,16 @@ function App() {
     // 2. Load configurations database & active workspace snap
     initStore();
 
-    // 3. Start swarm execution events polling globally
-    const unsubscribeSwarm = useSwarmStore.getState().startPolling();
+    // 3. Start execution events polling globally
+    const unsubscribeSwarm = useTeamStore.getState().startExecutionPolling();
+    const unsubscribeTeam = useTeamStore.getState().initializeListeners();
 
     return () => {
       if (unsubscribeSwarm) {
         unsubscribeSwarm();
+      }
+      if (unsubscribeTeam) {
+        unsubscribeTeam();
       }
     };
   }, [initStore]);
@@ -686,8 +695,8 @@ function App() {
             100% { transform: scale(1); opacity: 1; }
           }
           @keyframes splashLogoGlow {
-            0%, 100% { box-shadow: 0 0 25px rgba(37, 99, 235, 0.25), inset 0 0 20px rgba(37, 99, 235, 0.08); }
-            50% { box-shadow: 0 0 50px rgba(37, 99, 235, 0.5), inset 0 0 35px rgba(37, 99, 235, 0.2); }
+            0%, 100% { filter: drop-shadow(0 0 10px rgba(37, 99, 235, 0.35)) drop-shadow(0 8px 24px rgba(10, 13, 22, 0.45)); }
+            50% { filter: drop-shadow(0 0 20px rgba(37, 99, 235, 0.65)) drop-shadow(0 8px 24px rgba(10, 13, 22, 0.45)); }
           }
           @keyframes splashProgress {
             0% { width: 0%; }
@@ -774,37 +783,14 @@ function App() {
             <div className="absolute inset-0 rounded-full border border-dashed border-blue-500/10 splash-orbiting-ring" />
             <div className="absolute inset-3 rounded-full border border-dashed border-cyan-500/5 splash-orbiting-ring" style={{ animationDirection: 'reverse', animationDuration: '24s' }} />
             
-            {/* Logo box */}
-            <div className="splash-logo-container relative w-24 h-24">
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 opacity-30 blur-lg" />
+            <div className="splash-logo-container relative w-24 h-24 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 opacity-45 blur-xl" />
               
-              {/* Glassmorphism Card */}
-              <div className="splash-logo-card relative w-24 h-24 rounded-2xl border border-blue-500/20 backdrop-blur-md bg-opacity-20 flex items-center justify-center shadow-[0_20px_60px_rgba(10,13,22,0.6)]">
-                <div className="absolute inset-0 rounded-2xl bg-[#0c101b] opacity-[0.9] z-0" />
-                
-                <svg viewBox="0 0 100 100" className="w-16 h-16 relative z-10 -translate-y-1">
-                  <defs>
-                    <linearGradient id="logoBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#38bdf8" stopOpacity="1" />
-                      <stop offset="60%" stopColor="#2563eb" stopOpacity="1" />
-                      <stop offset="100%" stopColor="#1d4ed8" stopOpacity="1" />
-                    </linearGradient>
-                    <filter id="logoGlow" x="-20%" y="-20%" width="140%" height="140%">
-                      <feGaussianBlur stdDeviation="3.5" result="blur" />
-                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                    </filter>
-                  </defs>
-                  
-                  {/* Thick-tailed Detached Bracket & Cursor */}
-                  <g filter="url(#logoGlow)" opacity="0.6">
-                    <path d="M49,23 L44,23 C38.5,23 34,27.5 34,33 L34,42 C34,46.4 26,46.4 26,50 C26,53.6 34,53.6 34,58 L34,67 C34,72.5 38.5,77 44,77 L49,77" fill="none" stroke="#2563eb" strokeWidth="12" strokeLinecap="butt" strokeLinejoin="round" />
-                    <path d="M80,29 L50,39 L56,45 L42,59 L50,67 L64,53 L70,59 Z" fill="#2563eb" />
-                  </g>
-                  
-                  <path d="M49,23 L44,23 C38.5,23 34,27.5 34,33 L34,42 C34,46.4 26,46.4 26,50 C26,53.6 34,53.6 34,58 L34,67 C34,72.5 38.5,77 44,77 L49,77" fill="none" stroke="url(#logoBlueGrad)" strokeWidth="12" strokeLinecap="butt" strokeLinejoin="round" />
-                  <path d="M80,29 L50,39 L56,45 L42,59 L50,67 L64,53 L70,59 Z" fill="url(#logoBlueGrad)" />
-                </svg>
-              </div>
+              <img 
+                src="/logo.png" 
+                className="splash-logo-card w-24 h-24 relative z-10 object-contain" 
+                alt="Nexora Logo" 
+              />
             </div>
           </div>
 
@@ -855,7 +841,9 @@ function App() {
     };
 
     return (
-      <div className="h-screen w-screen text-zinc-100 flex flex-col justify-between items-center font-sans p-8 select-none relative workspace-setup-bg overflow-hidden">
+      <div className="relative h-screen w-screen bg-bg-primary overflow-hidden text-zinc-100">
+        <TitleBar />
+        <div className="h-full w-full text-zinc-100 flex flex-col justify-between items-center font-sans pt-[42px] px-8 pb-8 select-none workspace-setup-bg overflow-hidden">
         {/* Glow ambient background circles */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
           <div 
@@ -950,7 +938,7 @@ function App() {
                     boxShadow: '0 0 15px rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.12)'
                   }}
                 >
-                  AI Orchestrator
+                  Nexora Team
                 </span>
               </div>
             </div>
@@ -1311,29 +1299,32 @@ function App() {
         <SettingsModalBoundary>
           <SettingsModal />
         </SettingsModalBoundary>
+        </div>
       </div>
     );
   }
 
   return (
-    <div 
-      ref={appRef}
-      style={{ 
-        '--sidebar-width': `${sidebarWidth}px`, 
-        '--top-panel-height': `${topPanelHeight}px`,
-        '--browser-panel-width': `${browserPanelWidth}px`,
-        '--review-panel-width': `${reviewPanelWidth}px`,
-        '--pane-spacing': `${paneSpacing}px`
-      } as React.CSSProperties}
-      className={`h-screen w-screen text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-black ${(isSidebarDragging || isHeightDragging || isSwarmDragging || isBrowserDragging || isReviewDragging) ? "is-dragging" : ""}`}
-    >
+    <div className="relative h-screen w-screen bg-bg-primary overflow-hidden">
+      <TitleBar />
+      <div 
+        ref={appRef}
+        style={{ 
+          '--sidebar-width': `${sidebarWidth}px`, 
+          '--top-panel-height': `${topPanelHeight}px`,
+          '--browser-panel-width': `${browserPanelWidth}px`,
+          '--review-panel-width': `${reviewPanelWidth}px`,
+          '--pane-spacing': `${paneSpacing}px`
+        } as React.CSSProperties}
+        className={`h-full w-full pt-[34px] text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-bg-primary ${(isSidebarDragging || isHeightDragging || isTeamDragging || isBrowserDragging || isReviewDragging) ? "is-dragging" : ""}`}
+      >
       {settings?.appearance?.workspace?.showActivityBar !== false && <ActivityBar />}
 
-      {/* Main content column */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* 2. Main Dashboard Layout splits */}
-        <div 
-          className="flex-1 flex overflow-hidden pt-2.5 px-2 pb-2 relative"
+        {/* Main content column */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* 2. Main Dashboard Layout splits */}
+          <div 
+            className="flex-1 flex overflow-hidden p-0 relative"
           style={{ 
             gap: 'var(--pane-spacing)',
             flexDirection: settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'row-reverse' : 'row'
@@ -1351,7 +1342,7 @@ function App() {
           className={`flex flex-col gap-1 overflow-hidden ${
             isAgentPanelPinned 
               ? (settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'flex-shrink-0 relative ml-1' : 'flex-shrink-0 relative mr-1') 
-              : `absolute top-2.5 bottom-2 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'right-2' : 'left-2'}`
+              : `absolute top-0 bottom-0 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'right-2' : 'left-2'}`
           } ${
             isSidebarDragging ? '' : 'transition-[width,opacity,margin,transform] duration-300 ease-out'
           } ${
@@ -1398,7 +1389,7 @@ function App() {
         {isSidebarVisible && !isAgentPanelPinned && (
           <div
             onMouseDown={startSidebarResize}
-            className="absolute top-2.5 bottom-2 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
+            className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
             style={settings?.appearance?.workspace?.sidebarPosition === 'right' ? { right: 'calc(var(--sidebar-width) + 8px)' } : { left: 'calc(var(--sidebar-width) + 8px)' }}
           >
             <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
@@ -1585,7 +1576,7 @@ function App() {
             <div
               onMouseDown={startHeightResize}
               onDoubleClick={() => setTaskCenterVisible(false)}
-              className={`${isTaskPanelPinned ? 'relative w-full' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
+              className={`${isTaskPanelPinned ? 'relative w-full z-20' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
               style={isTaskPanelPinned ? {} : { 
                 top: 'var(--top-panel-height)',
                 left: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition !== 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
@@ -1602,29 +1593,19 @@ function App() {
             </div>
           )}
 
-          {/* Swarm Execution Center Panel */}
-          {isSwarmPanelVisible && (
-            <>
-              <div
-                onMouseDown={(e) => { e.preventDefault(); setIsSwarmDragging(true); }}
-                className="h-2 bg-transparent cursor-row-resize flex-shrink-0 flex items-center justify-center group relative select-none"
-              >
-                <div className="h-[1px] w-full bg-border-glass group-hover:bg-accent-primary/50 group-active:bg-accent-primary transition-colors duration-150" />
-                <div className="absolute left-1/2 -translate-x-1/2 h-1.5 w-6 rounded glass-panel group-hover:border-accent-primary/50 transition-all duration-150 flex justify-center items-center gap-[2px] px-1">
-                  <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                  <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                  <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                </div>
-              </div>
-              <div
-                className="flex-shrink-0 overflow-hidden"
-                style={{ height: `${swarmPanelHeight}px` }}
-              >
-                <React.Suspense fallback={<div className="h-full flex items-center justify-center text-zinc-500 font-mono text-xs">Loading Swarm Control Center...</div>}>
-                  <SwarmView />
+
+
+          {/* Nexora Team Dashboard Panel */}
+          {isTeamPanelVisible && (
+            <div
+              className="absolute top-2.5 bottom-8 left-2 right-2 z-30 flex flex-col bg-[#0D0D10]/98 border border-[#1B1B22] rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <React.Suspense fallback={<div className="h-full flex items-center justify-center text-zinc-500 font-mono text-xs">Loading Nexora Team Dashboard...</div>}>
+                  <TeamDashboard />
                 </React.Suspense>
               </div>
-            </>
+            </div>
           )}
 
           {/* Bottom Panel (Terminal Workspace / Web Browser split) */}
@@ -1821,6 +1802,7 @@ function App() {
         <SettingsModal />
       </SettingsModalBoundary>
       <AgentInspector />
+      </div>
     </div>
   );
 }

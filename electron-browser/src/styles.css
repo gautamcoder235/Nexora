@@ -1574,3 +1574,90 @@ input:checked + .slider-small:before {
 .port-close-btn:hover {
   color: #fff;
 }
+
+/* Custom App Title Bar */
+.custom-titlebar {
+  height: 32px;
+  width: 100%;
+  background: #0c0c0e;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+  position: relative;
+  z-index: 999999;
+}
+
+.titlebar-drag-region {
+  position: absolute;
+  inset: 0;
+  -webkit-app-region: drag;
+  z-index: 0;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.titlebar-logo {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.titlebar-title {
+  font-family: var(--font-family), sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: linear-gradient(to right, #ffffff, #e4e4e7, #38bdf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  z-index: 1;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 44px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  cursor: default;
+  outline: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.titlebar-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.titlebar-btn-close:hover {
+  background: #e81123 !important;
+  color: #fff !important;
+}
+
+body {
+  margin-top: 0;
+}

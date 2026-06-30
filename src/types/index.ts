@@ -75,6 +75,7 @@ export interface TerminalSession {
   agentId?: string; // Associated agent (if any)
   title: string;
   status: TerminalStatus;
+  executionState?: 'running' | 'idle' | 'completed' | 'failed' | 'aborted';
   cols: number;
   rows: number;
   history?: string; // Only used for disk serialization, NOT kept in React state
@@ -257,7 +258,52 @@ export interface AppSettings {
   terminalScrollbackLimit?: number;
 }
 
-export const getDefaultCustomCLIs = (): CustomCLI[] => [];
+export const getDefaultCustomCLIs = (): CustomCLI[] => {
+  const isWindows = typeof window !== 'undefined' && (
+    window.navigator.userAgent.toLowerCase().includes('win') ||
+    window.navigator.platform.toLowerCase().includes('win')
+  );
+
+  return [
+    {
+      id: "agy",
+      name: "Antigravity CLI (agy)",
+      command: "agy",
+      args: [],
+      rolePreset: "custom",
+      group: "",
+      projectId: "",
+      capabilities: { coding: true, review: true, testing: true, planning: true },
+      startupInstructions: [],
+      checkCmd: "agy",
+      installCommand: isWindows 
+        ? "powershell -Command \"irm https://antigravity.google/cli/install.ps1 | iex\""
+        : "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+    },
+    {
+      id: "efef7b7d-8330-4421-9780-8efeaeba8c14",
+      name: "ollama",
+      command: "ollama",
+      args: [],
+      rolePreset: "custom",
+      group: "",
+      projectId: "",
+      capabilities: { coding: true, testing: false, review: false, planning: false },
+      startupInstructions: []
+    },
+    {
+      id: "2a908798-b8bc-4024-a4cb-b74ce816e286",
+      name: "cline",
+      command: "cline",
+      args: [],
+      rolePreset: "custom",
+      group: "",
+      projectId: "",
+      capabilities: { coding: true, testing: false, review: false, planning: false },
+      startupInstructions: []
+    }
+  ];
+};
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 2,

@@ -1,5 +1,5 @@
 import { AppearanceSettings, ThemeSettings, TypographySettings, WorkspaceAppearanceSettings, TerminalAppearanceSettings, AgentAppearanceSettings, AccessibilitySettings, WorkspaceLayoutSettings, AdvancedAppearanceSettings } from '../types';
-import { ThemeDefinition, TerminalThemeDefinition, OLEDTheme, MidnightTheme, SlateTheme, GraphiteTheme, LightTheme } from './ThemeDefinitions';
+import { ThemeDefinition, TerminalThemeDefinition, OLEDTheme, MidnightTheme, SlateTheme, GraphiteTheme } from './ThemeDefinitions';
 import { ColorTokens, TypographyTokens } from '../styles/theme-tokens';
 
 export function validateTheme(theme: ThemeDefinition): { valid: boolean; warnings: string[]; errors: string[] } {
@@ -116,7 +116,6 @@ export class ThemeManager {
     if (nameLower.includes('oled')) return OLEDTheme;
     if (nameLower.includes('slate')) return SlateTheme;
     if (nameLower.includes('graphite')) return GraphiteTheme;
-    if (nameLower.includes('light')) return LightTheme;
     return MidnightTheme;
   }
 
@@ -142,9 +141,11 @@ export class ThemeManager {
 
     // 1. Resolve Theme Definition
     let themeName = settings.theme?.theme || 'Midnight';
-    if (settings.theme?.mode === 'system') {
-      const isSystemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      themeName = isSystemDark ? 'Midnight' : 'Light';
+    if (themeName.toLowerCase() === 'light') {
+      themeName = 'Midnight';
+    }
+    if (settings.theme?.mode === 'system' || settings.theme?.mode === 'light') {
+      themeName = 'Midnight';
     }
     const theme = this.getTheme(themeName);
     this.activeTheme = theme;

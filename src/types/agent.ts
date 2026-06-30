@@ -67,6 +67,8 @@ export interface AgentMessage {
   id: string;
   /** Who sent this message */
   sender: 'user' | 'agent' | 'system';
+  /** Optional name of the sender */
+  senderName?: string;
   /** Message content (Markdown) */
   content: string;
   /** Timestamp */

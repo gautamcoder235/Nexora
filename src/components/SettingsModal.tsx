@@ -94,7 +94,7 @@ const searchableOptions: SearchableOption[] = [
   // Appearance -> Theme
   { id: 'theme-select', name: 'Visual Theme', description: 'Base application color palette theme', category: 'theme', breadcrumbs: ['Appearance', 'Themes & Presets', 'Theme selection'] },
   { id: 'theme-presets', name: 'One-Click Presets', description: 'Preconfigured combinations of visual settings (Cursor, Warp, etc.)', category: 'theme', breadcrumbs: ['Appearance', 'Themes & Presets', 'Preset configs'] },
-  { id: 'theme-mode', name: 'Theme Mode', description: 'System, Dark, or Light interface modes', category: 'theme', breadcrumbs: ['Appearance', 'Themes & Presets', 'System/Dark/Light Mode'] },
+  { id: 'theme-mode', name: 'Theme Mode', description: 'System or Dark interface modes', category: 'theme', breadcrumbs: ['Appearance', 'Themes & Presets', 'System/Dark Mode'] },
   { id: 'theme-transparency', name: 'Background Opacity / Transparency', description: 'Glassmorphic panel transparency slider', category: 'theme', breadcrumbs: ['Appearance', 'Themes & Presets', 'Transparency'] },
   { id: 'theme-blur', name: 'Glass Blur Level', description: 'Backdrop blur depth for glassmorphic elements', category: 'theme', breadcrumbs: ['Appearance', 'Themes & Presets', 'Glass Blur'] },
   { id: 'theme-animations', name: 'Animations Level', description: 'Interface transition speed and effects depth', category: 'theme', breadcrumbs: ['Appearance', 'Themes & Presets', 'Interface Transitions'] },
@@ -507,8 +507,7 @@ export const SettingsModal: React.FC = () => {
     { id: 'OLED', name: 'OLED Black', bg: '#000000', cardBg: '#050505', text: '#ffffff', accent: '#f59e0b' },
     { id: 'Midnight', name: 'Midnight Blue', bg: '#060609', cardBg: '#0b0c10', text: '#f4f4f5', accent: '#f59e0b' },
     { id: 'Slate', name: 'Slate Slate', bg: '#0f172a', cardBg: '#1e293b', text: '#f1f5f9', accent: '#38bdf8' },
-    { id: 'Graphite', name: 'Graphite Stone', bg: '#18181b', cardBg: '#27272a', text: '#f4f4f5', accent: '#f4f4f5' },
-    { id: 'Light', name: 'Light Minimal', bg: '#f4f4f5', cardBg: '#ffffff', text: '#18181b', accent: '#2563eb' }
+    { id: 'Graphite', name: 'Graphite Stone', bg: '#18181b', cardBg: '#27272a', text: '#f4f4f5', accent: '#f4f4f5' }
   ];
 
   // Helper for custom live preview settings
@@ -1262,7 +1261,6 @@ export const SettingsModal: React.FC = () => {
                         className="glass-input w-full"
                       >
                         <option value="dark" className="bg-[#0f0f15]">Dark Mode</option>
-                        <option value="light" className="bg-[#0f0f15]">Light Mode</option>
                         <option value="system" className="bg-[#0f0f15]">System Default</option>
                       </select>
                     </div>

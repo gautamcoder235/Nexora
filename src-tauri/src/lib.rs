@@ -3,24 +3,26 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use tauri::{
-    AppHandle, Emitter, Manager,
-};
+use tauri::{AppHandle, Emitter, Manager};
+use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
+use serde::Serialize;
+use std::time::{Duration, Instant};
+use sysinfo::System;
 
 pub mod swarm_agents;
 pub mod swarm_changeset;
 pub mod swarm_db;
 pub mod swarm_events;
+pub mod swarm_isolation;
 pub mod swarm_lifecycle;
 pub mod swarm_merge;
 pub mod swarm_ownership;
 pub mod swarm_queries;
 pub mod swarm_validation;
 pub mod swarm_worktrees;
-use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
-use serde::Serialize;
-use std::time::{Duration, Instant};
-use sysinfo::System;
+pub mod team;
+pub mod comms_watcher;
+pub mod drivers;
 
 #[derive(Serialize, Clone, Default)]
 pub struct BackendMetrics {
@@ -34,6 +36,19 @@ pub struct BackendMetrics {
 
 lazy_static::lazy_static! {
     static ref TERMINAL_METRICS: Mutex<HashMap<String, BackendMetrics>> = Mutex::new(HashMap::new());
+    static ref PTY_LAST_OUTPUT: Mutex<HashMap<String, (Instant, Option<String>, Option<String>)>> = Mutex::new(HashMap::new());
+}
+
+pub fn update_pty_heartbeat(session_id: &str, project_path: Option<String>, task_id: Option<String>) {
+    if let Ok(mut map) = PTY_LAST_OUTPUT.lock() {
+        map.insert(session_id.to_string(), (Instant::now(), project_path, task_id));
+    }
+}
+
+pub fn remove_pty_heartbeat(session_id: &str) {
+    if let Ok(mut map) = PTY_LAST_OUTPUT.lock() {
+        map.remove(session_id);
+    }
 }
 
 // ==========================================
@@ -63,6 +78,14 @@ static PTY_SESSIONS: OnceLock<Mutex<HashMap<String, PtySession>>> = OnceLock::ne
 
 fn get_sessions() -> &'static Mutex<HashMap<String, PtySession>> {
     PTY_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn get_active_pty_count() -> usize {
+    if let Ok(guard) = get_sessions().lock() {
+        guard.len()
+    } else {
+        0
+    }
 }
 
 // Global thread-safe terminal visibility registry
@@ -111,6 +134,23 @@ fn spawn_pty(
     env: Option<HashMap<String, String>>,
     rows: Option<u16>,
     cols: Option<u16>,
+    project_path: Option<String>,
+    task_id: Option<String>,
+) -> Result<Option<u32>, String> {
+    spawn_pty_internal(app, session_id, command, args, cwd, env, rows, cols, project_path, task_id)
+}
+
+pub fn spawn_pty_internal(
+    app: AppHandle,
+    session_id: String,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+    rows: Option<u16>,
+    cols: Option<u16>,
+    project_path: Option<String>,
+    task_id: Option<String>,
 ) -> Result<Option<u32>, String> {
     {
         let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
@@ -128,6 +168,8 @@ fn spawn_pty(
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
+    let mut zsh_temp_dir: Option<PathBuf> = None;
+
     // On Windows, CLI commands like `npx`, `aider`, `gemini`, etc., are script wrappers (.cmd, .bat, .ps1).
     // Spawning them directly via CreateProcess yields OS error 193 ("%1 is not a valid Win32 application").
     // We wrap custom commands on Windows inside `cmd.exe /c` so the shell handles script resolution.
@@ -139,12 +181,69 @@ fn spawn_pty(
             }
             ("cmd.exe".to_string(), wrapped_args)
         } else {
-            ("powershell.exe".to_string(), Vec::new())
+            // Interactive PowerShell shell with prompt hook
+            let ps_script = r#"function prompt { $val = if ($global:LastExitCode -ne $null) { $global:LastExitCode } else { 0 }; [Console]::Write("`e]133;D;$val`a"); [Console]::Write("`e]133;A`a"); $orig = "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> "; [Console]::Write("`e]133;B`a"); return $orig }"#;
+            ("powershell.exe".to_string(), vec!["-NoExit".to_string(), "-Command".to_string(), ps_script.to_string()])
         }
     } else {
-        let cmd = command.unwrap_or_else(|| "/bin/bash".to_string());
-        let a = args.unwrap_or_default();
-        (cmd, a)
+        if let Some(cmd) = command {
+            (cmd, args.unwrap_or_default())
+        } else {
+            // Interactive Bash or Zsh shell with OSC 133 semantic zones
+            let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+            if user_shell.contains("zsh") {
+                let zsh_script = r#"
+if [ -f ~/.zshrc ]; then
+    source ~/.zshrc
+fi
+__nexora_precmd() {
+    local EXIT="$?"
+    printf "\x1b]133;D;%s\x07" "$EXIT"
+    printf "\x1b]133;A\x07"
+}
+__nexora_preexec() {
+    printf "\x1b]133;B\x07"
+    printf "\x1b]133;C\x07"
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd __nexora_precmd
+add-zsh-hook preexec __nexora_preexec
+"#;
+                let temp_dir = std::env::temp_dir().join(format!("nexora_zsh_{}", session_id));
+                let _ = std::fs::create_dir_all(&temp_dir);
+                let zshrc_path = temp_dir.join(".zshrc");
+                let _ = std::fs::write(&zshrc_path, zsh_script);
+                zsh_temp_dir = Some(temp_dir);
+                (user_shell, Vec::new())
+            } else {
+                let bash_script = r#"
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+fi
+__nexora_prompt_command() {
+    local EXIT="$?"
+    printf "\x1b]133;D;%s\x07" "$EXIT"
+    printf "\x1b]133;A\x07"
+}
+if [[ -z "$PROMPT_COMMAND" ]]; then
+    PROMPT_COMMAND="__nexora_prompt_command"
+else
+    PROMPT_COMMAND="__nexora_prompt_command; $PROMPT_COMMAND"
+fi
+__nexora_preexec() {
+    if [[ "$BASH_COMMAND" == "__nexora_prompt_command"* ]]; then
+        return
+    fi
+    printf "\x1b]133;B\x07"
+    printf "\x1b]133;C\x07"
+}
+trap '__nexora_preexec' DEBUG
+"#;
+                let temp_file = std::env::temp_dir().join(format!("nexora_bash_{}", session_id));
+                let _ = std::fs::write(&temp_file, bash_script);
+                (user_shell, vec!["--init-file".to_string(), temp_file.to_string_lossy().to_string()])
+            }
+        }
     };
 
     let mut cmd_builder = CommandBuilder::new(&shell_cmd);
@@ -162,6 +261,10 @@ fn spawn_pty(
         for (k, v) in env_map {
             cmd_builder.env(&k, &v);
         }
+    }
+
+    if let Some(ref z_dir) = zsh_temp_dir {
+        cmd_builder.env("ZDOTDIR", z_dir.to_string_lossy().as_ref());
     }
 
     // Spawn the shell process inside slave PTY
@@ -183,6 +286,8 @@ fn spawn_pty(
 
     // 2. PTY Reader Thread (Blocking)
     let thread_session_id = session_id_clone.clone();
+    let thread_project_path = project_path.clone();
+    let thread_task_id = task_id.clone();
     std::thread::spawn(move || {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut buffer = [0u8; 65536];
@@ -192,6 +297,27 @@ fn spawn_pty(
                 match reader.read(&mut buffer) {
                     Ok(0) => break, // EOF, PTY closed
                     Ok(n) => {
+                        // Hook up PTY output logs directly to logs/builder.log
+                        if let (Some(ref p_path), Some(ref t_id)) = (&thread_project_path, &thread_task_id) {
+                            let log_file_path = std::path::Path::new(p_path)
+                                .join(".nexora")
+                                .join("tasks")
+                                .join(t_id)
+                                .join("logs")
+                                .join("builder.log");
+                            if let Ok(mut file) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(log_file_path)
+                            {
+                                use std::io::Write;
+                                let _ = file.write_all(&buffer[..n]);
+                            }
+                        }
+
+                        // Update PTY Heartbeat
+                        update_pty_heartbeat(&thread_session_id, thread_project_path.clone(), thread_task_id.clone());
+
                         // Try to send immediately. If full, backpressure activated!
                         let data = buffer[..n].to_vec();
                         if let Err(tokio::sync::mpsc::error::TrySendError::Full(returned_data)) =
@@ -446,6 +572,57 @@ fn set_terminal_visibility(session_id: String, visibility: String) {
 }
 
 #[tauri::command]
+fn get_pty_process_info(session_id: String) -> Result<serde_json::Value, String> {
+    let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
+    let session = match sessions.get(&session_id) {
+        Some(s) => s,
+        None => return Ok(serde_json::json!({
+            "has_active_child": false,
+            "shell_pid": 0,
+            "children": []
+        })),
+    };
+
+    let shell_pid = match session.child.process_id() {
+        Some(pid) => pid,
+        None => return Ok(serde_json::json!({
+            "has_active_child": false,
+            "shell_pid": 0,
+            "children": []
+        })),
+    };
+
+    let mut sys = sysinfo::System::new();
+    sys.refresh_all();
+
+    let mut children = Vec::new();
+    let mut has_active_child = false;
+
+    let sys_shell_pid = sysinfo::Pid::from(shell_pid as usize);
+
+    for (pid, process) in sys.processes() {
+        if let Some(parent_pid) = process.parent() {
+            if parent_pid == sys_shell_pid {
+                let pid_str = pid.to_string();
+                let pid_u32 = pid_str.parse::<u32>().unwrap_or(0);
+                
+                has_active_child = true;
+                children.push(serde_json::json!({
+                    "pid": pid_u32,
+                    "name": process.name().to_string_lossy().to_string(),
+                }));
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "has_active_child": has_active_child,
+        "shell_pid": shell_pid,
+        "children": children
+    }))
+}
+
+#[tauri::command]
 fn write_pty(session_id: String, data: String) -> Result<(), String> {
     let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(session) = sessions.get_mut(&session_id) {
@@ -493,9 +670,16 @@ fn resize_pty(session_id: String, mut rows: u16, mut cols: u16) -> Result<(), St
 
 #[tauri::command]
 fn kill_pty(session_id: String) -> Result<(), String> {
+    remove_pty_heartbeat(&session_id);
     let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(mut session) = sessions.remove(&session_id) {
         let _ = session.child.kill();
+        
+        let temp_dir_zsh = std::env::temp_dir().join(format!("nexora_zsh_{}", session_id));
+        let _ = std::fs::remove_dir_all(temp_dir_zsh);
+        let temp_file_bash = std::env::temp_dir().join(format!("nexora_bash_{}", session_id));
+        let _ = std::fs::remove_file(temp_file_bash);
+        
         Ok(())
     } else {
         Err(format!("PTY Session not found for ID: {}", session_id))
@@ -505,8 +689,14 @@ fn kill_pty(session_id: String) -> Result<(), String> {
 #[tauri::command]
 fn kill_all_ptys() -> Result<(), String> {
     let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
-    for (_, mut session) in sessions.drain() {
+    for (session_id, mut session) in sessions.drain() {
         let _ = session.child.kill();
+        remove_pty_heartbeat(&session_id);
+        
+        let temp_dir_zsh = std::env::temp_dir().join(format!("nexora_zsh_{}", session_id));
+        let _ = std::fs::remove_dir_all(temp_dir_zsh);
+        let temp_file_bash = std::env::temp_dir().join(format!("nexora_bash_{}", session_id));
+        let _ = std::fs::remove_file(temp_file_bash);
     }
     Ok(())
 }
@@ -1147,6 +1337,67 @@ fn exit_app(app_handle: AppHandle) {
 }
 
 
+pub fn start_heartbeat_watchdog(app_handle: AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(15));
+            let mut stalled_sessions = Vec::new();
+            {
+                if let Ok(map) = PTY_LAST_OUTPUT.lock() {
+                    let now = Instant::now();
+                    for (session_id, (last_time, project_path, task_id)) in map.iter() {
+                        if now.duration_since(*last_time).as_secs() >= 600 {
+                            stalled_sessions.push((session_id.clone(), project_path.clone(), task_id.clone()));
+                        }
+                    }
+                }
+            }
+
+            for (session_id, project_path, task_id) in stalled_sessions {
+                println!("[Watchdog] Suspected stall detected in PTY session: {}", session_id);
+                if let (Some(p_path), Some(t_id)) = (project_path, task_id) {
+                    let _ = crate::team::task_types::update_task_state(&p_path, &t_id, crate::team::task_types::TaskState::Staled);
+                    let _ = app_handle.emit("swarm-event", serde_json::json!({
+                        "type": "TaskStatusChanged",
+                        "payload": {
+                            "task_id": t_id.clone(),
+                            "status": "STALED"
+                        }
+                    }));
+                }
+            }
+        }
+    });
+}
+
+pub fn start_scheduler_watchdog(app_handle: AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(10));
+            let mut project_dir = String::new();
+            if let Some(db_state) = app_handle.try_state::<crate::swarm_db::DbState>() {
+                if let Ok(guard) = db_state.0.lock() {
+                    if let Some(ref conn) = *guard {
+                        let stmt = conn.prepare("SELECT root_path FROM repositories ORDER BY last_opened_at DESC LIMIT 1").ok();
+                        if let Some(mut s) = stmt {
+                            if let Some(path) = s.query_row([], |row| row.get::<_, String>(0)).ok() {
+                                project_dir = path;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !project_dir.is_empty() {
+                if let Err(e) = crate::team::scheduler::run_scheduler_tick(&app_handle, &project_dir) {
+                    eprintln!("[Scheduler] Tick error: {}", e);
+                }
+            }
+        }
+    });
+}
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     std::env::set_var(
@@ -1155,6 +1406,8 @@ pub fn run() {
     );
     let app = tauri::Builder::default()
         .manage(BrowserStateWrapper(Mutex::new(BrowserState::default())))
+        .manage(team::bus::CommandBus::new())
+        .manage(team::bus::EventBus::new())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Initialize Swarm SQLite Database
@@ -1164,11 +1417,46 @@ pub fn run() {
                     .manage(swarm_db::DbState(std::sync::Mutex::new(None)));
             }
 
+            // Initialize Team SQLite Database
+            let mut project_dir = String::new();
+            if let Some(db_state) = app.handle().try_state::<swarm_db::DbState>() {
+                if let Ok(guard) = db_state.0.lock() {
+                    if let Some(ref conn) = *guard {
+                        if let Err(e) = team::init_team_db(conn) {
+                            eprintln!("Failed to initialize team db: {}", e);
+                        }
+
+                        // Query the last opened project directory
+                        let stmt = conn.prepare("SELECT root_path FROM repositories ORDER BY last_opened_at DESC LIMIT 1").ok();
+                        if let Some(mut s) = stmt {
+                            if let Some(path) = s.query_row([], |row| row.get::<_, String>(0)).ok() {
+                                project_dir = path;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !project_dir.is_empty() {
+                if let Err(e) = team::recovery_engine::run_startup_recovery(app.handle(), &project_dir) {
+                    eprintln!("Failed to run startup recovery: {}", e);
+                }
+            }
+
             // Start Stalled Agent Watchdog
             swarm_lifecycle::start_agent_watchdog(app.handle().clone());
 
+            // Start PTY Heartbeat Stall Watchdog
+            start_heartbeat_watchdog(app.handle().clone());
+
+            // Start Scheduler Watchdog
+            start_scheduler_watchdog(app.handle().clone());
+
             // Start Resource Lock Watchdog
             swarm_lifecycle::start_lock_watchdog(app.handle().clone());
+
+            // Start Team Lock Watchdog
+            team::watcher::start_team_lock_watchdog(app.handle().clone());
 
             Ok(())
         })
@@ -1202,6 +1490,7 @@ pub fn run() {
             init_project_memory,
             list_directory,
             set_terminal_visibility,
+            get_pty_process_info,
             get_terminal_metrics,
             get_system_metrics,
             get_git_branch,
@@ -1252,7 +1541,58 @@ pub fn run() {
             swarm_changeset::get_all_changesets,
             swarm_changeset::apply_changeset_transaction,
             swarm_changeset::rollback_changeset,
-            swarm_changeset::validate_changeset_shadow
+            swarm_changeset::validate_changeset_shadow,
+            team::commands::get_team_nodes,
+            team::commands::get_team_edges,
+            team::commands::get_team_tasks,
+            team::commands::get_team_messages,
+            team::commands::get_agent_metrics,
+            team::commands::pause_agent,
+            team::commands::resume_agent,
+            team::commands::kill_agent,
+            team::commands::reassign_task,
+            team::commands::force_validation,
+            team::commands::force_review,
+            team::commands::rollback_task,
+            team::commands::release_team_lock,
+            team::commands::spawn_agent,
+            team::commands::send_directive,
+            comms_watcher::init_agent_comms,
+            comms_watcher::start_agent_comms_watcher,
+            comms_watcher::stop_agent_comms_watcher,
+            comms_watcher::write_agent_inbox,
+            comms_watcher::clear_agent_comms,
+            comms_watcher::read_agent_comms,
+            swarm_isolation::detect_project_type,
+            team::resource_manager::get_resource_snapshot,
+            team::resource_manager::verify_resource_availability,
+            team::budget_engine::get_budget,
+            team::budget_engine::update_budget_limit,
+            team::locks::acquire_resource_lock,
+            team::locks::release_resource_lock,
+            team::locks::get_active_resource_locks,
+            team::locks::release_all_locks_for_owner,
+            team::project_manager::get_project_state,
+            team::project_manager::initialize_project,
+            team::bus::send_swarm_command,
+            team::dag::initialize_default_templates,
+            team::dag::get_templates,
+            team::dag::expand_template,
+            team::dag::sort_and_validate_tasks,
+            team::artifacts::get_swarm_artifacts,
+            team::artifacts::promote_swarm_artifact,
+            team::artifacts::add_swarm_artifact,
+            team::indexer::index_workspace,
+            team::indexer::get_symbols,
+            team::indexer::get_repo_map,
+            drivers::resolve_driver_launch,
+            drivers::resolve_driver_resume,
+            drivers::get_registered_drivers,
+            drivers::discover_session_from_line,
+            drivers::has_session_record,
+            drivers::cleanup_agent_state,
+            drivers::register_terminal_pid,
+            drivers::update_session_heartbeat
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

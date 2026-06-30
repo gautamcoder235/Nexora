@@ -14,7 +14,7 @@ export const agentTemplates: AgentTemplate[] = [
     description: "Claude Code (Coding/Planning) + Gemini CLI (Review/Testing)",
     agents: [
       {
-        name: "Claude UI Developer",
+        name: "Claude Code CLI",
         groupId: "Frontend Team",
         cliCommand: "npx",
         arguments: ["-y", "@claudecode/cli"],
@@ -24,7 +24,7 @@ export const agentTemplates: AgentTemplate[] = [
         capabilities: { coding: true, review: false, testing: false, planning: true }
       },
       {
-        name: "Gemini Frontend QA",
+        name: "Gemini CLI",
         groupId: "Frontend Team",
         cliCommand: "gemini",
         arguments: [],
@@ -41,7 +41,7 @@ export const agentTemplates: AgentTemplate[] = [
     description: "Aider (Coding/Review) + Codex CLI (Unit Testing)",
     agents: [
       {
-        name: "Aider DB Architect",
+        name: "Aider Coding Assistant",
         groupId: "Backend Team",
         cliCommand: "aider",
         arguments: ["--auto-commit"],
@@ -51,7 +51,7 @@ export const agentTemplates: AgentTemplate[] = [
         capabilities: { coding: true, review: true, testing: false, planning: false }
       },
       {
-        name: "Codex Backend QA",
+        name: "Codex CLI",
         groupId: "Backend Team",
         cliCommand: "codex",
         arguments: ["--", "--test-first"],
@@ -68,7 +68,7 @@ export const agentTemplates: AgentTemplate[] = [
     description: "Claude Code (Planning/Code) + Aider (Code/Review) + Gemini CLI (Review)",
     agents: [
       {
-        name: "Claude Architect",
+        name: "Claude Code CLI",
         groupId: "Full Stack Team",
         cliCommand: "npx",
         arguments: ["-y", "@claudecode/cli"],
@@ -78,7 +78,7 @@ export const agentTemplates: AgentTemplate[] = [
         capabilities: { coding: true, review: false, testing: false, planning: true }
       },
       {
-        name: "Aider Developer",
+        name: "Aider Coding Assistant",
         groupId: "Full Stack Team",
         cliCommand: "aider",
         arguments: ["--auto-commit"],
@@ -88,7 +88,7 @@ export const agentTemplates: AgentTemplate[] = [
         capabilities: { coding: true, review: true, testing: false, planning: false }
       },
       {
-        name: "Gemini Quality Inspector",
+        name: "Gemini CLI",
         groupId: "Full Stack Team",
         cliCommand: "gemini",
         arguments: [],
@@ -105,7 +105,7 @@ export const agentTemplates: AgentTemplate[] = [
     description: "Codex CLI (Testing) + Gemini CLI (Quality Review/Testing)",
     agents: [
       {
-        name: "Codex Test Writer",
+        name: "Codex CLI",
         groupId: "Testing Team",
         cliCommand: "codex",
         arguments: ["--", "--test-first"],
@@ -115,7 +115,7 @@ export const agentTemplates: AgentTemplate[] = [
         capabilities: { coding: true, review: false, testing: true, planning: false }
       },
       {
-        name: "Gemini Tester",
+        name: "Gemini CLI",
         groupId: "Testing Team",
         cliCommand: "gemini",
         arguments: [],

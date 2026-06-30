@@ -5,6 +5,7 @@
  * Key input is forwarded directly to the backend PTY and output is rendered in real-time.
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { Image as ImageIcon } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Terminal } from '@xterm/xterm';
@@ -24,9 +25,10 @@ interface TerminalPaneProps {
   isFocused: boolean;
   isAnimating: boolean;
   refreshKey?: number;
+  isDragOver?: boolean;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey, isDragOver = false }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -310,7 +312,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     // Restore history safely from standalone Buffer Manager
     const bufferManager = TerminalBufferManager.getInstance();
     const historyPayload = bufferManager.getSnapshot(paneId);
-    if (historyPayload && termSession?.status !== 'reconnecting') {
+    let lastWrittenSequenceId = bufferManager.getLastSequenceId(paneId);
+    if (historyPayload) {
       term.write(historyPayload);
     }
 
@@ -325,7 +328,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         const shortcuts = { ...DEFAULT_APP_SETTINGS.shortcuts, ...(currentSettings?.shortcuts || {}) };
         
         const checkShortcut = (shortcutString: string | undefined) => {
-          if (!shortcutString) return false;
+          if (!shortcutString || shortcutString.toLowerCase() === 'none') return false;
           const parts = shortcutString.toLowerCase().split('+').map(s => s.trim());
           const key = parts[parts.length - 1];
           const needsCtrl = parts.includes('ctrl') || parts.includes('cmd');
@@ -338,7 +341,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
           if (needsAlt !== arg.altKey) return false;
           
           if (key === ',') return arg.key === ',';
-          return arg.key.toLowerCase() === key || arg.code.toLowerCase() === 'key' + key;
+          return arg.key.toLowerCase() === key || (arg.code || '').toLowerCase() === 'key' + key;
         };
 
         const isAppShortcut = 
@@ -361,7 +364,19 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         if (selection) {
           navigator.clipboard.writeText(selection);
           return false; // Prevent xterm from sending ^C to the process
+        } else {
+          // If no text selection, Ctrl+C sends SIGINT to abort the active task. Flag it for the watchdog!
+          import('../../services/TerminalBufferManager').then((m) => {
+            m.TerminalBufferManager.getInstance().setAbortedPending(paneId);
+          }).catch(err => console.error('Failed to import TerminalBufferManager:', err));
         }
+      }
+      
+      // Handle Escape: Flag aborted pending for watchdog (used to cancel active queries)
+      if (arg.key === 'Escape' && arg.type === 'keydown') {
+        import('../../services/TerminalBufferManager').then((m) => {
+          m.TerminalBufferManager.getInstance().setAbortedPending(paneId);
+        }).catch(err => console.error('Failed to import TerminalBufferManager:', err));
       }
       
       // Handle Paste: Ctrl+V or Cmd+V
@@ -398,6 +413,15 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
     // Listen to user input and write directly to PTY
     const onDataDisposable = term.onData(async (data) => {
+      // Transition from 'idle' to 'running' on keypress input (ignore focus/mouse system sequences)
+      const store = useOrchestratorStore.getState();
+      const session = store.terminals.find(t => t.id === paneId);
+      const isSystemSequence = data === '\x1b[I' || data === '\x1b[O' || data.startsWith('\x1b[M') || data.startsWith('\x1b[<');
+      
+      if (!isSystemSequence && session && session.executionState === 'idle') {
+        store.updateTerminalExecutionState(paneId, 'running');
+      }
+
       try {
         await invoke('write_pty', { sessionId: paneId, data });
       } catch (err) {
@@ -460,11 +484,16 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     };
 
     bufferManager.subscribe(paneId, (chunk) => {
-      writeQueue += chunk.data;
-      
-      // Coalesce multiple chunks arriving within the same frame
-      if (coalesceFrameId === null) {
-        coalesceFrameId = requestAnimationFrame(drainQueue);
+      if (chunk.sequenceId === -1 || chunk.sequenceId > lastWrittenSequenceId) {
+        writeQueue += chunk.data;
+        if (chunk.sequenceId !== -1) {
+          lastWrittenSequenceId = chunk.sequenceId;
+        }
+        
+        // Coalesce multiple chunks arriving within the same frame
+        if (coalesceFrameId === null) {
+          coalesceFrameId = requestAnimationFrame(drainQueue);
+        }
       }
     });
 
@@ -585,7 +614,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   // Fit layout once transitions complete has been removed as ResizeObserver natively handles it.
 
   return (
-    <div className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden">
+    <div 
+      data-pane-id={paneId}
+      className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden"
+    >
       <div 
         ref={containerRef} 
         className="w-full h-full flex-1" 
@@ -595,6 +627,25 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
           transition: isBlackout ? 'none' : 'opacity 150ms ease-in'
         }} 
       />
+
+      {/* Transparent Glassmorphic Image Drop Overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
+          <div className="m-2.5 inset-0 absolute border-2 border-dashed border-[#38bdf8]/40 rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3">
+            <div className="p-3 bg-[#38bdf8]/10 border border-[#38bdf8]/20 rounded-full animate-bounce">
+              <ImageIcon className="w-6 h-6 text-[#38bdf8]" />
+            </div>
+            <div>
+              <p className="text-zinc-100 text-[11px] font-bold tracking-wider uppercase font-sans">
+                Drop to send image
+              </p>
+              <p className="text-zinc-400 text-[9px] font-mono mt-1 max-w-[200px]">
+                Inserts absolute image path into terminal input
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

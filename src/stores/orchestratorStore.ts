@@ -40,6 +40,7 @@ interface OrchestratorState {
   projects: Project[];
   agents: AgentProfile[];
   terminals: TerminalSession[];
+  completedTerminals: string[];
   layout: TerminalLayout;
   activityFeed: ActivityLog[];
   cliInstalledStatuses: Record<string, boolean>;
@@ -92,6 +93,10 @@ interface OrchestratorState {
   changeLayoutType: (layoutType: 'grid' | 'vertical' | 'horizontal') => void;
   updateTerminalStatus: (sessionId: string, status: import('../types').TerminalStatus) => void;
   reconnectTerminal: (sessionId: string) => Promise<void>;
+  renameTerminal: (sessionId: string, newTitle: string) => void;
+  markTerminalCompleted: (sessionId: string) => void;
+  clearTerminalCompleted: (sessionId: string) => void;
+  updateTerminalExecutionState: (sessionId: string, executionState: 'running' | 'idle' | 'completed' | 'failed' | 'aborted') => void;
   
   // Logger
   logActivity: (
@@ -114,6 +119,7 @@ interface OrchestratorState {
   spawnTeamTemplate: (projectId: string, templateId: string) => Promise<void>;
   updateAgent: (agentId: string, updates: Partial<AgentProfile>) => Promise<void>;
   incrementAgentTokens: (updates: Record<string, number>) => void;
+  healProjectNotFound: (sessionId: string) => Promise<void>;
   
   // Dialog Actions
   dialog: DialogConfig | null;
@@ -198,6 +204,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   projects: [],
   agents: [],
   terminals: [],
+  completedTerminals: [],
   layout: {
     type: 'grid',
     panels: []
@@ -223,6 +230,40 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       const merged = deepMerge(state.settings, updates);
       const sanitized = sanitizeSettings(merged);
       
+      // Update existing agents with the new overrides and custom CLIs
+      const updatedAgents = state.agents.map(agent => {
+        // 1. Check if the agent matches a predefined plugin
+        const plugin = PluginRegistry.getPluginForAgent(agent.cliCommand, agent.arguments || []);
+        if (plugin && plugin.id !== 'generic') {
+          const overrides = sanitized.cliOverrides?.[plugin.id] || {};
+          const cliCommand = overrides.cliCommand !== undefined ? overrides.cliCommand : plugin.cliCommand;
+          const defaultArgs = overrides.defaultArgs !== undefined ? overrides.defaultArgs : plugin.defaultArgs;
+          const name = overrides.name !== undefined ? overrides.name : agent.name;
+          return {
+            ...agent,
+            name,
+            cliCommand,
+            arguments: defaultArgs || []
+          };
+        }
+
+        // 2. Check if the agent matches a custom CLI in the previous settings
+        const prevCustomCli = state.settings.customCLIs?.find(c => c.command === agent.cliCommand);
+        if (prevCustomCli) {
+          const newCustomCli = sanitized.customCLIs?.find(c => c.id === prevCustomCli.id);
+          if (newCustomCli) {
+            return {
+              ...agent,
+              name: newCustomCli.name,
+              cliCommand: newCustomCli.command,
+              arguments: newCustomCli.args || []
+            };
+          }
+        }
+
+        return agent;
+      });
+
       // Apply appearance settings dynamically on update
       if (sanitized.appearance) {
         import('../services/ThemeManager').then(({ ThemeManager }) => {
@@ -230,13 +271,37 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         });
       }
 
-      return { settings: sanitized };
+      return { 
+        settings: sanitized, 
+        agents: updatedAgents 
+      };
     });
     get().saveSnapshot(); // Persist settings immediately upon update
   },
   resetSettings: () => {
     const sanitizedDefault = sanitizeSettings(DEFAULT_APP_SETTINGS);
-    set({ settings: sanitizedDefault });
+    set((state) => {
+      const updatedAgents = state.agents.map(agent => {
+        const plugin = PluginRegistry.getPluginForAgent(agent.cliCommand, agent.arguments || []);
+        if (plugin && plugin.id !== 'generic') {
+          const overrides = sanitizedDefault.cliOverrides?.[plugin.id] || {};
+          const cliCommand = overrides.cliCommand !== undefined ? overrides.cliCommand : plugin.cliCommand;
+          const defaultArgs = overrides.defaultArgs !== undefined ? overrides.defaultArgs : plugin.defaultArgs;
+          const name = overrides.name !== undefined ? overrides.name : plugin.name;
+          return {
+            ...agent,
+            name,
+            cliCommand,
+            arguments: defaultArgs || []
+          };
+        }
+        return agent;
+      });
+      return { 
+        settings: sanitizedDefault, 
+        agents: updatedAgents 
+      };
+    });
     import('../services/ThemeManager').then(({ ThemeManager }) => {
       ThemeManager.applyAppearance(sanitizedDefault.appearance);
     });
@@ -475,6 +540,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       activeWorkspaceId: workspaceId,
       isSidebarVisible: false,
       terminals: [],
+      completedTerminals: [],
       layout: { type: 'grid', panels: [] },
       workspaces: state.workspaces.map(w => w.id === workspaceId ? { ...w, lastOpened: Date.now() } : w)
     }));
@@ -509,6 +575,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       set({
         activeWorkspaceId: null,
         terminals: [],
+        completedTerminals: [],
         layout: { type: 'grid', panels: [] }
       });
     }
@@ -709,7 +776,10 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     const agent = agentId ? get().agents.find(a => a.id === agentId) : null;
     const sessionPath = project ? project.path : (get().workspaces.find(w => w.id === get().activeWorkspaceId)?.rootPath || "");
 
-    const sessionId = Math.random().toString(36).substring(7);
+    const sessionId = agentId ? agentId : Math.random().toString(36).substring(7);
+    const existingTerm = get().terminals.find(t => t.id === sessionId);
+    const terminalExists = !!existingTerm;
+    const isAlreadyConnected = existingTerm && existingTerm.status === 'connected';
 
     // Build terminal command target
     let command: string | undefined;
@@ -722,8 +792,17 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       title = customCommand.split("/").pop()?.split("\\").pop() || customCommand;
     } else if (agent) {
       command = agent.cliCommand;
-      args = agent.arguments;
-      title = `${agent.name} CLI`;
+      args = agent.arguments || [];
+      title = agent.name;
+
+      // Isolate Agylity session using project + agent ID overrides to prevent concurrent overlap
+      const plugin = PluginRegistry.getPluginForAgent(command || "", args);
+      if (plugin && plugin.id === 'agy') {
+        const projId = projectId || 'default';
+        if (!args.includes('--project')) {
+          args = [...args, '--project', `${projId}-${sessionId}`];
+        }
+      }
     } else {
       const { defaultShell, shellArgs } = get().settings;
       if (defaultShell !== 'auto') {
@@ -741,6 +820,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       agentId,
       title,
       status: 'connected',
+      executionState: command ? 'running' : 'idle',
       cols: 80,
       rows: 24,
       command,
@@ -764,7 +844,10 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       // 1. Link terminal to project
       const updatedProjects = state.projects.map(p => {
         if (p.id === projectId) {
-          return { ...p, terminalSessionIds: [...p.terminalSessionIds, sessionId] };
+          const terminalSessionIds = p.terminalSessionIds.includes(sessionId)
+            ? p.terminalSessionIds
+            : [...p.terminalSessionIds, sessionId];
+          return { ...p, terminalSessionIds };
         }
         return p;
       });
@@ -772,24 +855,42 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       // 2. Link terminal to agent and flip agent to running status
       const updatedAgents = state.agents.map(a => {
         if (agent && a.id === agent.id) {
+          const terminalSessionIds = a.terminalSessionIds.includes(sessionId)
+            ? a.terminalSessionIds
+            : [...a.terminalSessionIds, sessionId];
           return {
             ...a,
             status: 'running' as AgentStatus,
-            terminalSessionIds: [...a.terminalSessionIds, sessionId],
+            terminalSessionIds,
             lastActive: new Date().toISOString(),
-            startedAt: Date.now()
+            startedAt: a.startedAt || Date.now()
           };
         }
         return a;
       });
 
+      const terminals = terminalExists
+        ? state.terminals.map(t => t.id === sessionId ? { 
+            ...t, 
+            status: 'connected' as const,
+            command,
+            args,
+            cwd: sessionPath,
+            env: agent ? agent.env : {}
+          } : t)
+        : [...state.terminals, newTerminal];
+
+      const panels = terminalExists
+        ? state.layout.panels
+        : [...state.layout.panels, newPanel];
+
       return {
-        terminals: [...state.terminals, newTerminal],
+        terminals,
         projects: updatedProjects,
         agents: updatedAgents,
         layout: {
           ...state.layout,
-          panels: [...state.layout.panels, newPanel]
+          panels
         }
       };
     });
@@ -800,42 +901,58 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       const estimatedCols = Math.max(80, Math.floor((window.innerWidth * 0.8) / 9));
       const estimatedRows = Math.max(24, Math.floor((window.innerHeight * 0.8) / 17));
 
-      await invoke("spawn_pty", {
-        sessionId,
-        command,
-        args,
-        cwd: sessionPath,
-        env: agent ? agent.env : {},
-        rows: estimatedRows,
-        cols: estimatedCols
-      });
+      if (!isAlreadyConnected) {
+        let spawnArgs = args ? [...args] : [];
+        if (!terminalExists && command === 'agy' && !spawnArgs.includes('--new-project')) {
+          spawnArgs.push('--new-project');
+        }
 
-      EventBus.publish("terminal:spawned", { sessionId, projectId });
-      get().logActivity('terminal', 'info', `Spawned terminal "${title}" at ${sessionPath}`, projectId, agentId);
+        const pid = await invoke<number | null>("spawn_pty", {
+          sessionId,
+          command,
+          args: spawnArgs,
+          cwd: sessionPath,
+          env: agent ? agent.env : {},
+          rows: estimatedRows,
+          cols: estimatedCols
+        });
 
-      // 4. Run startup instructions if agent is defined and has instructions
-      if (agent && agent.startupInstructions && agent.startupInstructions.length > 0) {
-        setTimeout(async () => {
-          for (const inst of agent.startupInstructions || []) {
-            try {
-              await invoke("write_pty", { sessionId, data: `${inst}\r` });
-              // Wait 700ms between instructions to allow process loading
-              await new Promise(r => setTimeout(r, 700));
-            } catch (err) {
-              console.warn(`Startup instruction failed in terminal "${sessionId}":`, err);
+        if (pid) {
+          await invoke("register_terminal_pid", {
+            tool: command || "generic",
+            sessionId,
+            cwd: sessionPath,
+            pid
+          });
+        }
+
+        EventBus.publish("terminal:spawned", { sessionId, projectId });
+        get().logActivity('terminal', 'info', `Spawned terminal "${title}" at ${sessionPath}`, projectId, agentId);
+
+        // 4. Run startup instructions if agent is defined and has instructions
+        if (agent && agent.startupInstructions && agent.startupInstructions.length > 0) {
+          setTimeout(async () => {
+            for (const inst of agent.startupInstructions || []) {
+              try {
+                await invoke("write_pty", { sessionId, data: `${inst}\r` });
+                // Wait 700ms between instructions to allow process loading
+                await new Promise(r => setTimeout(r, 700));
+              } catch (err) {
+                console.warn(`Startup instruction failed in terminal "${sessionId}":`, err);
+              }
             }
-          }
-        }, 1200);
-      }
+          }, 1200);
+        }
 
-      if (startupInstruction) {
-        setTimeout(async () => {
-          try {
-            await invoke("write_pty", { sessionId, data: `${startupInstruction}\r` });
-          } catch (err) {
-            console.warn(`One-off startup instruction failed:`, err);
-          }
-        }, 1200);
+        if (startupInstruction) {
+          setTimeout(async () => {
+            try {
+              await invoke("write_pty", { sessionId, data: `${startupInstruction}\r` });
+            } catch (err) {
+              console.warn(`One-off startup instruction failed:`, err);
+            }
+          }, 1200);
+        }
       }
     } catch (e) {
       console.error("PTY Spawner failed:", e);
@@ -922,13 +1039,21 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
   updateTerminalStatus: (sessionId, status) => {
     set((state) => {
-      const updatedTerminals = state.terminals.map((terminal) =>
-        terminal.id === sessionId
-          ? { ...terminal, status }
-          : terminal
-      );
-      
       const term = state.terminals.find(t => t.id === sessionId);
+      const isTransitioningToCompleted = term && term.status === 'connected' && status === 'disconnected' && term.agentId;
+
+      const updatedTerminals = state.terminals.map((terminal) => {
+        if (terminal.id === sessionId) {
+          const nextExecState = isTransitioningToCompleted ? 'completed' : terminal.executionState;
+          return { ...terminal, status, executionState: nextExecState };
+        }
+        return terminal;
+      });
+      
+      let nextCompleted = state.completedTerminals;
+      if (isTransitioningToCompleted && !nextCompleted.includes(sessionId)) {
+        nextCompleted = [...nextCompleted, sessionId];
+      }
       
       const updatedAgents = state.agents.map((agent) => {
         if (term && term.agentId && agent.id === term.agentId) {
@@ -960,8 +1085,40 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         return agent;
       });
 
-      return { terminals: updatedTerminals, agents: updatedAgents };
+      return { terminals: updatedTerminals, agents: updatedAgents, completedTerminals: nextCompleted };
     });
+  },
+
+  renameTerminal: (sessionId, newTitle) => {
+    if (!newTitle.trim()) return;
+    set((state) => ({
+      terminals: state.terminals.map((t) =>
+        t.id === sessionId ? { ...t, title: newTitle } : t
+      )
+    }));
+    get().saveSnapshot();
+  },
+
+  markTerminalCompleted: (sessionId) => {
+    set((state) => {
+      if (state.completedTerminals.includes(sessionId)) return {};
+      return { completedTerminals: [...state.completedTerminals, sessionId] };
+    });
+  },
+
+  clearTerminalCompleted: (sessionId) => {
+    set((state) => {
+      if (!state.completedTerminals.includes(sessionId)) return {};
+      return { completedTerminals: state.completedTerminals.filter(id => id !== sessionId) };
+    });
+  },
+
+  updateTerminalExecutionState: (sessionId, executionState) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) =>
+        t.id === sessionId ? { ...t, executionState } : t
+      )
+    }));
   },
 
   reconnectTerminal: async (sessionId) => {
@@ -973,18 +1130,44 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     // simply append the fresh PTY boot sequence (like a new prompt) to the bottom.
     // Ink-based apps will also just boot a new UI at the bottom of the old history.
 
+    let commandArgs = term.args || [];
+    const plugin = PluginRegistry.getPluginForAgent(term.command || "", commandArgs);
+    if (plugin && plugin.id === 'agy') {
+      const projId = term.projectId || 'default';
+      if (!commandArgs.includes('--project')) {
+        commandArgs = [...commandArgs, '--project', `${projId}-${sessionId}`];
+      }
+    }
+
+    if (plugin && plugin.resumeArgs) {
+      for (const arg of plugin.resumeArgs) {
+        if (!commandArgs.includes(arg)) {
+          commandArgs = [...commandArgs, arg];
+        }
+      }
+    }
+
     try {
-      await invoke("spawn_pty", {
+      const pid = await invoke<number | null>("spawn_pty", {
         sessionId,
         command: term.command || null,
-        args: term.args || null,
+        args: commandArgs.length > 0 ? commandArgs : null,
         cwd: term.cwd || null,
         env: term.env || null
       });
 
+      if (pid) {
+        await invoke("register_terminal_pid", {
+          tool: term.command || "generic",
+          sessionId,
+          cwd: term.cwd || "",
+          pid
+        });
+      }
+
       set((state) => {
         const updatedTerminals = state.terminals.map(t =>
-          t.id === sessionId ? { ...t, status: 'connected' as const } : t
+          t.id === sessionId ? { ...t, status: 'connected' as const, executionState: (t.command ? 'running' : 'idle') as 'running' | 'idle', args: commandArgs } : t
         );
         const updatedAgents = state.agents.map(a => {
           if (term.agentId && a.id === term.agentId) {
@@ -998,7 +1181,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       console.error(`Failed to reconnect PTY session ${sessionId}:`, e);
       set((state) => {
         const updatedTerminals = state.terminals.map(t =>
-          t.id === sessionId ? { ...t, status: 'disconnected' as const } : t
+          t.id === sessionId ? { ...t, status: 'disconnected' as const, executionState: 'failed' as const } : t
         );
         const updatedAgents = state.agents.map(a => {
           if (term.agentId && a.id === term.agentId) {
@@ -1116,19 +1299,10 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       if (snapStr && snapStr !== "{}") {
         const snapshot = JSON.parse(snapStr) as WorkspaceSnapshot;
 
-        // Restore terminals and mark them as 'reconnecting' — NOT 'disconnected'.
-        // This is critical: if we set 'disconnected', TerminalPane will write the stale
-        // serialized history to the xterm buffer. Then reconnectTerminal spawns a new PTY
-        // which outputs fresh content on top of the old history, causing duplication.
-        // 'reconnecting' tells TerminalPane to skip history and wait for live PTY output.
+        // Restore terminal tabs/sessions, but clear history so they start fresh
         const restoredTerminals = (snapshot.terminals || []).map(t => {
-          // Restore the history payload to the standalone TerminalBufferManager
-          if (t.history) {
-            TerminalBufferManager.getInstance().append(t.id, t.history);
-          }
-          // Strip history from Zustand state to prevent React from owning large string buffers
+          // Strip history so it starts completely clean (newly)
           const { history, ...termWithoutHistory } = t;
-          
           return {
             ...termWithoutHistory,
             status: 'reconnecting' as const
@@ -1136,7 +1310,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         });
         const restoredTerminalIds = new Set(restoredTerminals.map((terminal) => terminal.id));
         
-        // Clean up agent statuses if their terminal IDs are not in the restored terminals list
+        // Restore agent mapping and statuses
         const restoredAgents = (snapshot.agents || []).map((agent) => {
           const hasTerminal = agent.terminalSessionIds.some((id) => restoredTerminalIds.has(id));
           if (!hasTerminal && agent.status === 'running') {
@@ -1150,7 +1324,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           terminals: restoredTerminals,
           agents: restoredAgents,
           tasks: snapshot.tasks || [],
-          layout: snapshot.layout || { type: 'grid', panels: [] },
+          layout: snapshot.layout || { type: 'grid', panels: [] }, // Restore terminal layout panels
           isSidebarVisible: false,
           isTaskCenterVisible: snapshot.isTaskCenterVisible !== undefined ? snapshot.isTaskCenterVisible : true,
           sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 490,
@@ -1166,7 +1340,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           activeTabId: snapshot.activeBrowserTabId || null
         });
 
-        // Trigger reconnect for each restored terminal session asynchronously
+        // Trigger reconnect for each restored terminal session asynchronously to spawn fresh PTYs
         for (const term of restoredTerminals) {
           get().reconnectTerminal(term.id);
         }
@@ -1625,6 +1799,45 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       }
     } catch (err) {
       console.error("Failed to initialize project memory files:", err);
+    }
+  },
+
+  healProjectNotFound: async (sessionId) => {
+    const term = get().terminals.find(t => t.id === sessionId);
+    if (!term) return;
+
+    let commandArgs = term.args || [];
+    if (!commandArgs.includes('--new-project')) {
+      commandArgs = [...commandArgs, '--new-project'];
+    }
+
+    try {
+      console.warn(`[Self-Healing] Killing dead terminal session ${sessionId} before respawning with --new-project...`);
+      await invoke("kill_pty", { sessionId });
+      
+      // Allow ConPTY kernel a brief moment to release process bindings
+      await new Promise(r => setTimeout(r, 200));
+
+      const pid = await invoke<number | null>("spawn_pty", {
+        sessionId,
+        command: term.command || null,
+        args: commandArgs,
+        cwd: term.cwd || null,
+        env: term.env || null
+      });
+
+      if (pid) {
+        await invoke("register_terminal_pid", {
+          tool: term.command || "generic",
+          sessionId,
+          cwd: term.cwd || "",
+          pid
+        });
+      }
+
+      console.log(`[Self-Healing] Successfully respawned terminal ${sessionId} with --new-project`);
+    } catch (e) {
+      console.error(`[Self-Healing] Failed to recover PTY session ${sessionId}:`, e);
     }
   }
 }));

@@ -1,4 +1,43 @@
 window.addEventListener("DOMContentLoaded", () => {
+  // Window Control Buttons (frameless custom titlebar)
+  const winMinBtn = document.getElementById("win-min-btn");
+  const winMaxBtn = document.getElementById("win-max-btn");
+  const winCloseBtn = document.getElementById("win-close-btn");
+  const maxIcon = document.getElementById("max-icon");
+  const restoreIcon = document.getElementById("restore-icon");
+
+  if (winMinBtn) {
+    winMinBtn.addEventListener("click", () => {
+      window.electron.send("window-minimize");
+    });
+  }
+
+  if (winMaxBtn) {
+    winMaxBtn.addEventListener("click", () => {
+      window.electron.send("window-maximize");
+    });
+  }
+
+  if (winCloseBtn) {
+    winCloseBtn.addEventListener("click", () => {
+      window.electron.send("window-close");
+    });
+  }
+
+  if (window.electron && typeof window.electron.on === 'function') {
+    window.electron.on("window-maximized", (isMaximized) => {
+      if (maxIcon && restoreIcon) {
+        if (isMaximized) {
+          maxIcon.style.display = "none";
+          restoreIcon.style.display = "block";
+        } else {
+          maxIcon.style.display = "block";
+          restoreIcon.style.display = "none";
+        }
+      }
+    });
+  }
+
   const backBtn = document.getElementById("back-btn");
   const forwardBtn = document.getElementById("forward-btn");
   const reloadBtn = document.getElementById("reload-btn");

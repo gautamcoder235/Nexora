@@ -8,7 +8,6 @@ import { OwnershipReportViewer } from './OwnershipReportViewer';
 import { ExecutionLogDrawer } from './ExecutionLogDrawer';
 import { ExecutionMetadataPanel } from './ExecutionMetadataPanel';
 import { ArtifactExplorer } from './ArtifactExplorer';
-import { SwarmGraph } from '../SwarmView/SwarmGraph';
 import Editor from '@monaco-editor/react';
 
 interface Props {
@@ -325,8 +324,14 @@ export function ExecutionReviewWorkspace({ executionId, onClose }: Props) {
               </div>
             )}
             
-            <div className="mt-6">
-              <SwarmGraph metadata={metadata} validationRun={validationRun} />
+            {/* Execution Status Overview */}
+            <div className="mt-6 p-4 rounded-xl border border-[#1B1B22] bg-[#0D0D10]/50">
+              <h3 className="text-sm font-semibold text-zinc-300 mb-2">Execution Overview</h3>
+              <div className="flex items-center gap-4 text-xs text-zinc-500">
+                {metadata && <span>Agent: <strong className="text-zinc-300">{metadata.agent_id}</strong></span>}
+                {validationRun && <span>Status: <strong className="text-zinc-300">{validationRun.status}</strong></span>}
+                {validationRun && <span>Gates: <strong className="text-zinc-300">{validationRun.steps?.filter((s: any) => s.status === 'passed').length || 0}/{validationRun.steps?.length || 0}</strong></span>}
+              </div>
             </div>
 
             <div className="mt-8">

@@ -44,6 +44,26 @@ export class PluginRegistry {
   }
 
   /**
+   * Resolve corresponding AgentPlugin by command and arguments prefix
+   */
+  static getPluginForAgent(cliCommand: string, agentArgs: string[]): AgentPlugin {
+    const allPlugins = this.getAll();
+    for (const plugin of allPlugins) {
+      if (plugin.cliCommand === cliCommand) {
+        if (cliCommand === 'npx') {
+          const isClaude = agentArgs.some(arg => arg.includes('claudecode') || arg.includes('claude'));
+          if (isClaude && plugin.id === 'claude') {
+            return plugin;
+          }
+        } else {
+          return plugin;
+        }
+      }
+    }
+    return this.get('generic');
+  }
+
+  /**
    * Check if a CLI command is installed on the user's OS PATH
    */
   static async checkInstalled(id: string): Promise<boolean> {

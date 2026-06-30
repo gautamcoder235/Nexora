@@ -142,7 +142,7 @@
 
   /* ── Layout ────────────────────────────────────────────── */
   --sidebar-width: 260px;
-  --sidebar-collapsed-width: 56px;
+  --sidebar-collapsed-width: 48px;
   --topbar-height: 48px;
   --bottombar-height: 24px;
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2, ArrowLeft, ArrowRight, UserPlus, FileText, Zap, ClipboardList, Eye, CheckCircle2, Star, AlertTriangle, AlertOctagon, Tag } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
-import { useSwarmStore } from "../stores/swarmStore";
+import { useTeamStore } from "../stores/teamStore";
 import { Task, Priority } from "../types";
 import CreateTaskModal from "./CreateTaskModal";
 

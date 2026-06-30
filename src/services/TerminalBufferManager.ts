@@ -1,6 +1,8 @@
 import { listen } from '@tauri-apps/api/event';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
 import { DEFAULT_APP_SETTINGS } from '../types';
+import { PluginRegistry } from '../plugins/registry';
+import { BlockParser } from '../lib/terminal/blockParser';
 
 export interface Chunk {
   sequenceId: number;
@@ -35,8 +37,24 @@ export class TerminalBufferManager {
 
   private pendingTokens = new Map<string, number>();
   private commitTimeout: any = null;
+  private lastTriggerOffsets = new Map<string, number>();
+  private blockParsers = new Map<string, BlockParser>();
+  private watchdogTimers = new Map<string, any>();
+  private abortedPendingSessions = new Set<string>();
 
   private constructor() {}
+
+  public setAbortedPending(sessionId: string) {
+    this.abortedPendingSessions.add(sessionId);
+  }
+
+  public isAbortedPending(sessionId: string): boolean {
+    return this.abortedPendingSessions.has(sessionId);
+  }
+
+  public clearAbortedPending(sessionId: string) {
+    this.abortedPendingSessions.delete(sessionId);
+  }
 
   public static getInstance(): TerminalBufferManager {
     if (!TerminalBufferManager.instance) {
@@ -55,6 +73,35 @@ export class TerminalBufferManager {
       (event) => {
         const { sessionId, data } = event.payload;
         this.append(sessionId, data);
+
+        // 1. Block parser integration (OSC 133 semantic zones)
+        let parser = this.blockParsers.get(sessionId);
+        if (!parser) {
+          parser = new BlockParser();
+          this.blockParsers.set(sessionId, parser);
+        }
+        const events = parser.parse(data);
+        for (const ev of events) {
+          this.handleBlockEvent(sessionId, ev);
+        }
+
+        this.clearAbortedPending(sessionId);
+
+        // 2. Reset silence watchdog timer
+        const existingTimer = this.watchdogTimers.get(sessionId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+        this.watchdogTimers.set(
+          sessionId,
+          setTimeout(() => {
+            this.runSilenceWatchdogCheck(sessionId);
+          }, 5000)
+        );
+
+        this.handleAutoResponders(sessionId);
+        this.handleConversationParser(sessionId);
+        this.handleProjectNotFoundError(sessionId);
       }
     );
 
@@ -142,6 +189,12 @@ export class TerminalBufferManager {
     const buffer = this.buffers.get(sessionId);
     if (!buffer) return '';
     return buffer.chunks.map((c) => c.data).join('');
+  }
+
+  public getLastSequenceId(sessionId: string): number {
+    const buffer = this.buffers.get(sessionId);
+    if (!buffer || buffer.chunks.length === 0) return -1;
+    return buffer.chunks[buffer.chunks.length - 1].sequenceId;
   }
 
   public clear(sessionId: string) {
@@ -237,6 +290,207 @@ export class TerminalBufferManager {
 
     if (Object.keys(updates).length > 0) {
       store.incrementAgentTokens(updates);
+    }
+  }
+
+  private handleAutoResponders(sessionId: string) {
+    try {
+      const snapshot = this.getSnapshot(sessionId);
+      if (!snapshot) return;
+
+      const lastText = snapshot.slice(-1000);
+      const allPlugins = PluginRegistry.getAll();
+
+      // Scan all plugins to ensure auto-responders work dynamically regardless of command naming overrides
+      for (const plugin of allPlugins) {
+        if (!plugin.autoResponders) continue;
+
+        for (const responder of plugin.autoResponders) {
+          if (lastText.includes(responder.pattern)) {
+            const lastTriggerKey = `${sessionId}:${responder.pattern}`;
+            if (this.lastTriggerOffsets.get(lastTriggerKey) === snapshot.length) {
+              continue; // Already triggered for this exact state
+            }
+            this.lastTriggerOffsets.set(lastTriggerKey, snapshot.length);
+
+            // Invoke PTY write asynchronously to send input
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+              invoke('write_pty', { sessionId, data: responder.response })
+                .catch(err => console.warn(`Auto-responder failed to write to PTY:`, err));
+            });
+            return; // Only trigger one responder per tick
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Auto-responder error:', e);
+    }
+  }
+
+  private handleConversationParser(sessionId: string) {
+    try {
+      const snapshot = this.getSnapshot(sessionId);
+      if (!snapshot) return;
+
+      const lastText = snapshot.slice(-1000);
+      const allPlugins = PluginRegistry.getAll();
+
+      for (const plugin of allPlugins) {
+        if (!plugin.conversationParser) continue;
+
+        const regex = new RegExp(plugin.conversationParser.pattern, 'i');
+        const match = lastText.match(regex);
+        if (match) {
+          // Build the new args list with substituted values
+          const newArgs = plugin.conversationParser.argsTemplate.map(arg => {
+            let substituted = arg;
+            for (let i = 1; i < match.length; i++) {
+              substituted = substituted.replace(`$${i}`, match[i]);
+            }
+            return substituted;
+          });
+
+          // Update terminal session in the store
+          const store = useOrchestratorStore.getState();
+          const term = store.terminals.find(t => t.id === sessionId);
+          if (term) {
+            // Only update if the arguments list is different to avoid dispatch loops
+            const isDifferent = !term.args || term.args.length !== newArgs.length || 
+                                term.args.some((val, idx) => val !== newArgs[idx]);
+            if (isDifferent) {
+              useOrchestratorStore.setState(s => ({
+                terminals: s.terminals.map(t =>
+                  t.id === sessionId ? { ...t, args: newArgs } : t
+                )
+              }));
+              store.saveSnapshot();
+              console.log(`[Conversation Parser] Auto-saved conversation args for session ${sessionId}:`, newArgs);
+            }
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Conversation parser error:', e);
+    }
+  }
+
+  private handleProjectNotFoundError(sessionId: string) {
+    try {
+      const snapshot = this.getSnapshot(sessionId);
+      if (!snapshot) return;
+
+      const lastText = snapshot.slice(-500);
+      if (lastText.includes("Project Not Found") || (lastText.includes("not found") && lastText.includes("Project"))) {
+        const lastTriggerKey = `${sessionId}:project_not_found`;
+        if (this.lastTriggerOffsets.get(lastTriggerKey) === snapshot.length) {
+          return; // Already triggered for this exact state
+        }
+        this.lastTriggerOffsets.set(lastTriggerKey, snapshot.length);
+
+        console.warn(`[Self-Healing] Detected Project Not Found error in session ${sessionId}. Attempting auto-recovery by spawning with --new-project.`);
+        
+        // Trigger self-healing respawn in store
+        const store = useOrchestratorStore.getState();
+        store.healProjectNotFound(sessionId);
+      }
+    } catch (e) {
+      console.warn('Self-healing error:', e);
+    }
+  }
+
+  private handleBlockEvent(sessionId: string, event: import('../lib/terminal/blockParser').BlockEvent) {
+    const store = useOrchestratorStore.getState();
+    const term = store.terminals.find(t => t.id === sessionId);
+    if (!term) return;
+
+    switch (event.type) {
+      case 'command-start':
+      case 'pre-exec':
+        store.updateTerminalExecutionState(sessionId, 'running');
+        break;
+      case 'prompt-start': {
+        const currentExecState = term.executionState;
+        if (currentExecState !== 'completed' && currentExecState !== 'failed' && currentExecState !== 'aborted') {
+          store.updateTerminalExecutionState(sessionId, 'idle');
+        }
+        break;
+      }
+      case 'command-done': {
+        const exitCode = event.exitCode ?? 0;
+        if (exitCode === 0) {
+          store.updateTerminalExecutionState(sessionId, 'completed');
+          store.markTerminalCompleted(sessionId);
+        } else if (exitCode === 130) {
+          store.updateTerminalExecutionState(sessionId, 'aborted');
+        } else {
+          store.updateTerminalExecutionState(sessionId, 'failed');
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  private async runSilenceWatchdogCheck(sessionId: string) {
+    const store = useOrchestratorStore.getState();
+    const term = store.terminals.find(t => t.id === sessionId);
+    if (!term || term.executionState !== 'running') return;
+
+    try {
+      // 1. Check trailing text prompt patterns to detect idle state for interactive CLIs
+      const snapshot = this.getSnapshot(sessionId);
+      if (snapshot) {
+        const lastLines = snapshot.slice(-300).trim();
+        const cleanLines = lastLines.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+        const cleanLower = cleanLines.toLowerCase();
+        
+        const hasPromptPattern = 
+          cleanLower.includes('shortcuts') ||
+          cleanLower.includes('anything') ||
+          cleanLower.includes('implement') ||
+          cleanLower.includes('feature]') ||
+          cleanLower.includes('welcome back') ||
+          cleanLower.includes('model:') ||
+          cleanLower.includes('gpt-') ||
+          cleanLower.includes('tip press') ||
+          cleanLower.includes('opencode') ||
+          /(\?|\>|:|\.\.\.|\$)\s*$/.test(cleanLower) ||
+          /[\?\>:\|\$\█]\s*$/.test(cleanLower);
+
+        if (hasPromptPattern) {
+          const isAborted = this.isAbortedPending(sessionId);
+          const nextState = isAborted ? 'idle' : 'completed';
+          store.updateTerminalExecutionState(sessionId, nextState);
+          if (nextState === 'completed') {
+            store.markTerminalCompleted(sessionId);
+          }
+          this.clearAbortedPending(sessionId);
+          console.log(`[Watchdog] Term ${sessionId} detected as ${nextState.toUpperCase()} via prompt pattern.`);
+          return;
+        }
+      }
+
+      // 2. Fall back to process-level checks
+      const { invoke } = await import('@tauri-apps/api/core');
+      const procInfo = await invoke<{ has_active_child: boolean; shell_pid: number; children: any[] }>(
+        'get_pty_process_info',
+        { sessionId }
+      );
+
+      if (!procInfo.has_active_child) {
+        const isAborted = this.isAbortedPending(sessionId);
+        const nextState = isAborted ? 'idle' : 'completed';
+        store.updateTerminalExecutionState(sessionId, nextState);
+        if (nextState === 'completed') {
+          store.markTerminalCompleted(sessionId);
+        }
+        this.clearAbortedPending(sessionId);
+        console.log(`[Watchdog] Term ${sessionId} detected as ${nextState.toUpperCase()} (no active child processes).`);
+      }
+    } catch (e) {
+      console.warn('[Watchdog] Failed to query process info:', e);
     }
   }
 }

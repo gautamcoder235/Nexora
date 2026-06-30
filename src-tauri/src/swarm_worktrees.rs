@@ -163,8 +163,7 @@ pub fn create_worktree(
     allowed_patterns: Vec<String>,
 ) -> Result<WorktreeResult, String> {
     let root = Path::new(&project_root);
-    let parent = root.parent().unwrap_or(root);
-    let worktrees_dir = parent.join(".nexora-worktrees");
+    let worktrees_dir = root.join(".nexora").join("worktrees");
 
     if !worktrees_dir.exists() {
         if let Err(e) = fs::create_dir_all(&worktrees_dir) {
@@ -173,7 +172,7 @@ pub fn create_worktree(
     }
 
     let branch_name = format!("task-{}-exec-{}", task_id, execution_id);
-    let worktree_path = worktrees_dir.join(&branch_name);
+    let worktree_path = worktrees_dir.join(format!("task_{}", task_id));
 
     // If a worktree already exists here (from a previous aborted run), we should remove it first, but for safety let git handle it.
     // 1. Run git worktree add
@@ -332,8 +331,7 @@ pub fn remove_worktree(
 #[tauri::command]
 pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
     let root = Path::new(&project_root);
-    let parent = root.parent().unwrap_or(root);
-    let worktrees_dir = parent.join(".nexora-worktrees");
+    let worktrees_dir = root.join(".nexora").join("worktrees");
 
     let mut cleaned = Vec::new();
 
@@ -347,7 +345,7 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
                         .unwrap_or_default()
                         .to_string_lossy()
                         .to_string();
-                    if dir_name.starts_with("task-") {
+                    if dir_name.starts_with("task_") {
                         // Attempt to run git worktree remove on it
                         let _ = Command::new("git")
                             .current_dir(root)
@@ -358,12 +356,30 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
                             .output();
 
                         // Delete the branch if possible
-                        let _ = Command::new("git")
+                        let task_id_extracted = dir_name.trim_start_matches("task_");
+                        let branch_prefix = format!("task-{}", task_id_extracted);
+
+                        let branches_output = Command::new("git")
                             .current_dir(root)
                             .arg("branch")
-                            .arg("-D")
-                            .arg(&dir_name)
+                            .arg("--list")
+                            .arg(format!("{}*", branch_prefix))
                             .output();
+
+                        if let Ok(out) = branches_output {
+                            let branches_str = String::from_utf8_lossy(&out.stdout);
+                            for branch in branches_str.lines() {
+                                let clean_branch = branch.replace('*', "").trim().to_string();
+                                if !clean_branch.is_empty() {
+                                    let _ = Command::new("git")
+                                        .current_dir(root)
+                                        .arg("branch")
+                                        .arg("-D")
+                                        .arg(&clean_branch)
+                                        .output();
+                                }
+                            }
+                        }
 
                         cleaned.push(dir_name);
                     }

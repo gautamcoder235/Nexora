@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { FolderPlus, FolderOpen, Plus, Trash2, Settings, Box, Zap, Globe, Bot, ClipboardList, LogOut, Edit2, GitPullRequest } from "lucide-react";
+import { FolderPlus, FolderOpen, Plus, Trash2, Settings, Box, Zap, Globe, Bot, ClipboardList, LogOut, Edit2, GitPullRequest, Users } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
-import { useSwarmStore } from "../stores/swarmStore";
+
+import { useTeamStore } from "../stores/teamStore";
 import { useBrowserStore } from "../stores/browserStore";
 import { useChangesetStore } from "../stores/changesetStore";
 import { invoke } from "@tauri-apps/api/core";
@@ -28,8 +29,10 @@ export const ActivityBar: React.FC = () => {
     showConfirmDialog
   } = useOrchestratorStore();
 
-  const { isSwarmPanelVisible, setSwarmPanelVisible, executions } = useSwarmStore();
-  const runningCount = executions.filter(e => e.status === "running" || e.status === "validating").length;
+
+
+  const { isTeamPanelVisible, setTeamPanelVisible, nodes } = useTeamStore();
+  const teamRunningCount = nodes.filter(n => n.status === "running").length;
 
   const [wsName, setWsName] = useState("");
   const [projName, setProjName] = useState("");
@@ -88,7 +91,14 @@ export const ActivityBar: React.FC = () => {
       const paths = event.payload.paths;
       if (paths && paths.length > 0) {
         const folderPath = paths[0];
+        const ext = folderPath.split('.').pop()?.toLowerCase();
+        const isImage = ext ? ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(ext) : false;
         
+        if (isImage) {
+          // Ignore image files so individual components (like Terminal drag drop overlay) can process them
+          return;
+        }
+
         // Extract folder name from the absolute path
         const lastSlash = Math.max(folderPath.lastIndexOf("/"), folderPath.lastIndexOf("\\"));
         const folderName = lastSlash !== -1 ? folderPath.substring(lastSlash + 1) : folderPath;
@@ -162,15 +172,10 @@ export const ActivityBar: React.FC = () => {
   const activeProjects = projects.filter(p => p.workspaceId === activeWorkspaceId);
 
   return (
-    <div className="w-[56px] glass-sidebar glass-sidebar--collapsed flex flex-col items-center py-4 flex-shrink-0 z-40 select-none">
+    <div className="w-[48px] glass-sidebar glass-sidebar--collapsed flex flex-col items-center py-4 flex-shrink-0 z-40 select-none">
       
-      {/* Top Zone: Branding & Workspace */}
+      {/* Top Zone: Workspace Switcher */}
       <div className="flex flex-col items-center gap-4 w-full relative" ref={wsMenuRef}>
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-650/20 to-fuchsia-600/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-black text-sm shadow-[0_0_15px_rgba(168,85,247,0.15)] mb-2 cursor-default relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-          <span>NX</span>
-        </div>
-
         {/* Workspace Switcher Button */}
         <button
           ref={wsButtonRef}
@@ -181,7 +186,7 @@ export const ActivityBar: React.FC = () => {
             }
             setShowWsMenu(!showWsMenu);
           }}
-          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative ${
+          className={`w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all group relative ${
             showWsMenu ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
           }`}
           title="Workspaces"
@@ -190,7 +195,7 @@ export const ActivityBar: React.FC = () => {
           
           {/* Active indicator dot */}
           {activeWorkspaceId && (
-            <div className="absolute top-2.5 right-2 w-2 h-2 rounded-full bg-accent-primary border-2 border-bg-secondary" />
+            <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent-primary border-2 border-bg-secondary" />
           )}
         </button>
 
@@ -284,7 +289,7 @@ export const ActivityBar: React.FC = () => {
 
       {/* Middle Zone: Tools & Toggles */}
       <div className="flex-1 w-full flex flex-col items-center gap-2 mt-4">
-        <div className="w-6 h-px bg-border-glass mb-2" />
+        <div className="w-5 h-px bg-border-glass mb-2" />
         
         {activeWorkspaceId && (
           <>
@@ -297,20 +302,20 @@ export const ActivityBar: React.FC = () => {
                 }
                 setShowProjMenu(!showProjMenu);
               }}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative hover:scale-105 ${
+              className={`w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all group relative hover:scale-105 ${
                 showProjMenu ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
               }`}
               title="Project Repositories"
             >
               <FolderPlus size={20} />
-              <div className="absolute -top-0.5 -right-0.5 px-1 min-w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-[8px] font-bold text-blue-300">
+              <div className="absolute -top-1 -right-1 px-1 min-w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-[8px] font-bold text-blue-300">
                 {activeProjects.length}
               </div>
             </button>
 
             <button
               onClick={() => setSidebarVisible(!isSidebarVisible)}
-              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
+              className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 isSidebarVisible
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
@@ -318,14 +323,14 @@ export const ActivityBar: React.FC = () => {
               title={isSidebarVisible ? "Hide Agent Sidebar" : "Show Agent Sidebar"}
             >
               {isSidebarVisible && (
-                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
               )}
               <Bot size={20} />
             </button>
 
             <button
               onClick={() => setTaskCenterVisible(!isTaskCenterVisible)}
-              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
+              className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 isTaskCenterVisible
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
@@ -333,28 +338,30 @@ export const ActivityBar: React.FC = () => {
               title={isTaskCenterVisible ? "Hide Task Board" : "Show Task Board"}
             >
               {isTaskCenterVisible && (
-                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
               )}
               <ClipboardList size={20} />
             </button>
 
-            {/* Swarm Control Center Toggle */}
+
+
+            {/* Nexora Team Toggle */}
             <button
-              onClick={() => setSwarmPanelVisible(!isSwarmPanelVisible)}
-              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
-                isSwarmPanelVisible
+              onClick={() => setTeamPanelVisible(!isTeamPanelVisible)}
+              className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
+                isTeamPanelVisible
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
               }`}
-              title={isSwarmPanelVisible ? "Hide Swarm Panel" : "Show Swarm Control Center"}
+              title={isTeamPanelVisible ? "Hide Nexora Team" : "Show Nexora Team Panel"}
             >
-              {isSwarmPanelVisible && (
-                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+              {isTeamPanelVisible && (
+                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
               )}
-              <Zap size={20} />
-              {runningCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-accent-primary text-[8px] font-bold text-black flex items-center justify-center animate-pulse">
-                  {runningCount}
+              <Users size={20} />
+              {teamRunningCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent-primary text-[8px] font-bold text-black flex items-center justify-center animate-pulse">
+                  {teamRunningCount}
                 </span>
               )}
             </button>
@@ -362,7 +369,7 @@ export const ActivityBar: React.FC = () => {
             {/* Web Browser Panel Toggle */}
             <button
               onClick={() => useBrowserStore.getState().toggleBrowserPanel()}
-              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
+              className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 useBrowserStore((s) => s.isElectronConnected)
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
@@ -370,7 +377,7 @@ export const ActivityBar: React.FC = () => {
               title={useBrowserStore((s) => s.isElectronConnected) ? "Close Web Browser" : "Open Web Browser"}
             >
               {useBrowserStore((s) => s.isElectronConnected) && (
-                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
               )}
               <Globe size={20} />
             </button>
@@ -378,7 +385,7 @@ export const ActivityBar: React.FC = () => {
             {/* Agent Review Center Toggle */}
             <button
               onClick={() => useChangesetStore.getState().setReviewCenterOpen(!useChangesetStore.getState().isReviewCenterOpen)}
-              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105 ${
+              className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 useChangesetStore((s) => s.isReviewCenterOpen)
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
                   : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
@@ -386,7 +393,7 @@ export const ActivityBar: React.FC = () => {
               title={useChangesetStore((s) => s.isReviewCenterOpen) ? "Hide Review Center" : "Show Agent Review Center"}
             >
               {useChangesetStore((s) => s.isReviewCenterOpen) && (
-                <div className="absolute -left-2 w-1 h-5 rounded-r-full bg-accent-primary" />
+                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
               )}
               <GitPullRequest size={20} />
             </button>
@@ -399,7 +406,7 @@ export const ActivityBar: React.FC = () => {
         {activeWorkspaceId && (
           <button
             onClick={() => setSettingsModalOpen(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-all"
+            className="w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-all"
             title="Settings"
           >
             <Settings size={20} />
@@ -421,7 +428,7 @@ export const ActivityBar: React.FC = () => {
                 type="text"
                 value={wsName}
                 onChange={(e) => setWsName(e.target.value)}
-                placeholder="e.g. My Backend Swarm"
+                placeholder="e.g. My Backend Team"
                 className="glass-input"
               />
             </div>

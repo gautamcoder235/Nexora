@@ -40,5 +40,14 @@ export const agyPlugin: AgentPlugin = {
     }
     
     return logs;
+  },
+  resumeArgs: ["-c"],
+  autoResponders: [
+    { pattern: "Resume in the same project", response: "\r" },
+    { pattern: "Resume:", response: "\r" }
+  ],
+  conversationParser: {
+    pattern: "agy --conversation-([a-f0-9-]+) --project-(\\S+)",
+    argsTemplate: ["--conversation", "$1", "--project", "$2"]
   }
 };

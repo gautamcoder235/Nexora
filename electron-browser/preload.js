@@ -32,7 +32,10 @@ if (window.location.protocol === 'file:') {
         'hover-tester-match',
         'clear-hover-tester-match',
         'show-tab-hover-preview',
-        'hide-tab-hover-preview'
+        'hide-tab-hover-preview',
+        'window-minimize',
+        'window-maximize',
+        'window-close'
       ];
       if (validChannels.includes(channel)) {
         ipcRenderer.send(channel, data);
@@ -58,7 +61,8 @@ if (window.location.protocol === 'file:') {
         'tab-thumbnail',
         'port-detected',
         'update-hover-preview',
-        'clear-hover-preview'
+        'clear-hover-preview',
+        'window-maximized'
       ];
       if (validChannels.includes(channel)) {
         const subscription = (event, ...args) => func(...args);

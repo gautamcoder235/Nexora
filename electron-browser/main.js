@@ -777,6 +777,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     show: false,
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -789,6 +790,14 @@ function createWindow() {
   mainWindow.setMenu(null);
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+
+  mainWindow.on('maximize', () => {
+    sendToRenderer('window-maximized', true);
+  });
+
+  mainWindow.on('unmaximize', () => {
+    sendToRenderer('window-maximized', false);
+  });
 
   mainWindow.on('close', (event) => {
     // Destroy helper windows if they exist
@@ -1138,9 +1147,9 @@ function updateViewBounds() {
 
   const activeTab = tabs.find(t => t.id === activeTabId);
   if (activeTab && activeTab.view) {
-    // 96px header height accounts for 44px tab bar + 52px nav bar
+    // 128px header height accounts for 32px custom title bar + 44px tab bar + 52px nav bar
     const availableWidth = isSidebarOpen ? Math.max(0, width - 380) : width;
-    const availableHeight = Math.max(0, height - 96);
+    const availableHeight = Math.max(0, height - 128);
 
     let viewWidth = availableWidth;
     let viewHeight = availableHeight;
@@ -1157,7 +1166,7 @@ function updateViewBounds() {
     }
 
     const x = Math.max(0, Math.floor((availableWidth - viewWidth) / 2));
-    const y = 96 + Math.max(0, Math.floor((availableHeight - viewHeight) / 2));
+    const y = 128 + Math.max(0, Math.floor((availableHeight - viewHeight) / 2));
 
     activeTab.view.setBounds({ x, y, width: viewWidth, height: viewHeight });
   }
@@ -1180,6 +1189,25 @@ function sendToRenderer(channel, data) {
     mainWindow.webContents.send(channel, data);
   }
 }
+
+// Window controls IPC
+ipcMain.on('window-minimize', () => {
+  if (mainWindow) mainWindow.minimize();
+});
+
+ipcMain.on('window-maximize', () => {
+  if (mainWindow) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  }
+});
+
+ipcMain.on('window-close', () => {
+  if (mainWindow) mainWindow.close();
+});
 
 // IPC Handlers targeting active tab's webContents
 ipcMain.on('browser-back', () => {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useChangesetStore } from '../stores/changesetStore';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
-import { useSwarmStore } from '../stores/swarmStore';
+import { useTeamStore } from '../stores/teamStore';
 import { swarmApi, ExecutionEventInfo } from '../services/ExecutionEvents';
 import { invoke } from '@tauri-apps/api/core';
 import { X, Bot, Clipboard, FileCode, Terminal, Lock, ListTodo, History, CheckCircle, Play, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
@@ -46,7 +46,7 @@ export function AgentInspector() {
   const agents = useOrchestratorStore(s => s.agents);
   const tasks = useOrchestratorStore(s => s.tasks);
   const settings = useOrchestratorStore(s => s.settings);
-  const executions = useSwarmStore(s => s.executions);
+  const executions = useTeamStore(s => s.executions);
 
   const [activeTab, setActiveTab] = useState<'task' | 'reasoning' | 'files' | 'terminal' | 'locks' | 'events' | 'checkpoints'>('task');
 
@@ -174,7 +174,7 @@ export function AgentInspector() {
   // Load executions list when inspector opens
   useEffect(() => {
     if (isOpen) {
-      useSwarmStore.getState().loadExecutions();
+      useTeamStore.getState().loadExecutions();
     }
   }, [isOpen]);
 

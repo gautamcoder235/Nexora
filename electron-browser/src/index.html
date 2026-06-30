@@ -14,6 +14,36 @@
   </head>
 
   <body>
+    <!-- Custom Title Bar -->
+    <div class="custom-titlebar">
+      <div class="titlebar-drag-region"></div>
+      <div class="titlebar-brand">
+        <img src="assets/logo.png" class="titlebar-logo" alt="Logo" onerror="this.style.display='none'" />
+        <span class="titlebar-title">Nexora Browser</span>
+      </div>
+      <div class="titlebar-controls">
+        <button id="win-min-btn" class="titlebar-btn" title="Minimize">
+          <svg width="10" height="1" viewBox="0 0 10 1">
+            <line x1="0" y1="0.5" x2="10" y2="0.5" stroke="currentColor" stroke-width="1.2"></line>
+          </svg>
+        </button>
+        <button id="win-max-btn" class="titlebar-btn" title="Maximize">
+          <svg id="max-icon" width="10" height="10" viewBox="0 0 10 10">
+            <rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1"></rect>
+          </svg>
+          <svg id="restore-icon" width="10" height="10" viewBox="0 0 10 10" style="display: none;">
+            <path d="M2,3 L2,2 L8,2 L8,8 L7,8" fill="none" stroke="currentColor" stroke-width="1"></path>
+            <rect x="1" y="3" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1"></rect>
+          </svg>
+        </button>
+        <button id="win-close-btn" class="titlebar-btn titlebar-btn-close" title="Close">
+          <svg width="10" height="10" viewBox="0 0 10 10">
+            <polygon points="10,1.4 8.6,0 5,3.6 1.4,0 0,1.4 3.6,5 0,8.6 1.4,10 5,6.4 8.6,10 10,8.6 6.4,5" fill="currentColor"></polygon>
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <header class="browser-header">
       <!-- Tabs Bar -->
       <div class="tabs-container">

@@ -44,3 +44,48 @@
 .terminal-pane .xterm-rows {
   font-family: var(--font-mono) !important;
 }
+
+@keyframes borderGlowPulse {
+  0%, 100% {
+    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 0 4px rgba(16, 185, 129, 0.15);
+  }
+  50% {
+    border-color: rgba(16, 185, 129, 1);
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.45);
+  }
+}
+
+.terminal-border-pulse {
+  animation: borderGlowPulse 2s infinite ease-in-out;
+}
+
+@keyframes borderGlowPulseRed {
+  0%, 100% {
+    border-color: rgba(239, 68, 68, 0.45);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.15);
+  }
+  50% {
+    border-color: rgba(239, 68, 68, 1);
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.45);
+  }
+}
+
+.terminal-border-pulse-red {
+  animation: borderGlowPulseRed 2s infinite ease-in-out;
+}
+
+@keyframes borderGlowPulseOrange {
+  0%, 100% {
+    border-color: rgba(245, 158, 11, 0.45);
+    box-shadow: 0 0 4px rgba(245, 158, 11, 0.15);
+  }
+  50% {
+    border-color: rgba(245, 158, 11, 1);
+    box-shadow: 0 0 14px rgba(245, 158, 11, 0.45);
+  }
+}
+
+.terminal-border-pulse-orange {
+  animation: borderGlowPulseOrange 2s infinite ease-in-out;
+}

@@ -12,12 +12,13 @@
   "app": {
     "windows": [
       {
-        "title": "Nexora - AI Workspace",
+        "title": "Nexora",
         "width": 1280,
         "height": 800,
         "maximized": true,
         "minWidth": 1280,
-        "minHeight": 720
+        "minHeight": 720,
+        "decorations": false
       }
     ],
     "security": {
