@@ -571,7 +571,7 @@ pub fn get_active_executions(conn: &Connection) -> Result<Vec<ActiveExecution>> 
     Ok(result)
 }
 
-fn seed_default_agents(conn: &Connection) -> Result<()> {
+pub fn seed_default_agents(conn: &Connection) -> Result<()> {
     // Check if we already have agents
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM agents", [], |row| row.get(0))?;
     if count > 0 {

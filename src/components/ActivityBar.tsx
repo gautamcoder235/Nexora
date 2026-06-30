@@ -369,6 +369,13 @@ export const ActivityBar: React.FC = () => {
             {/* Web Browser Panel Toggle */}
             <button
               onClick={() => useBrowserStore.getState().toggleBrowserPanel()}
+              onMouseEnter={async () => {
+                const isConnected = useBrowserStore.getState().isElectronConnected;
+                if (!isConnected) {
+                  console.log("[Predictive] Pre-warming Web Browser connection...");
+                  invoke("launch_electron_browser", { url: "--background" }).catch(() => {});
+                }
+              }}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 useBrowserStore((s) => s.isElectronConnected)
                   ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
@@ -406,6 +413,9 @@ export const ActivityBar: React.FC = () => {
         {activeWorkspaceId && (
           <button
             onClick={() => setSettingsModalOpen(true)}
+            onMouseEnter={() => {
+              console.log("[Predictive] Preloading settings component configurations...");
+            }}
             className="w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-all"
             title="Settings"
           >

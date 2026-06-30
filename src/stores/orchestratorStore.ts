@@ -1,5 +1,35 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+
+const invoke = async <T>(cmd: string, args?: Record<string, any>): Promise<T> => {
+  const start = performance.now();
+  try {
+    const res = await tauriInvoke<T>(cmd, args);
+    const dur = performance.now() - start;
+    if (typeof window !== "undefined") {
+      if (!(window as any).__performanceTimings) {
+        (window as any).__performanceTimings = {};
+      }
+      (window as any).__performanceTimings.lastIpcCommand = cmd;
+      (window as any).__performanceTimings.lastIpcLatency = dur;
+      
+      if (cmd === "start_task_execution" || cmd === "spawn_agent_session" || cmd === "spawn_pty") {
+        (window as any).__performanceTimings.lastDriverLatency = dur;
+      }
+    }
+    return res;
+  } catch (err) {
+    const dur = performance.now() - start;
+    if (typeof window !== "undefined") {
+      if (!(window as any).__performanceTimings) {
+        (window as any).__performanceTimings = {};
+      }
+      (window as any).__performanceTimings.lastIpcCommand = cmd;
+      (window as any).__performanceTimings.lastIpcLatency = dur;
+    }
+    throw err;
+  }
+};
 import { 
   Workspace, 
   Project, 
@@ -560,7 +590,10 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
     // 3. Sync memory files and tasks checklists in parallel
     const workspaceProjects = get().projects.filter(p => p.workspaceId === workspaceId);
-    await Promise.all(workspaceProjects.map(proj => get().initializeProjectMemory(proj.id)));
+    
+    // DO NOT AWAIT THIS! Let it run in the background so it doesn't block the UI thread 
+    // waiting on synchronous disk writes (which can take 600ms+ due to Windows Defender).
+    Promise.all(workspaceProjects.map(proj => get().initializeProjectMemory(proj.id))).catch(console.error);
     
     get().saveSnapshot();
   },
@@ -819,7 +852,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       projectId,
       agentId,
       title,
-      status: 'connected',
+      status: 'connecting',
       executionState: command ? 'running' : 'idle',
       cols: 80,
       rows: 24,
@@ -872,7 +905,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       const terminals = terminalExists
         ? state.terminals.map(t => t.id === sessionId ? { 
             ...t, 
-            status: 'connected' as const,
+            status: 'connecting' as const,
             command,
             args,
             cwd: sessionPath,
@@ -926,6 +959,11 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           });
         }
 
+        // Transition from connecting to connected
+        set((state) => ({
+          terminals: state.terminals.map(t => t.id === sessionId ? { ...t, status: 'connected' as const } : t)
+        }));
+
         EventBus.publish("terminal:spawned", { sessionId, projectId });
         get().logActivity('terminal', 'info', `Spawned terminal "${title}" at ${sessionPath}`, projectId, agentId);
 
@@ -956,6 +994,9 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       }
     } catch (e) {
       console.error("PTY Spawner failed:", e);
+      set((state) => ({
+        terminals: state.terminals.map(t => t.id === sessionId ? { ...t, status: 'disconnected' as const } : t)
+      }));
       get().logActivity('terminal', 'error', `PTY Spawner failed: ${e}`, projectId, agentId);
     }
 

@@ -25,7 +25,26 @@ export class PersistenceManager {
   private readonly RETRY_MS = 5000;    // 5 seconds retry on failure
 
   private constructor() {
-    // Singleton
+    if (typeof window !== "undefined") {
+      window.addEventListener("blur", () => {
+        if (this.isDirty) {
+          console.log("[PersistenceManager] Window blurred. Triggering immediate save...");
+          this.forceSaveImmediate();
+        }
+      });
+      window.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden" && this.isDirty) {
+          console.log("[PersistenceManager] Window hidden/minimized. Triggering immediate save...");
+          this.forceSaveImmediate();
+        }
+      });
+      window.addEventListener("beforeunload", () => {
+        if (this.isDirty) {
+          console.log("[PersistenceManager] Window unloading. Triggering immediate save...");
+          this.forceSaveImmediate();
+        }
+      });
+    }
   }
 
   static getInstance(): PersistenceManager {
@@ -47,7 +66,13 @@ export class PersistenceManager {
     }
 
     this.debounceTimer = setTimeout(() => {
-      this.enqueueSave();
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        (window as any).requestIdleCallback(() => {
+          this.enqueueSave();
+        }, { timeout: 1000 });
+      } else {
+        this.enqueueSave();
+      }
     }, this.DEBOUNCE_MS);
   }
 

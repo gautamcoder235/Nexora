@@ -1,0 +1,77 @@
+﻿.perf-hud-overlay {
+  position: fixed;
+  top: 50px;
+  right: 15px;
+  width: 260px;
+  background-color: rgba(9, 9, 11, 0.85);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(63, 63, 70, 0.5);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #e4e4e7;
+  z-index: 999999;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.perf-hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(63, 63, 70, 0.4);
+}
+
+.perf-hud-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.perf-hud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 10px;
+}
+
+.perf-label {
+  color: #a1a1aa;
+}
+
+.perf-value {
+  font-weight: 500;
+  text-align: right;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.perf-hud-divider {
+  width: 100%;
+  border-top: 1px dashed rgba(63, 63, 70, 0.3);
+  margin: 4px 0;
+}
+
+.perf-ok {
+  color: #10b981; /* Green */
+}
+
+.perf-warn {
+  color: #ef4444; /* Red */
+  font-weight: bold;
+  animation: pulse-hud-warn 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-hud-warn {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .7;
+  }
+}

@@ -251,12 +251,16 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       }
     };
 
+    let activeWebglAddon: WebglAddon | null = null;
+    let activeCanvasAddon: CanvasAddon | null = null;
+
     // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
     // MUST be called AFTER term.open() according to xterm.js spec!
     const useGpu = settings?.appearance?.terminal?.hardwareAcceleration ?? settings?.hardwareAcceleration ?? true;
     if (useGpu && isWebGL2Supported()) {
       try {
         const webglAddon = new WebglAddon();
+        activeWebglAddon = webglAddon;
         
         // Safely handle WebGL context loss
         webglAddon.onContextLoss(() => {
@@ -264,8 +268,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
           // Defer to avoid crashing xterm's internal event dispatcher during the event
           setTimeout(() => {
             try { webglAddon.dispose(); } catch (e) {}
+            activeWebglAddon = null;
             try {
               const canvasAddon = new CanvasAddon();
+              activeCanvasAddon = canvasAddon;
               term.loadAddon(canvasAddon);
             } catch (e) {
               console.warn('Canvas fallback failed. Using standard DOM renderer.', e);
@@ -278,6 +284,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         console.warn('WebGL renderer initialization failed:', e);
         try {
           const canvasAddon = new CanvasAddon();
+          activeCanvasAddon = canvasAddon;
           term.loadAddon(canvasAddon);
         } catch (err) {
           console.warn('Canvas initialization failed, falling back to standard DOM renderer:', err);
@@ -288,6 +295,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       console.warn('WebGL2 not supported. Falling back to Canvas renderer.');
       try {
         const canvasAddon = new CanvasAddon();
+        activeCanvasAddon = canvasAddon;
         term.loadAddon(canvasAddon);
       } catch (err) {
         console.warn('Canvas initialization failed, falling back to standard DOM renderer:', err);
@@ -295,19 +303,22 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     }
     
     // Fit to parent container dimensions and initialize size in PTY
-    // Wait for fonts to be ready so character metrics are correct!
-    document.fonts.ready.then(() => {
-      try {
-        fitAddon.fit();
-        invoke('resize_pty', {
-          sessionId: paneId,
-          rows: term.rows,
-          cols: term.cols,
-        }).catch(err => console.warn('Initial PTY resize failed:', err));
-      } catch (e) {
-        console.warn('Initial terminal fit failed:', e);
-      }
-    });
+    // Defer slightly to allow flexbox grid to settle dimensions, but do NOT 
+    // block on document.fonts.ready as it triggers a 3-second timeout on missing fonts.
+    setTimeout(() => {
+      requestAnimationFrame(() => {
+        try {
+          fitAddon.fit();
+          invoke('resize_pty', {
+            sessionId: paneId,
+            rows: term.rows,
+            cols: term.cols,
+          }).catch(err => console.warn('Initial PTY resize failed:', err));
+        } catch (e) {
+          console.warn('Initial terminal fit failed:', e);
+        }
+      });
+    }, 25);
 
     // Restore history safely from standalone Buffer Manager
     const bufferManager = TerminalBufferManager.getInstance();
@@ -573,6 +584,21 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       resizeObserver.disconnect();
       if (resizeTimeout) clearTimeout(resizeTimeout);
       if (unlistenExit) unlistenExit();
+      
+      // xterm.js does NOT automatically dispose addons when the main terminal is disposed.
+      // We must explicitly destroy the WebGL contexts to prevent GPU leak limit crashes!
+      try {
+        if (activeWebglAddon) activeWebglAddon.dispose();
+      } catch (e) { console.warn('WebGL addon dispose error:', e); }
+      
+      try {
+        if (activeCanvasAddon) activeCanvasAddon.dispose();
+      } catch (e) { console.warn('Canvas addon dispose error:', e); }
+      
+      try {
+        fitAddon.dispose();
+      } catch (e) { console.warn('Fit addon dispose error:', e); }
+
       try {
         term.dispose();
       } catch (e) {
@@ -618,6 +644,22 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       data-pane-id={paneId}
       className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden"
     >
+      {/* Connecting/Loading Overlay */}
+      {termSession?.status === 'connecting' && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#000000]/70 backdrop-blur-[6px] transition-all duration-300 pointer-events-none select-none">
+          <div className="flex flex-col items-center justify-center p-6 text-center gap-3">
+            <div className="w-8 h-8 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
+            <div>
+              <p className="text-zinc-200 text-[11px] font-mono tracking-wide">
+                Warming PTY Shell...
+              </p>
+              <p className="text-zinc-500 text-[9px] font-mono mt-1">
+                Allocating process context
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       <div 
         ref={containerRef} 
         className="w-full h-full flex-1" 

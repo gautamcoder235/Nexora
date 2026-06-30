@@ -17,6 +17,7 @@ import { useTeamStore } from "./stores/teamStore";
 import { useBrowserStore } from "./stores/browserStore";
 import { useChangesetStore } from "./stores/changesetStore";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
+import { PerformanceOverlay } from "./components/PerformanceOverlay";
 import { AnalyticsService } from "./services/analytics";
 import { invoke } from "@tauri-apps/api/core";
 import { ContextMenu } from "./components/ContextMenu";
@@ -779,16 +780,16 @@ function App() {
         <div className="flex flex-col items-center justify-center z-10 space-y-10 -translate-y-12">
           
           {/* Outer Rotating Dotted Rings (CENTERED) */}
-          <div className="relative w-48 h-48 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full border border-dashed border-blue-500/10 splash-orbiting-ring" />
-            <div className="absolute inset-3 rounded-full border border-dashed border-cyan-500/5 splash-orbiting-ring" style={{ animationDirection: 'reverse', animationDuration: '24s' }} />
+          <div className="relative w-48 h-48">
+            <div className="absolute left-0 top-0 w-full h-full rounded-full border border-dashed border-blue-500/10 splash-orbiting-ring" />
+            <div className="absolute left-[12px] top-[12px] w-[168px] h-[168px] rounded-full border border-dashed border-cyan-500/5 splash-orbiting-ring" style={{ animationDirection: 'reverse', animationDuration: '24s' }} />
             
-            <div className="splash-logo-container relative w-24 h-24 flex items-center justify-center">
+            <div className="splash-logo-container absolute left-12 top-12 w-24 h-24">
               <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 opacity-45 blur-xl" />
               
               <img 
                 src="/logo.png" 
-                className="splash-logo-card w-24 h-24 relative z-10 object-contain" 
+                className="splash-logo-card w-full h-full absolute inset-0 z-10 object-contain" 
                 alt="Nexora Logo" 
               />
             </div>
@@ -1802,6 +1803,7 @@ function App() {
         <SettingsModal />
       </SettingsModalBoundary>
       <AgentInspector />
+      <PerformanceOverlay />
       </div>
     </div>
   );

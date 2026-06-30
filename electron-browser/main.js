@@ -816,7 +816,9 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    if (!process.argv.includes('--background')) {
+      mainWindow.show();
+    }
     createHoverPreviewWindow();
   });
 

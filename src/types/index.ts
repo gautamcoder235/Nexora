@@ -66,7 +66,7 @@ export interface AgentProfile {
   allowedTools?: string[];
 }
 
-export type TerminalStatus = 'connected' | 'disconnected' | 'reconnecting';
+export type TerminalStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
 export interface TerminalSession {
   id: string;

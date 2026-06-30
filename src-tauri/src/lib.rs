@@ -37,6 +37,18 @@ pub struct BackendMetrics {
 lazy_static::lazy_static! {
     static ref TERMINAL_METRICS: Mutex<HashMap<String, BackendMetrics>> = Mutex::new(HashMap::new());
     static ref PTY_LAST_OUTPUT: Mutex<HashMap<String, (Instant, Option<String>, Option<String>)>> = Mutex::new(HashMap::new());
+    static ref POWERSHELL_POOL: Mutex<Vec<PtySession>> = Mutex::new(Vec::new());
+    static ref CMD_POOL: Mutex<Vec<PtySession>> = Mutex::new(Vec::new());
+    static ref BASH_POOL: Mutex<Vec<PtySession>> = Mutex::new(Vec::new());
+    static ref ZSH_POOL: Mutex<Vec<PtySession>> = Mutex::new(Vec::new());
+    static ref PERF_TIMINGS: Mutex<HashMap<String, u64>> = Mutex::new(HashMap::new());
+}
+
+pub fn record_perf_timing(key: &str, duration_ms: u64) {
+    if let Ok(mut map) = PERF_TIMINGS.lock() {
+        map.insert(key.to_string(), duration_ms);
+        println!("[Telemetry] Latency measurement: {} = {}ms", key, duration_ms);
+    }
 }
 
 pub fn update_pty_heartbeat(session_id: &str, project_path: Option<String>, task_id: Option<String>) {
@@ -121,102 +133,30 @@ struct PtyExit {
 }
 
 // ==========================================
-// PTY Command RPCs
+// PTY Command RPCs & Telemetry
 // ==========================================
 
-#[tauri::command]
-fn spawn_pty(
-    app: AppHandle,
-    session_id: String,
-    command: Option<String>,
-    args: Option<Vec<String>>,
-    cwd: Option<String>,
-    env: Option<HashMap<String, String>>,
-    rows: Option<u16>,
-    cols: Option<u16>,
-    project_path: Option<String>,
-    task_id: Option<String>,
-) -> Result<Option<u32>, String> {
-    spawn_pty_internal(app, session_id, command, args, cwd, env, rows, cols, project_path, task_id)
-}
-
-pub fn spawn_pty_internal(
-    app: AppHandle,
-    session_id: String,
-    command: Option<String>,
-    args: Option<Vec<String>>,
-    cwd: Option<String>,
-    env: Option<HashMap<String, String>>,
-    rows: Option<u16>,
-    cols: Option<u16>,
-    project_path: Option<String>,
-    task_id: Option<String>,
-) -> Result<Option<u32>, String> {
-    {
-        let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
-        if sessions.len() >= 32 {
-            return Err("MAX_PTY_SESSIONS limit (32) reached. Please close some terminals before opening more.".to_string());
-        }
-    }
-
+fn create_raw_pty_session(_app: AppHandle, shell_type: &str) -> Result<PtySession, String> {
     let pty_system = NativePtySystem::default();
     let size = PtySize {
-        rows: rows.unwrap_or(24),
-        cols: cols.unwrap_or(80),
+        rows: 24,
+        cols: 80,
         pixel_width: 0,
         pixel_height: 0,
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let mut zsh_temp_dir: Option<PathBuf> = None;
-
-    // On Windows, CLI commands like `npx`, `aider`, `gemini`, etc., are script wrappers (.cmd, .bat, .ps1).
-    // Spawning them directly via CreateProcess yields OS error 193 ("%1 is not a valid Win32 application").
-    // We wrap custom commands on Windows inside `cmd.exe /c` so the shell handles script resolution.
-    let (shell_cmd, final_args) = if cfg!(target_os = "windows") {
-        if let Some(cmd) = command {
-            let mut wrapped_args = vec!["/c".to_string(), cmd];
-            if let Some(a) = args {
-                wrapped_args.extend(a);
-            }
-            ("cmd.exe".to_string(), wrapped_args)
-        } else {
-            // Interactive PowerShell shell with prompt hook
+    let (shell_cmd, final_args) = match shell_type {
+        "powershell" => {
             let ps_script = r#"function prompt { $val = if ($global:LastExitCode -ne $null) { $global:LastExitCode } else { 0 }; [Console]::Write("`e]133;D;$val`a"); [Console]::Write("`e]133;A`a"); $orig = "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> "; [Console]::Write("`e]133;B`a"); return $orig }"#;
             ("powershell.exe".to_string(), vec!["-NoExit".to_string(), "-Command".to_string(), ps_script.to_string()])
         }
-    } else {
-        if let Some(cmd) = command {
-            (cmd, args.unwrap_or_default())
-        } else {
-            // Interactive Bash or Zsh shell with OSC 133 semantic zones
-            let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-            if user_shell.contains("zsh") {
-                let zsh_script = r#"
-if [ -f ~/.zshrc ]; then
-    source ~/.zshrc
-fi
-__nexora_precmd() {
-    local EXIT="$?"
-    printf "\x1b]133;D;%s\x07" "$EXIT"
-    printf "\x1b]133;A\x07"
-}
-__nexora_preexec() {
-    printf "\x1b]133;B\x07"
-    printf "\x1b]133;C\x07"
-}
-autoload -Uz add-zsh-hook
-add-zsh-hook precmd __nexora_precmd
-add-zsh-hook preexec __nexora_preexec
-"#;
-                let temp_dir = std::env::temp_dir().join(format!("nexora_zsh_{}", session_id));
-                let _ = std::fs::create_dir_all(&temp_dir);
-                let zshrc_path = temp_dir.join(".zshrc");
-                let _ = std::fs::write(&zshrc_path, zsh_script);
-                zsh_temp_dir = Some(temp_dir);
-                (user_shell, Vec::new())
-            } else {
-                let bash_script = r#"
+        "cmd" => {
+            ("cmd.exe".to_string(), Vec::new())
+        }
+        "bash" => {
+            // Interactive Bash with OSC 133 semantic zones
+            let bash_script = r#"
 if [ -f ~/.bashrc ]; then
     . ~/.bashrc
 fi
@@ -239,45 +179,130 @@ __nexora_preexec() {
 }
 trap '__nexora_preexec' DEBUG
 "#;
-                let temp_file = std::env::temp_dir().join(format!("nexora_bash_{}", session_id));
-                let _ = std::fs::write(&temp_file, bash_script);
-                (user_shell, vec!["--init-file".to_string(), temp_file.to_string_lossy().to_string()])
-            }
+            let temp_file = std::env::temp_dir().join("nexora_bash_prewarm");
+            let _ = std::fs::write(&temp_file, bash_script);
+            ("/bin/bash".to_string(), vec!["--init-file".to_string(), temp_file.to_string_lossy().to_string()])
         }
+        "zsh" => {
+            let zsh_script = r#"
+if [ -f ~/.zshrc ]; then
+    source ~/.zshrc
+fi
+__nexora_precmd() {
+    local EXIT="$?"
+    printf "\x1b]133;D;%s\x07" "$EXIT"
+    printf "\x1b]133;A\x07"
+}
+__nexora_preexec() {
+    printf "\x1b]133;B\x07"
+    printf "\x1b]133;C\x07"
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd __nexora_precmd
+add-zsh-hook preexec __nexora_preexec
+"#;
+            let temp_dir = std::env::temp_dir().join("nexora_zsh_prewarm");
+            let _ = std::fs::create_dir_all(&temp_dir);
+            let zshrc_path = temp_dir.join(".zshrc");
+            let _ = std::fs::write(&zshrc_path, zsh_script);
+            ("/bin/zsh".to_string(), Vec::new())
+        }
+        _ => return Err(format!("Unknown shell type {}", shell_type)),
     };
 
     let mut cmd_builder = CommandBuilder::new(&shell_cmd);
     for arg in final_args {
         cmd_builder.arg(&arg);
     }
-
-    // Set current working directory
-    if let Some(cwd_path) = cwd {
-        cmd_builder.cwd(&cwd_path);
+    
+    if shell_type == "zsh" {
+        let temp_dir = std::env::temp_dir().join("nexora_zsh_prewarm");
+        cmd_builder.env("ZDOTDIR", temp_dir.to_string_lossy().as_ref());
     }
 
-    // Append environment variables
-    if let Some(env_map) = env {
-        for (k, v) in env_map {
-            cmd_builder.env(&k, &v);
-        }
-    }
-
-    if let Some(ref z_dir) = zsh_temp_dir {
-        cmd_builder.env("ZDOTDIR", z_dir.to_string_lossy().as_ref());
-    }
-
-    // Spawn the shell process inside slave PTY
-    let child = pair
-        .slave
-        .spawn_command(cmd_builder)
-        .map_err(|e| e.to_string())?;
-    let process_id = child.process_id();
+    let child = pair.slave.spawn_command(cmd_builder).map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let master = pair.master;
 
-    // Asynchronously poll stdout in a native thread
-    let mut reader = master.try_clone_reader().map_err(|e| e.to_string())?;
+    Ok(PtySession {
+        writer,
+        master,
+        child,
+    })
+}
+
+fn replenish_pool(app_handle: AppHandle, shell_type: &str) {
+    let limit = 1;
+    let current_len = match shell_type {
+        "powershell" => POWERSHELL_POOL.lock().unwrap().len(),
+        "cmd" => CMD_POOL.lock().unwrap().len(),
+        "bash" => BASH_POOL.lock().unwrap().len(),
+        "zsh" => ZSH_POOL.lock().unwrap().len(),
+        _ => return,
+    };
+    if current_len >= limit {
+        return;
+    }
+
+    let app_handle_clone = app_handle.clone();
+    let shell_type_str = shell_type.to_string();
+    tauri::async_runtime::spawn(async move {
+        match create_raw_pty_session(app_handle_clone, &shell_type_str) {
+            Ok(session) => {
+                match shell_type_str.as_str() {
+                    "powershell" => POWERSHELL_POOL.lock().unwrap().push(session),
+                    "cmd" => CMD_POOL.lock().unwrap().push(session),
+                    "bash" => BASH_POOL.lock().unwrap().push(session),
+                    "zsh" => ZSH_POOL.lock().unwrap().push(session),
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                eprintln!("[PTY Pool] Failed to prewarm shell {}: {}", shell_type_str, e);
+            }
+        }
+    });
+}
+
+pub fn prewarm_pty_pools(app_handle: AppHandle) {
+    let os = std::env::consts::OS;
+    if os == "windows" {
+        replenish_pool(app_handle.clone(), "powershell");
+        replenish_pool(app_handle.clone(), "cmd");
+    } else {
+        replenish_pool(app_handle.clone(), "bash");
+        replenish_pool(app_handle.clone(), "zsh");
+    }
+}
+
+#[tauri::command]
+fn get_perf_timings() -> HashMap<String, u64> {
+    PERF_TIMINGS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+#[tauri::command]
+fn spawn_pty(
+    app: AppHandle,
+    session_id: String,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+    rows: Option<u16>,
+    cols: Option<u16>,
+    project_path: Option<String>,
+    task_id: Option<String>,
+) -> Result<Option<u32>, String> {
+    spawn_pty_internal(app, session_id, command, args, cwd, env, rows, cols, project_path, task_id)
+}
+
+fn start_pty_event_loop(
+    app: AppHandle,
+    session_id: String,
+    mut reader: Box<dyn std::io::Read + Send>,
+    project_path: Option<String>,
+    task_id: Option<String>,
+) {
     let session_id_clone = session_id.clone();
     let app_clone = app.clone();
 
@@ -285,7 +310,7 @@ trap '__nexora_preexec' DEBUG
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
 
     // 2. PTY Reader Thread (Blocking)
-    let thread_session_id = session_id_clone.clone();
+    let thread_session_id = session_id.clone();
     let thread_project_path = project_path.clone();
     let thread_task_id = task_id.clone();
     std::thread::spawn(move || {
@@ -485,20 +510,232 @@ trap '__nexora_preexec' DEBUG
             }
         }
     });
+}
 
-    // Save PTY session
+pub fn spawn_pty_internal(
+    app: AppHandle,
+    session_id: String,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+    rows: Option<u16>,
+    cols: Option<u16>,
+    project_path: Option<String>,
+    task_id: Option<String>,
+) -> Result<Option<u32>, String> {
+    let start_time = Instant::now();
+    {
+        let sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
+        if sessions.len() >= 32 {
+            return Err("MAX_PTY_SESSIONS limit (32) reached. Please close some terminals before opening more.".to_string());
+        }
+    }
+
+    let mut claimed_session = None;
+    let shell_type = if cfg!(target_os = "windows") {
+        "powershell"
+    } else {
+        let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        if user_shell.contains("zsh") {
+            "zsh"
+        } else {
+            "bash"
+        }
+    };
+
+    // If default interactive shell is requested, pull from typed PTY pool
+    if command.is_none() && args.is_none() {
+        match shell_type {
+            "powershell" => {
+                if let Ok(mut p) = POWERSHELL_POOL.lock() {
+                    if !p.is_empty() {
+                        claimed_session = Some(p.remove(0));
+                    }
+                }
+            }
+            "cmd" => {
+                if let Ok(mut p) = CMD_POOL.lock() {
+                    if !p.is_empty() {
+                        claimed_session = Some(p.remove(0));
+                    }
+                }
+            }
+            "bash" => {
+                if let Ok(mut p) = BASH_POOL.lock() {
+                    if !p.is_empty() {
+                        claimed_session = Some(p.remove(0));
+                    }
+                }
+            }
+            "zsh" => {
+                if let Ok(mut p) = ZSH_POOL.lock() {
+                    if !p.is_empty() {
+                        claimed_session = Some(p.remove(0));
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if claimed_session.is_some() {
+            println!("[PTY Pool] Claimed prewarmed PTY session for {}", shell_type);
+        }
+
+        // Asynchronously replenish pool
+        replenish_pool(app.clone(), shell_type);
+    }
+
+    let (writer, master, child, process_id) = if let Some(mut session) = claimed_session {
+        // Resize master
+        let size = PtySize {
+            rows: rows.unwrap_or(24),
+            cols: cols.unwrap_or(80),
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let _ = session.master.resize(size);
+
+        // Change directory to cwd if provided
+        if let Some(ref cwd_path) = cwd {
+            let cd_cmd = if cfg!(target_os = "windows") {
+                format!("cd \"{}\"\r\n", cwd_path)
+            } else {
+                format!("cd \"{}\"\n", cwd_path)
+            };
+            let _ = session.writer.write_all(cd_cmd.as_bytes());
+            let _ = session.writer.flush();
+        }
+
+        let pid = session.child.process_id();
+        let dur = start_time.elapsed().as_millis() as u64;
+        record_perf_timing("PTY Spawning (Warm)", dur);
+        (session.writer, session.master, session.child, pid)
+    } else {
+        // Spawn brand new PTY session (Cold start path)
+        let pty_system = NativePtySystem::default();
+        let size = PtySize {
+            rows: rows.unwrap_or(24),
+            cols: cols.unwrap_or(80),
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
+
+        let mut zsh_temp_dir: Option<PathBuf> = None;
+
+        let (shell_cmd, final_args) = if cfg!(target_os = "windows") {
+            if let Some(cmd) = command {
+                let mut wrapped_args = vec!["/c".to_string(), cmd];
+                if let Some(a) = args {
+                    wrapped_args.extend(a);
+                }
+                ("cmd.exe".to_string(), wrapped_args)
+            } else {
+                let ps_script = r#"function prompt { $val = if ($global:LastExitCode -ne $null) { $global:LastExitCode } else { 0 }; [Console]::Write("`e]133;D;$val`a"); [Console]::Write("`e]133;A`a"); $orig = "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> "; [Console]::Write("`e]133;B`a"); return $orig }"#;
+                ("powershell.exe".to_string(), vec!["-NoExit".to_string(), "-Command".to_string(), ps_script.to_string()])
+            }
+        } else {
+            if let Some(cmd) = command {
+                (cmd, args.unwrap_or_default())
+            } else {
+                let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+                if user_shell.contains("zsh") {
+                    let zsh_script = r#"
+if [ -f ~/.zshrc ]; then
+    source ~/.zshrc
+fi
+__nexora_precmd() {
+    local EXIT="$?"
+    printf "\x1b]133;D;%s\x07" "$EXIT"
+    printf "\x1b]133;A\x07"
+}
+__nexora_preexec() {
+    printf "\x1b]133;B\x07"
+    printf "\x1b]133;C\x07"
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd __nexora_precmd
+add-zsh-hook preexec __nexora_preexec
+"#;
+                    let temp_dir = std::env::temp_dir().join(format!("nexora_zsh_{}", session_id));
+                    let _ = std::fs::create_dir_all(&temp_dir);
+                    let zshrc_path = temp_dir.join(".zshrc");
+                    let _ = std::fs::write(&zshrc_path, zsh_script);
+                    zsh_temp_dir = Some(temp_dir);
+                    (user_shell, Vec::new())
+                } else {
+                    let bash_script = r#"
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+fi
+__nexora_prompt_command() {
+    local EXIT="$?"
+    printf "\x1b]133;D;%s\x07" "$EXIT"
+    printf "\x1b]133;A\x07"
+}
+if [[ -z "$PROMPT_COMMAND" ]]; then
+    PROMPT_COMMAND="__nexora_prompt_command"
+else
+    PROMPT_COMMAND="__nexora_prompt_command; $PROMPT_COMMAND"
+fi
+__nexora_preexec() {
+    if [[ "$BASH_COMMAND" == "__nexora_prompt_command"* ]]; then
+        return
+    fi
+    printf "\x1b]133;B\x07"
+    printf "\x1b]133;C\x07"
+}
+trap '__nexora_preexec' DEBUG
+"#;
+                    let temp_file = std::env::temp_dir().join(format!("nexora_bash_{}", session_id));
+                    let _ = std::fs::write(&temp_file, bash_script);
+                    (user_shell, vec!["--init-file".to_string(), temp_file.to_string_lossy().to_string()])
+                }
+            }
+        };
+
+        let mut cmd_builder = CommandBuilder::new(&shell_cmd);
+        for arg in final_args {
+            cmd_builder.arg(&arg);
+        }
+
+        if let Some(cwd_path) = cwd {
+            cmd_builder.cwd(&cwd_path);
+        }
+
+        if let Some(env_map) = env {
+            for (k, v) in env_map {
+                cmd_builder.env(&k, &v);
+            }
+        }
+
+        if let Some(ref z_dir) = zsh_temp_dir {
+            cmd_builder.env("ZDOTDIR", z_dir.to_string_lossy().as_ref());
+        }
+
+        let child: Box<dyn Child + Send> = pair.slave.spawn_command(cmd_builder).map_err(|e| e.to_string())?;
+        let pid = child.process_id();
+        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        let master = pair.master;
+
+        let dur = start_time.elapsed().as_millis() as u64;
+        record_perf_timing("PTY Spawning (Cold)", dur);
+        (writer, master, child, pid)
+    };
+
+    // Spin up standard stdout event loop
+    let reader: Box<dyn std::io::Read + Send> = master.try_clone_reader().map_err(|e| e.to_string())?;
+    start_pty_event_loop(app, session_id.clone(), reader, project_path, task_id);
+
+    // Save PTY session inside sessions map
     let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
-
-    // 🔥 THE FIX: Explicitly kill the old process before overwriting it.
-    // In Rust portable-pty, dropping the Child struct does not kill the OS process.
-    // Without this, the orphaned process and its reader thread continue running and
-    // emitting `terminal:stdout` events, causing duplicated terminal rendering in the frontend.
     if let Some(mut old_session) = sessions.remove(&session_id) {
         let _ = old_session.child.kill();
     }
 
     sessions.insert(
-        session_id.clone(),
+        session_id,
         PtySession {
             writer,
             master,
@@ -1410,23 +1647,76 @@ pub fn run() {
         .manage(team::bus::EventBus::new())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // Initialize Swarm SQLite Database
-            if let Err(e) = swarm_db::init_db(app.handle()) {
-                eprintln!("Failed to initialize swarm db: {}", e);
-                app.handle()
-                    .manage(swarm_db::DbState(std::sync::Mutex::new(None)));
-            }
+            let app_handle = app.handle().clone();
+            
+            // Manage DbState with None connection synchronously to prevent Tauri command panics on missing state
+            app_handle.manage(swarm_db::DbState(std::sync::Mutex::new(None)));
+            
+            // Asynchronously initialize database and recovery using tauri::async_runtime::spawn
+            tauri::async_runtime::spawn(async move {
+                // Phase 1: Database Initialization
+                let start_db = Instant::now();
+                let mut connection = None;
+                
+                // Get path to app data directory
+                let db_path = match app_handle.path().app_data_dir() {
+                    Ok(path) => path,
+                    Err(e) => {
+                        eprintln!("[Startup] Failed to get app data dir: {}", e);
+                        return;
+                    }
+                };
 
-            // Initialize Team SQLite Database
-            let mut project_dir = String::new();
-            if let Some(db_state) = app.handle().try_state::<swarm_db::DbState>() {
-                if let Ok(guard) = db_state.0.lock() {
-                    if let Some(ref conn) = *guard {
-                        if let Err(e) = team::init_team_db(conn) {
-                            eprintln!("Failed to initialize team db: {}", e);
+                if !db_path.exists() {
+                    if let Err(e) = std::fs::create_dir_all(&db_path) {
+                        eprintln!("[Startup] Failed to create app data dir: {}", e);
+                        return;
+                    }
+                }
+
+                let mut db_file = db_path.clone();
+                db_file.push("swarm.db");
+
+                match rusqlite::Connection::open(&db_file) {
+                    Ok(conn) => {
+                        // Enable WAL mode & synchronous optimizations
+                        if let Err(e) = conn.execute_batch(
+                            "PRAGMA journal_mode = WAL;
+                             PRAGMA busy_timeout = 5000;
+                             PRAGMA synchronous = NORMAL;",
+                        ) {
+                            eprintln!("[Startup] Pragma setup failed: {}", e);
                         }
 
-                        // Query the last opened project directory
+                        // Run migrations & seeding
+                        if let Err(e) = swarm_db::run_migrations(&conn) {
+                            eprintln!("[Startup] Migration failed: {}", e);
+                        } else if let Err(e) = swarm_db::seed_default_agents(&conn) {
+                            eprintln!("[Startup] Seeding failed: {}", e);
+                        } else {
+                            // Clean up mock changeset data
+                            let _ = conn.execute("DELETE FROM review_comments WHERE changeset_id = 'cset-mock-auth'", []);
+                            let _ = conn.execute("DELETE FROM changeset_files WHERE changeset_id = 'cset-mock-auth'", []);
+                            let _ = conn.execute("DELETE FROM changesets WHERE id = 'cset-mock-auth'", []);
+
+                            // Initialize Team DB
+                            if let Err(e) = team::init_team_db(&conn) {
+                                eprintln!("[Startup] Failed to initialize team db: {}", e);
+                            }
+
+                            connection = Some(conn);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[Startup] Failed to open SQLite DB: {}", e);
+                    }
+                }
+
+                let mut project_dir = String::new();
+
+                if let Some(conn) = connection {
+                    // Query the last opened project directory before store
+                    {
                         let stmt = conn.prepare("SELECT root_path FROM repositories ORDER BY last_opened_at DESC LIMIT 1").ok();
                         if let Some(mut s) = stmt {
                             if let Some(path) = s.query_row([], |row| row.get::<_, String>(0)).ok() {
@@ -1434,34 +1724,50 @@ pub fn run() {
                             }
                         }
                     }
+
+                    if let Some(db_state) = app_handle.try_state::<swarm_db::DbState>() {
+                        if let Ok(mut guard) = db_state.0.lock() {
+                            *guard = Some(conn);
+                        }
+                    }
                 }
-            }
 
-            if !project_dir.is_empty() {
-                if let Err(e) = team::recovery_engine::run_startup_recovery(app.handle(), &project_dir) {
-                    eprintln!("Failed to run startup recovery: {}", e);
+                let db_dur = start_db.elapsed().as_millis() as u64;
+                record_perf_timing("Database Initialization", db_dur);
+
+                // Phase 2: Pre-warming hidden Electron Window (only if enabled)
+                let start_browser = Instant::now();
+                let app_handle_for_browser = app_handle.clone();
+                let _ = launch_electron_browser(app_handle_for_browser, Some("--background".to_string())).await;
+                let browser_dur = start_browser.elapsed().as_millis() as u64;
+                record_perf_timing("Browser Pre-warm", browser_dur);
+
+                // Phase 3: Monitors & Recovery
+                let start_recovery = Instant::now();
+                if !project_dir.is_empty() {
+                    if let Err(e) = team::recovery_engine::run_startup_recovery(&app_handle, &project_dir) {
+                        eprintln!("[Startup] Failed to run startup recovery: {}", e);
+                    }
                 }
-            }
+                let recovery_dur = start_recovery.elapsed().as_millis() as u64;
+                record_perf_timing("Startup Recovery", recovery_dur);
 
-            // Start Stalled Agent Watchdog
-            swarm_lifecycle::start_agent_watchdog(app.handle().clone());
+                // Start all watchdog tasks
+                swarm_lifecycle::start_agent_watchdog(app_handle.clone());
+                start_heartbeat_watchdog(app_handle.clone());
+                start_scheduler_watchdog(app_handle.clone());
+                swarm_lifecycle::start_lock_watchdog(app_handle.clone());
+                team::watcher::start_team_lock_watchdog(app_handle.clone());
 
-            // Start PTY Heartbeat Stall Watchdog
-            start_heartbeat_watchdog(app.handle().clone());
-
-            // Start Scheduler Watchdog
-            start_scheduler_watchdog(app.handle().clone());
-
-            // Start Resource Lock Watchdog
-            swarm_lifecycle::start_lock_watchdog(app.handle().clone());
-
-            // Start Team Lock Watchdog
-            team::watcher::start_team_lock_watchdog(app.handle().clone());
+                // Phase 4: Pre-warm PTY shell pools
+                prewarm_pty_pools(app_handle.clone());
+            });
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             exit_app,
+            get_perf_timings,
             spawn_browser_webview,
             sync_browser_webview_layout,
             destroy_browser_webview,
