@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Terminal as TerminalIcon, X, LayoutGrid, Columns2, Rows2, ClipboardList, RefreshCw, RotateCcw, Minimize2, Maximize2, Plus, Check, Loader2 } from "lucide-react";
-import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from "react-resizable-panels";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 import { TerminalSession } from "../types";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -172,21 +171,6 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
 // Terminal Workspace Grid Panel
 // ==========================================
 
-const GlassyResizeHandle = ({ id, isVertical }: { id?: string, isVertical: boolean }) => (
-  <PanelResizeHandle
-    id={id}
-    className={`flex items-center justify-center group z-40 relative ${
-      isVertical ? 'cursor-col-resize w-[6px] h-full mx-[0px]' : 'cursor-row-resize h-[6px] w-full my-[0px]'
-    }`}
-  >
-    <div 
-      className={`bg-border-glass group-hover:bg-[#38bdf8] group-active:bg-[#38bdf8] transition-colors duration-150 ${
-        isVertical ? 'w-[2px] h-full' : 'h-[2px] w-full'
-      }`} 
-    />
-  </PanelResizeHandle>
-);
-
 export const TerminalWorkspace: React.FC = () => {
   const terminals = useOrchestratorStore(s => s.terminals);
   const layout = useOrchestratorStore(s => s.layout);
@@ -286,6 +270,38 @@ export const TerminalWorkspace: React.FC = () => {
   const animationFallbackTimeoutRef = useRef<any>(null);
   const [transformStyle, setTransformStyle] = useState<React.CSSProperties>({});
   
+  const [splitRatio, setSplitRatio] = useState<number>(50);
+  const isDraggingSplitRef = useRef(false);
+
+  const startSplitResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSplitRef.current = true;
+    const isVerticalLayout = layout.type === 'grid' || layout.type === 'vertical';
+    document.body.style.cursor = isVerticalLayout ? 'col-resize' : 'row-resize';
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingSplitRef.current || !workspaceRef.current) return;
+      const rect = workspaceRef.current.getBoundingClientRect();
+      let newRatio;
+      if (isVerticalLayout) {
+        newRatio = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+      } else {
+        newRatio = ((moveEvent.clientY - rect.top) / rect.height) * 100;
+      }
+      setSplitRatio(Math.min(Math.max(newRatio, 10), 90));
+    };
+
+    const handleMouseUp = () => {
+      isDraggingSplitRef.current = false;
+      document.body.style.cursor = 'default';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
   useEffect(() => {
     let timeout: NodeJS.Timeout;
     const unsub = EventBus.subscribe("terminal:highlight", (payload: any) => {
@@ -361,6 +377,70 @@ export const TerminalWorkspace: React.FC = () => {
       setTransformStyle({});
     }
   }, [terminals, focusSessionId]);
+
+  // Early return logic moved into the main render to keep background workspaces alive
+  // Calculate layout classes
+  let containerClass = "flex gap-1.5 flex-1 min-h-0 ";
+  const is2Terminals = terminals.length === 2;
+  const isVertical = layout.type === 'grid' || layout.type === 'vertical';
+
+  let gridColumns = 1;
+
+  if (layout.type === 'grid') {
+    if (terminals.length <= 2) {
+      containerClass += "flex-row";
+      gridColumns = terminals.length;
+    } else {
+      // Dynamic math engine to prioritize height over width (minimize rows)
+      // Max 4 columns per row because 12 is divisible by 1, 2, 3, 4, 6.
+      const maxCols = isLg ? 4 : 2;
+      const targetRows = Math.ceil(terminals.length / maxCols);
+      gridColumns = Math.ceil(terminals.length / targetRows);
+      
+      containerClass = "grid gap-1.5 flex-1 min-h-0 grid-cols-12 auto-rows-fr";
+    }
+  } else if (layout.type === 'vertical') {
+    containerClass += "flex-row";
+  } else {
+    containerClass += "flex-col";
+  }
+
+  // Check if we are using the grid fallback
+  const isGridFallback = layout.type === 'grid' && terminals.length > 2;
+
+  const getNormalGridStyle = (_sessId: string, index?: number): React.CSSProperties => {
+    if (isGridFallback && index !== undefined) {
+      // Calculate perfect span in the 12-column grid to stretch last row items automatically
+      const row = Math.floor(index / gridColumns);
+      const totalRows = Math.ceil(terminals.length / gridColumns);
+      const isLastRow = row === totalRows - 1;
+      const itemsInThisRow = isLastRow ? (terminals.length % gridColumns || gridColumns) : gridColumns;
+      const span = 12 / itemsInThisRow;
+      
+      return {
+        gridColumn: `span ${span} / span ${span}`
+      };
+    }
+    
+    if (is2Terminals && index !== undefined) {
+      const ratio = index === 0 ? splitRatio : (100 - splitRatio);
+      return {
+        width: isVertical ? `calc(${ratio}% - 3px)` : "100%",
+        height: !isVertical ? `calc(${ratio}% - 3px)` : "100%",
+        flexGrow: 0,
+        flexShrink: 0,
+        flexBasis: `calc(${ratio}% - 3px)`,
+      };
+    }
+    
+    return {
+      width: isVertical ? "auto" : "100%",
+      height: !isVertical ? "auto" : "100%",
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: 0,
+    };
+  };
 
   const handleFocusToggle = (sessionId: string, frameEl: HTMLElement | null) => {
     if (!frameEl || !workspaceRef.current) {
@@ -542,154 +622,117 @@ export const TerminalWorkspace: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div ref={workspaceRef} className="flex-1 min-h-0 relative flex flex-col w-full h-full">
-          {(() => {
-            const renderTerminal = (session: TerminalSession, index: number) => {
-              const isFocused = focusSessionId === session.id;
-              const isAnimating = animatingSessionId === session.id;
-              const showPlaceholder = isFocused || isAnimating;
+        <div ref={workspaceRef} className={`${containerClass} relative`}>
+          {terminals.map((session, index) => {
+            const isFocused = focusSessionId === session.id;
+            const isAnimating = animatingSessionId === session.id;
+            const showPlaceholder = isFocused || isAnimating;
 
-              let wrapperStyle: React.CSSProperties = {};
+            let wrapperStyle: React.CSSProperties = {};
 
-              if (isFocused || isAnimating) {
-                if (isAnimating) {
-                  wrapperStyle = transformStyle;
-                } else {
-                  wrapperStyle = {
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    zIndex: 50,
-                  };
-                }
-              } else if (focusSessionId !== null) {
-                if (animatingSessionId !== null) {
-                  wrapperStyle = {
-                    width: '100%',
-                    height: '100%',
-                    opacity: 0.15,
-                    transition: 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)',
-                    pointerEvents: 'none',
-                  };
-                } else {
-                  wrapperStyle = {
-                    width: '100%',
-                    height: '100%',
-                    opacity: 0,
-                    pointerEvents: 'none',
-                  };
-                }
-              } else if (animatingSessionId !== null) {
+            if (isFocused || isAnimating) {
+              if (isAnimating) {
+                wrapperStyle = transformStyle;
+              } else {
                 wrapperStyle = {
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
                   width: '100%',
                   height: '100%',
+                  zIndex: 50,
+                };
+              }
+            } else if (focusSessionId !== null) {
+              if (animatingSessionId !== null) {
+                // Fade out other terminals during the transition
+                wrapperStyle = {
+                  ...getNormalGridStyle(session.id, index),
                   opacity: 0.15,
                   transition: 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)',
                   pointerEvents: 'none',
                 };
               } else {
-                wrapperStyle = { width: '100%', height: '100%' };
-                wrapperStyle.transition = 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)';
+                // Hide them completely once maximized without breaking xterm layout
+                wrapperStyle = {
+                  ...getNormalGridStyle(session.id, index),
+                  opacity: 0,
+                  pointerEvents: 'none',
+                };
               }
-
-              return (
-                <React.Fragment key={session.id}>
-                  {showPlaceholder && (
-                    <div 
-                      key={`placeholder-${session.id}`}
-                      data-placeholder-id={session.id}
-                      style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
-                      className="border border-dashed border-border-glass rounded bg-[#000000]/40 min-h-0 min-w-0 h-full"
-                    />
-                  )}
-                  <div
-                    key={`frame-wrapper-${session.id}`}
-                    data-frame-id={session.id}
-                    className="overflow-hidden flex flex-col h-full min-h-0 min-w-0"
-                    style={wrapperStyle}
-                    onTransitionEnd={(e) => {
-                      if (isAnimating && e.propertyName === 'transform') {
-                        if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
-                        setAnimatingSessionId(null);
-                        setTransformStyle({});
-                      }
-                    }}
-                  >
-                    <TerminalFrame 
-                      session={session} 
-                      isFocused={isFocused}
-                      isAnimating={isAnimating}
-                      isHighlighted={!!highlightedAgentId && session.agentId === highlightedAgentId}
-                      isHidden={focusSessionId !== null && focusSessionId !== session.id}
-                      onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
-                      globalRefreshKey={globalRefreshKey}
-                      isDragOver={dragOverPaneId === session.id}
-                    />
-                  </div>
-                </React.Fragment>
-              );
-            };
-
-            if (layout.type === 'grid' && terminals.length > 2) {
-              const maxCols = isLg ? 4 : 2;
-              const targetRows = Math.ceil(terminals.length / maxCols);
-              const gridColumns = Math.ceil(terminals.length / targetRows);
-
-              const rows: TerminalSession[][] = [];
-              for (let i = 0; i < terminals.length; i += gridColumns) {
-                rows.push(terminals.slice(i, i + gridColumns));
-              }
-
-              return (
-                <PanelGroup orientation="vertical">
-                  {rows.map((row, rowIndex) => (
-                    <React.Fragment key={`row-${rowIndex}`}>
-                      <Panel minSize={15}>
-                        <PanelGroup orientation="horizontal">
-                          {row.map((session, colIndex) => {
-                            const absoluteIndex = rowIndex * gridColumns + colIndex;
-                            return (
-                              <React.Fragment key={session.id}>
-                                <Panel minSize={15}>
-                                  {renderTerminal(session, absoluteIndex)}
-                                </Panel>
-                                {colIndex < row.length - 1 && !focusSessionId && (
-                                  <GlassyResizeHandle isVertical={true} id={`resize-${rowIndex}-${colIndex}`} />
-                                )}
-                              </React.Fragment>
-                            );
-                          })}
-                        </PanelGroup>
-                      </Panel>
-                      {rowIndex < rows.length - 1 && !focusSessionId && (
-                        <GlassyResizeHandle isVertical={false} id={`resize-row-${rowIndex}`} />
-                      )}
-                    </React.Fragment>
-                  ))}
-                </PanelGroup>
-              );
+            } else if (animatingSessionId !== null) {
+              // Fade in other terminals smoothly during the minimize transition
+              wrapperStyle = {
+                ...getNormalGridStyle(session.id, index),
+                opacity: 0.15,
+                transition: 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                pointerEvents: 'none',
+              };
             } else {
-              const direction = (layout.type === 'vertical' || layout.type === 'grid') ? 'horizontal' : 'vertical';
-              const isVerticalResize = direction === 'horizontal';
-
-              return (
-                <PanelGroup orientation={direction}>
-                  {terminals.map((session, index) => (
-                    <React.Fragment key={session.id}>
-                      <Panel minSize={15}>
-                        {renderTerminal(session, index)}
-                      </Panel>
-                      {index < terminals.length - 1 && !focusSessionId && (
-                        <GlassyResizeHandle isVertical={isVerticalResize} id={`resize-${index}`} />
-                      )}
-                    </React.Fragment>
-                  ))}
-                </PanelGroup>
-              );
+              // Normal layout flow
+              wrapperStyle = getNormalGridStyle(session.id, index);
+              wrapperStyle.transition = 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1)';
             }
-          })()}
+
+            return (
+              <React.Fragment key={session.id}>
+                {showPlaceholder && (
+                  <div 
+                    key={`placeholder-${session.id}`}
+                    data-placeholder-id={session.id}
+                    style={{ ...getNormalGridStyle(session.id, index), pointerEvents: 'none' }}
+                    className="border border-dashed border-border-glass rounded bg-[#000000]/40 min-h-0 min-w-0 h-full"
+                  />
+                )}
+                <div
+                  key={`frame-wrapper-${session.id}`}
+                  data-frame-id={session.id}
+                  className="overflow-hidden flex flex-col h-full min-h-0 min-w-0"
+                  style={wrapperStyle}
+                  onTransitionEnd={(e) => {
+                    if (isAnimating && e.propertyName === 'transform') {
+                      if (animationFallbackTimeoutRef.current) clearTimeout(animationFallbackTimeoutRef.current);
+                      setAnimatingSessionId(null);
+                      setTransformStyle({});
+                    }
+                  }}
+                >
+                  <TerminalFrame 
+                    session={session} 
+                    isFocused={isFocused}
+                    isAnimating={isAnimating}
+                    isHighlighted={!!highlightedAgentId && session.agentId === highlightedAgentId}
+                    isHidden={focusSessionId !== null && focusSessionId !== session.id}
+                    onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
+                    globalRefreshKey={globalRefreshKey}
+                    isDragOver={dragOverPaneId === session.id}
+                  />
+                </div>
+              </React.Fragment>
+            );
+          })}
+          
+          {/* Floating Resizer Handle for 2-Terminal Layouts */}
+          {is2Terminals && terminals.length === 2 && !focusSessionId && (
+            <div
+              onMouseDown={startSplitResize}
+              onDoubleClick={() => setSplitRatio(50)}
+              className={`absolute flex items-center justify-center group z-40 ${
+                isVertical ? 'cursor-col-resize top-0 bottom-0' : 'cursor-row-resize left-0 right-0'
+              }`}
+              style={{
+                [isVertical ? 'left' : 'top']: `calc(${splitRatio}% - 4px)`,
+                [isVertical ? 'width' : 'height']: '8px',
+              }}
+              title="Drag to resize, double-click to reset"
+            >
+              <div 
+                className={`bg-transparent group-hover:bg-[#38bdf8]/50 group-active:bg-[#38bdf8] transition-colors duration-150 ${
+                  isVertical ? 'w-[2px] h-full' : 'h-[2px] w-full'
+                }`} 
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

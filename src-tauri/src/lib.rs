@@ -1741,12 +1741,7 @@ pub fn run() {
                 let db_dur = start_db.elapsed().as_millis() as u64;
                 record_perf_timing("Database Initialization", db_dur);
 
-                // Phase 2: Pre-warming hidden Electron Window (only if enabled)
-                let start_browser = Instant::now();
-                let app_handle_for_browser = app_handle.clone();
-                let _ = launch_electron_browser(app_handle_for_browser, Some("--background".to_string())).await;
-                let browser_dur = start_browser.elapsed().as_millis() as u64;
-                record_perf_timing("Browser Pre-warm", browser_dur);
+
 
                 // Phase 3: Monitors & Recovery
                 let start_recovery = Instant::now();
