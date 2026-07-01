@@ -1382,16 +1382,9 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         });
 
         // Trigger reconnect for each restored terminal session asynchronously to spawn fresh PTYs
-        // Delay by 2000ms to allow the main window to fully paint and mask the ConPTY conhost.exe flash
-        setTimeout(() => {
-          if (get().activeWorkspaceId !== activeWorkspaceId) return;
-          for (const term of restoredTerminals) {
-            // Check if the terminal still exists in state (wasn't closed manually during the delay)
-            if (get().terminals.some(t => t.id === term.id)) {
-              get().reconnectTerminal(term.id);
-            }
-          }
-        }, 2000);
+        for (const term of restoredTerminals) {
+          get().reconnectTerminal(term.id);
+        }
       } else {
         // Reset state for new or empty workspace to prevent leaking session states from other workspaces
         set({
