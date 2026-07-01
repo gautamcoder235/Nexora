@@ -5,7 +5,7 @@
  * Key input is forwarded directly to the backend PTY and output is rendered in real-time.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Image as ImageIcon } from 'lucide-react';
+import { Image as ImageIcon, FileText } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Terminal } from '@xterm/xterm';
@@ -25,10 +25,10 @@ interface TerminalPaneProps {
   isFocused: boolean;
   isAnimating: boolean;
   refreshKey?: number;
-  isDragOver?: boolean;
+  dragFileType?: 'image' | 'file' | null;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey, isDragOver = false }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey, dragFileType = null }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -37,6 +37,53 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   const [isBlackout, setIsBlackout] = useState(true); // Always start fully blacked out
   const isBlackoutRef = useRef(isBlackout);
   const blackoutTimerRef = useRef<any>(null);
+
+  const [isDomDragOver, setIsDomDragOver] = useState(false);
+  const [domDragType, setDomDragType] = useState<'text' | null>(null);
+
+  const handleDomDragEnter = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('text/plain') && !e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      setIsDomDragOver(true);
+      setDomDragType('text');
+    }
+  };
+
+  const handleDomDragOver = (e: React.DragEvent) => {
+    if (domDragType === 'text') {
+      e.preventDefault();
+    }
+  };
+
+  const handleDomDragLeave = () => {
+    setIsDomDragOver(false);
+    setDomDragType(null);
+  };
+
+  const handleDomDrop = async (e: React.DragEvent) => {
+    if (domDragType === 'text') {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDomDragOver(false);
+      setDomDragType(null);
+      const text = e.dataTransfer.getData('text/plain');
+      if (text) {
+        const cleanText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('write_pty', { sessionId: paneId, data: cleanText });
+          
+          const store = useOrchestratorStore.getState();
+          const session = store.terminals.find(t => t.id === paneId);
+          if (session && session.executionState === 'idle') {
+            store.updateTerminalExecutionState(paneId, 'running');
+          }
+        } catch (err) {
+          console.error('PTY write failed during drag-drop text paste:', err);
+        }
+      }
+    }
+  };
 
   const startBlackout = () => {
     if (!isBlackoutRef.current) {
@@ -655,6 +702,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     <div 
       data-pane-id={paneId}
       className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden"
+      onDragEnter={handleDomDragEnter}
+      onDragOver={handleDomDragOver}
+      onDragLeave={handleDomDragLeave}
+      onDrop={handleDomDrop}
     >
       {/* Connecting/Loading Overlay */}
       {termSession?.status === 'connecting' && (
@@ -682,19 +733,49 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         }} 
       />
 
-      {/* Transparent Glassmorphic Image Drop Overlay */}
-      {isDragOver && (
+      {/* Transparent Glassmorphic File Drop Overlay */}
+      {dragFileType && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
-          <div className="m-2.5 inset-0 absolute border-2 border-dashed border-[#38bdf8]/40 rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3">
-            <div className="p-3 bg-[#38bdf8]/10 border border-[#38bdf8]/20 rounded-full animate-bounce">
-              <ImageIcon className="w-6 h-6 text-[#38bdf8]" />
+          <div className={`m-2.5 inset-0 absolute border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3 ${
+            dragFileType === 'image' ? 'border-[#38bdf8]/40' : 'border-[#10b981]/40'
+          }`}>
+            <div className={`p-3 border rounded-full animate-bounce ${
+              dragFileType === 'image' ? 'bg-[#38bdf8]/10 border-[#38bdf8]/20' : 'bg-[#10b981]/10 border-[#10b981]/20'
+            }`}>
+              {dragFileType === 'image' ? (
+                <ImageIcon className="w-6 h-6 text-[#38bdf8]" />
+              ) : (
+                <FileText className="w-6 h-6 text-[#10b981]" />
+              )}
             </div>
             <div>
               <p className="text-zinc-100 text-[11px] font-bold tracking-wider uppercase font-sans">
-                Drop to send image
+                {dragFileType === 'image' ? 'Drop to send image' : 'Drop to paste file path'}
               </p>
               <p className="text-zinc-400 text-[9px] font-mono mt-1 max-w-[200px]">
-                Inserts absolute image path into terminal input
+                {dragFileType === 'image' 
+                  ? 'Inserts absolute image path into terminal input' 
+                  : 'Inserts absolute file path into terminal input'
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transparent Glassmorphic DOM Text Drop Overlay */}
+      {isDomDragOver && domDragType === 'text' && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
+          <div className="m-2.5 inset-0 absolute border-2 border-dashed border-[#a855f7]/40 rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3">
+            <div className="p-3 bg-[#a855f7]/10 border border-[#a855f7]/20 rounded-full animate-bounce">
+              <FileText className="w-6 h-6 text-[#a855f7]" />
+            </div>
+            <div>
+              <p className="text-zinc-100 text-[11px] font-bold tracking-wider uppercase font-sans">
+                Drop to paste text
+              </p>
+              <p className="text-zinc-400 text-[9px] font-mono mt-1 max-w-[200px]">
+                Inserts the dragged text content directly into the terminal
               </p>
             </div>
           </div>

@@ -18,10 +18,10 @@ interface TerminalFrameProps {
   isHidden?: boolean;
   globalRefreshKey: number;
   onFocusToggle: (element: HTMLElement | null) => void;
-  isDragOver?: boolean;
+  dragFileType?: 'image' | 'file' | null;
 }
 
-const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, isHidden = false, globalRefreshKey, onFocusToggle, isDragOver = false }) => {
+const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, isHidden = false, globalRefreshKey, onFocusToggle, dragFileType = null }) => {
   const killTerminal = useOrchestratorStore(s => s.killTerminal);
   const settings = useOrchestratorStore(s => s.settings);
   const agents = useOrchestratorStore(s => s.agents);
@@ -161,7 +161,7 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
 
       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
       <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#000000]">
-        <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} refreshKey={refreshKey} isDragOver={isDragOver} />
+        <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} refreshKey={refreshKey} dragFileType={dragFileType} />
       </div>
     </div>
   );
@@ -202,7 +202,7 @@ export const TerminalWorkspace: React.FC = () => {
   const [globalRefreshKey, setGlobalRefreshKey] = useState(0);
   
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null);
-  const isDraggingImageRef = useRef(false);
+  const [dragOverType, setDragOverType] = useState<'image' | 'file' | null>(null);
 
   useEffect(() => {
     const isImageFile = (path: string) => {
@@ -213,12 +213,13 @@ export const TerminalWorkspace: React.FC = () => {
     const unlistenEnter = listen<{ paths: string[] }>("tauri://drag-enter", (event) => {
       const paths = event.payload.paths;
       if (paths && paths.length > 0) {
-        isDraggingImageRef.current = paths.some(isImageFile);
+        const hasImage = paths.some(isImageFile);
+        setDragOverType(hasImage ? 'image' : 'file');
       }
     });
 
     const unlistenOver = listen<{ position: { x: number; y: number } }>("tauri://drag-over", (event) => {
-      if (!isDraggingImageRef.current) return;
+      if (!dragOverType) return;
       const { x, y } = event.payload.position;
       const el = document.elementFromPoint(x, y);
       const paneEl = el?.closest('.terminal-pane');
@@ -227,14 +228,14 @@ export const TerminalWorkspace: React.FC = () => {
     });
 
     const unlistenLeave = listen<void>("tauri://drag-leave", () => {
-      isDraggingImageRef.current = false;
+      setDragOverType(null);
       setDragOverPaneId(null);
     });
 
     const unlistenDrop = listen<{ paths: string[]; position: { x: number; y: number } }>("tauri://drag-drop", async (event) => {
-      if (!isDraggingImageRef.current) return;
+      if (!dragOverType) return;
       
-      isDraggingImageRef.current = false;
+      setDragOverType(null);
       const { x, y } = event.payload.position;
       const el = document.elementFromPoint(x, y);
       const paneEl = el?.closest('.terminal-pane');
@@ -242,25 +243,22 @@ export const TerminalWorkspace: React.FC = () => {
 
       setDragOverPaneId(null);
 
-      if (paneId) {
-        const imagePaths = event.payload.paths.filter(isImageFile);
-        if (imagePaths.length > 0) {
-          const filePath = imagePaths[0];
-          const formattedPath = filePath.includes(" ") ? `"${filePath}" ` : `${filePath} `;
+      if (paneId && event.payload.paths && event.payload.paths.length > 0) {
+        const filePath = event.payload.paths[0];
+        const formattedPath = filePath.includes(" ") ? `"${filePath}" ` : `${filePath} `;
+        
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('write_pty', { sessionId: paneId, data: formattedPath });
           
-          try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            await invoke('write_pty', { sessionId: paneId, data: formattedPath });
-            
-            // Re-arm watchdog
-            const store = useOrchestratorStore.getState();
-            const session = store.terminals.find(t => t.id === paneId);
-            if (session && session.executionState === 'idle') {
-              store.updateTerminalExecutionState(paneId, 'running');
-            }
-          } catch (err) {
-            console.error('Failed to write image path via native drop:', err);
+          // Re-arm watchdog/execution state
+          const store = useOrchestratorStore.getState();
+          const session = store.terminals.find(t => t.id === paneId);
+          if (session && session.executionState === 'idle') {
+            store.updateTerminalExecutionState(paneId, 'running');
           }
+        } catch (err) {
+          console.error('Failed to write file path via native drop:', err);
         }
       }
     });
@@ -271,7 +269,7 @@ export const TerminalWorkspace: React.FC = () => {
       unlistenLeave.then((fn) => fn());
       unlistenDrop.then((fn) => fn());
     };
-  }, []);
+  }, [dragOverType]);
 
   useEffect(() => {
     const handleResize = () => setIsLg(window.innerWidth >= 1024);
@@ -625,7 +623,7 @@ export const TerminalWorkspace: React.FC = () => {
                       isHidden={focusSessionId !== null && focusSessionId !== session.id}
                       onFocusToggle={(frameEl) => handleFocusToggle(session.id, frameEl)}
                       globalRefreshKey={globalRefreshKey}
-                      isDragOver={dragOverPaneId === session.id}
+                      dragFileType={dragOverPaneId === session.id ? dragOverType : null}
                     />
                   </div>
                 </React.Fragment>
