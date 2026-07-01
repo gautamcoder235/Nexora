@@ -87,7 +87,7 @@ export const ActivityBar: React.FC = () => {
 
   // Drag and Drop folder import listener
   useEffect(() => {
-    const unlisten = listen<{ paths: string[] }>("tauri://drag-drop", async (event) => {
+    const unlisten = listen<{ paths: string[] }>("nexora://drag-drop", async (event) => {
       const paths = event.payload.paths;
       if (paths && paths.length > 0) {
         const folderPath = paths[0];

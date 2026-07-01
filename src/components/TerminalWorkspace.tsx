@@ -18,7 +18,7 @@ interface TerminalFrameProps {
   isHidden?: boolean;
   globalRefreshKey: number;
   onFocusToggle: (element: HTMLElement | null) => void;
-  dragFileType?: 'image' | 'file' | null;
+  dragFileType?: 'image' | 'file' | 'text' | null;
 }
 
 const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, isHidden = false, globalRefreshKey, onFocusToggle, dragFileType = null }) => {
@@ -202,7 +202,7 @@ export const TerminalWorkspace: React.FC = () => {
   const [globalRefreshKey, setGlobalRefreshKey] = useState(0);
   
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null);
-  const [dragOverType, setDragOverType] = useState<'image' | 'file' | null>(null);
+  const [dragOverType, setDragOverType] = useState<'image' | 'file' | 'text' | null>(null);
 
   useEffect(() => {
     const isImageFile = (path: string) => {
@@ -210,7 +210,8 @@ export const TerminalWorkspace: React.FC = () => {
       return ext ? ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(ext) : false;
     };
 
-    const unlistenEnter = listen<{ paths: string[] }>("tauri://drag-enter", (event) => {
+    // --- File drag events (from our custom OLE drop handler) ---
+    const unlistenEnter = listen<{ paths: string[]; position: { x: number; y: number } }>("nexora://drag-enter", (event) => {
       const paths = event.payload.paths;
       if (paths && paths.length > 0) {
         const hasImage = paths.some(isImageFile);
@@ -218,7 +219,7 @@ export const TerminalWorkspace: React.FC = () => {
       }
     });
 
-    const unlistenOver = listen<{ position: { x: number; y: number } }>("tauri://drag-over", (event) => {
+    const unlistenOver = listen<{ position: { x: number; y: number } }>("nexora://drag-over", (event) => {
       if (!dragOverType) return;
       const { x, y } = event.payload.position;
       const dpr = window.devicePixelRatio || 1;
@@ -228,14 +229,12 @@ export const TerminalWorkspace: React.FC = () => {
       setDragOverPaneId(paneId || null);
     });
 
-    const unlistenLeave = listen<void>("tauri://drag-leave", () => {
+    const unlistenLeave = listen<void>("nexora://drag-leave", () => {
       setDragOverType(null);
       setDragOverPaneId(null);
     });
 
-    const unlistenDrop = listen<{ paths: string[]; position: { x: number; y: number } }>("tauri://drag-drop", async (event) => {
-      if (!dragOverType) return;
-      
+    const unlistenDrop = listen<{ paths: string[]; position: { x: number; y: number } }>("nexora://drag-drop", async (event) => {
       setDragOverType(null);
       const { x, y } = event.payload.position;
       const dpr = window.devicePixelRatio || 1;
@@ -265,11 +264,62 @@ export const TerminalWorkspace: React.FC = () => {
       }
     });
 
+    // --- Text drag events (from our custom OLE drop handler) ---
+    const unlistenTextEnter = listen<{ position: { x: number; y: number } }>("nexora://text-drag-enter", () => {
+      setDragOverType('text');
+    });
+
+    const unlistenTextOver = listen<{ position: { x: number; y: number } }>("nexora://text-drag-over", (event) => {
+      if (dragOverType !== 'text') return;
+      const { x, y } = event.payload.position;
+      const dpr = window.devicePixelRatio || 1;
+      const el = document.elementFromPoint(x / dpr, y / dpr);
+      const paneEl = el?.closest('.terminal-pane');
+      const paneId = paneEl?.getAttribute('data-pane-id');
+      setDragOverPaneId(paneId || null);
+    });
+
+    const unlistenTextLeave = listen<void>("nexora://text-drag-leave", () => {
+      setDragOverType(null);
+      setDragOverPaneId(null);
+    });
+
+    const unlistenTextDrop = listen<{ text: string; position: { x: number; y: number } }>("nexora://text-drop", async (event) => {
+      setDragOverType(null);
+      const { x, y } = event.payload.position;
+      const dpr = window.devicePixelRatio || 1;
+      const el = document.elementFromPoint(x / dpr, y / dpr);
+      const paneEl = el?.closest('.terminal-pane');
+      const paneId = paneEl?.getAttribute('data-pane-id');
+
+      setDragOverPaneId(null);
+
+      if (paneId && event.payload.text) {
+        const cleanText = event.payload.text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('write_pty', { sessionId: paneId, data: cleanText });
+          
+          const store = useOrchestratorStore.getState();
+          const session = store.terminals.find(t => t.id === paneId);
+          if (session && session.executionState === 'idle') {
+            store.updateTerminalExecutionState(paneId, 'running');
+          }
+        } catch (err) {
+          console.error('Failed to write text via native drop:', err);
+        }
+      }
+    });
+
     return () => {
       unlistenEnter.then((fn) => fn());
       unlistenOver.then((fn) => fn());
       unlistenLeave.then((fn) => fn());
       unlistenDrop.then((fn) => fn());
+      unlistenTextEnter.then((fn) => fn());
+      unlistenTextOver.then((fn) => fn());
+      unlistenTextLeave.then((fn) => fn());
+      unlistenTextDrop.then((fn) => fn());
     };
   }, [dragOverType]);
 

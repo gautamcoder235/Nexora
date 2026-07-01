@@ -24,6 +24,7 @@ pub mod swarm_worktrees;
 pub mod team;
 pub mod comms_watcher;
 pub mod drivers;
+pub mod drop_handler;
 
 #[derive(Serialize, Clone, Default)]
 pub struct BackendMetrics {
@@ -1659,6 +1660,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
+            
+            // Install custom OLE drop target that handles both files and text
+            drop_handler::install_custom_drop_handler(app_handle.clone());
             
             // Manage DbState with None connection synchronously to prevent Tauri command panics on missing state
             app_handle.manage(swarm_db::DbState(std::sync::Mutex::new(None)));
