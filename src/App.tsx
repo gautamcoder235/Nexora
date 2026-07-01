@@ -649,6 +649,126 @@ function App() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
+  // Native desktop app transformations and event blockers
+  useEffect(() => {
+    // 1. Context Menu blocker (Disable standard Chromium right-click menu)
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('contextmenu', handleContextMenu);
+
+    // 2. Drag & Drop window blocker (prevent browser navigation on dropping local files)
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+
+    // 3. Mouse Wheel zoom blocker (prevent Ctrl + mousewheel zooming)
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('wheel', handleWheel, { passive: false });
+
+    // 4. Middle click auto-scroll blocker
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button === 1) { // Middle click
+        const target = e.target as HTMLElement;
+        // Don't block middle click scroll inside terminal or custom scroll areas if they rely on it
+        if (!target.closest('.xterm') && !target.closest('.terminal-pane')) {
+          e.preventDefault();
+        }
+      }
+    };
+    window.addEventListener('mousedown', handleMouseDown);
+
+    // 5. Native Browser Shortcut blocker
+    const handleBrowserKeys = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+      
+      const key = e.key.toLowerCase();
+      const ctrlOrCmd = e.ctrlKey || e.metaKey;
+
+      // Block F5, Ctrl+R, Cmd+R, Ctrl+Shift+R (Reloads)
+      if (key === 'f5' || (ctrlOrCmd && key === 'r')) {
+        e.preventDefault();
+      }
+
+      // Block Ctrl+P (Print)
+      if (ctrlOrCmd && key === 'p') {
+        e.preventDefault();
+      }
+
+      // Block Ctrl+S (Save Page)
+      if (ctrlOrCmd && key === 's' && !isInput) {
+        e.preventDefault();
+      }
+
+      // Block Ctrl+U (View Source)
+      if (ctrlOrCmd && key === 'u') {
+        e.preventDefault();
+      }
+
+      // Block Ctrl+H (History)
+      if (ctrlOrCmd && key === 'h') {
+        e.preventDefault();
+      }
+
+      // Block Ctrl+D (Bookmark)
+      if (ctrlOrCmd && key === 'd') {
+        e.preventDefault();
+      }
+
+      // Block Ctrl+Plus, Ctrl+Minus, Ctrl+=, Ctrl+0 (UI Zooming)
+      if (ctrlOrCmd && (key === '+' || key === '-' || key === '=' || key === '0')) {
+        e.preventDefault();
+      }
+
+      // Block Backspace navigation outside of input fields
+      if (key === 'backspace' && !isInput) {
+        e.preventDefault();
+      }
+
+      // Block DevTools shortcuts (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C) strictly in production mode
+      const isDev = import.meta.env.DEV;
+      if (!isDev) {
+        if (key === 'f12' || (ctrlOrCmd && e.shiftKey && (key === 'i' || key === 'j' || key === 'c'))) {
+          e.preventDefault();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleBrowserKeys);
+
+    // 6. Global Input spellcheck and autocomplete overrides
+    const handleInputFocus = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        // Enforce native clean developer styling globally
+        target.setAttribute('spellcheck', 'false');
+        if (!target.hasAttribute('autocomplete')) {
+          target.setAttribute('autocomplete', 'off');
+        }
+      }
+    };
+    window.addEventListener('focusin', handleInputFocus);
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('keydown', handleBrowserKeys);
+      window.removeEventListener('focusin', handleInputFocus);
+    };
+  }, []);
+
   useEffect(() => {
     // 1. Initialize local telemetry analytics listeners
     AnalyticsService.init();
