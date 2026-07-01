@@ -7,7 +7,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
-use std::process::Command;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
@@ -148,7 +148,7 @@ pub async fn apply_merge_candidate(
     let repo_dir = Path::new(&repo_path);
 
     // Gate A: Cleanliness Check
-    let status_output = Command::new("git")
+    let status_output = crate::hidden_command::new_command("git")
         .args(["status", "--porcelain"])
         .current_dir(repo_dir)
         .output()
@@ -180,7 +180,7 @@ pub async fn apply_merge_candidate(
     }
 
     // Gate B: HEAD Drift Check
-    let current_head = Command::new("git")
+    let current_head = crate::hidden_command::new_command("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(repo_dir)
         .output()
@@ -216,7 +216,7 @@ pub async fn apply_merge_candidate(
 
     // Capture expected files from the patch
     // `git apply --numstat <patch>`
-    let numstat_output = Command::new("git")
+    let numstat_output = crate::hidden_command::new_command("git")
         .args(["apply", "--numstat", &patch_file_path])
         .current_dir(repo_dir)
         .output()
@@ -232,7 +232,7 @@ pub async fn apply_merge_candidate(
     }
 
     // Gate C: Patch Dry Run
-    let dry_run = Command::new("git")
+    let dry_run = crate::hidden_command::new_command("git")
         .args(["apply", "--check", &patch_file_path])
         .current_dir(repo_dir)
         .output()
@@ -272,7 +272,7 @@ pub async fn apply_merge_candidate(
     }
 
     // Gate D: Apply Patch
-    let apply_run = Command::new("git")
+    let apply_run = crate::hidden_command::new_command("git")
         .args(["apply", &patch_file_path])
         .current_dir(repo_dir)
         .output()
@@ -302,7 +302,7 @@ pub async fn apply_merge_candidate(
     }
 
     // Gate E: File Integrity Check
-    let diff_output = Command::new("git")
+    let diff_output = crate::hidden_command::new_command("git")
         .args(["diff", "--name-only"])
         .current_dir(repo_dir)
         .output()
@@ -326,7 +326,7 @@ pub async fn apply_merge_candidate(
     }
 
     // Gate F: Exact-File Commit
-    let mut add_cmd = Command::new("git");
+    let mut add_cmd = crate::hidden_command::new_command("git");
     add_cmd.arg("add").arg("--");
     for file in &expected_files {
         add_cmd.arg(file);
@@ -340,7 +340,7 @@ pub async fn apply_merge_candidate(
     }
 
     let commit_msg = format!("Swarm: Merged Execution {}", execution_id);
-    let commit_run = Command::new("git")
+    let commit_run = crate::hidden_command::new_command("git")
         .args(["commit", "-m", &commit_msg])
         .current_dir(repo_dir)
         .output()
@@ -348,7 +348,7 @@ pub async fn apply_merge_candidate(
 
     if !commit_run.status.success() {
         rollback_snapshot(repo_dir, &snapshot_dir, &expected_files);
-        let _ = Command::new("git")
+        let _ = crate::hidden_command::new_command("git")
             .arg("reset")
             .current_dir(repo_dir)
             .status();
@@ -364,7 +364,7 @@ pub async fn apply_merge_candidate(
         let conn_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_guard.as_ref().unwrap();
 
-        let current_head_after_commit = Command::new("git")
+        let current_head_after_commit = crate::hidden_command::new_command("git")
             .args(["rev-parse", "HEAD"])
             .current_dir(repo_dir)
             .output()
@@ -486,7 +486,7 @@ fn save_merge_artifact(
 
 fn rollback_snapshot(repo_dir: &Path, snapshot_dir: &Path, expected_files: &[String]) {
     // 1. Unstage any changes in git to avoid index mismatch
-    let _ = Command::new("git")
+    let _ = crate::hidden_command::new_command("git")
         .arg("reset")
         .current_dir(repo_dir)
         .status();

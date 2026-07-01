@@ -1,3 +1,4 @@
+pub mod hidden_command;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -1131,19 +1132,20 @@ async fn browser_reload(app_handle: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<String>) -> Result<(), String> {
-    use std::process::Command;
-    use std::io::Write;
+
+    use tokio::io::AsyncWriteExt;
+    use std::time::Duration;
 
     // Check if the control server is already running (hidden in the background)
     if check_electron_ping().await {
-        if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
-            let _ = stream.write_all(b"GET /show HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
+        if let Ok(Ok(mut stream)) = tokio::time::timeout(Duration::from_millis(50), tokio::net::TcpStream::connect("127.0.0.1:30120")).await {
+            let _ = stream.write_all(b"GET /show HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n").await;
         }
         
         // If a URL was specified, navigate to it
         if let Some(u) = url.as_ref() {
             if !u.trim().is_empty() {
-                if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
+                if let Ok(Ok(mut stream)) = tokio::time::timeout(Duration::from_millis(50), tokio::net::TcpStream::connect("127.0.0.1:30120")).await {
                     let mut encoded = String::new();
                     for b in u.trim().bytes() {
                         match b {
@@ -1159,7 +1161,7 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
                         "GET /navigate?url={} HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n",
                         encoded
                     );
-                    let _ = stream.write_all(req.as_bytes());
+                    let _ = stream.write_all(req.as_bytes()).await;
                 }
             }
         }
@@ -1239,7 +1241,7 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
 
     if electron_exe.exists() {
         // Direct spawn is sub-100ms and extremely fast
-        Command::new(electron_exe)
+        crate::hidden_command::new_command(electron_exe)
             .args(&direct_args)
             .current_dir(&electron_dir)
             .spawn()
@@ -1257,7 +1259,7 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
             }
         }
 
-        Command::new(shell)
+        crate::hidden_command::new_command(shell)
             .args(&fallback_args)
             .current_dir(&electron_dir)
             .spawn()
@@ -1288,13 +1290,15 @@ async fn check_electron_ping() -> bool {
 
 #[tauri::command]
 async fn notify_workspace_switch(workspace_id: String) -> Result<(), String> {
-    use std::io::Write;
-    if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
+    use tokio::io::AsyncWriteExt;
+    use std::time::Duration;
+    
+    if let Ok(Ok(mut stream)) = tokio::time::timeout(Duration::from_millis(50), tokio::net::TcpStream::connect("127.0.0.1:30120")).await {
         let req = format!(
             "GET /workspace-switch?workspaceId={} HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n",
             workspace_id
         );
-        let _ = stream.write_all(req.as_bytes());
+        let _ = stream.write_all(req.as_bytes()).await;
         Ok(())
     } else {
         Err("Electron control server not running".to_string())
@@ -1303,9 +1307,11 @@ async fn notify_workspace_switch(workspace_id: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn close_electron_browser() -> Result<(), String> {
-    use std::io::Write;
-    if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
-        let _ = stream.write_all(b"GET /close HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
+    use tokio::io::AsyncWriteExt;
+    use std::time::Duration;
+    
+    if let Ok(Ok(mut stream)) = tokio::time::timeout(Duration::from_millis(50), tokio::net::TcpStream::connect("127.0.0.1:30120")).await {
+        let _ = stream.write_all(b"GET /close HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n").await;
         Ok(())
     } else {
         Err("Electron control server not running".to_string())
@@ -1357,7 +1363,7 @@ fn check_cli_tool(command: String) -> bool {
         "which"
     };
 
-    let mut cmd = std::process::Command::new(check_cmd);
+    let mut cmd = crate::hidden_command::new_command(check_cmd);
 
     #[cfg(target_os = "windows")]
     {
@@ -1536,7 +1542,7 @@ fn get_git_branch_fallback(workspace_path: &str) -> Result<String, String> {
 
 #[tauri::command]
 fn get_git_branch(workspace_path: String) -> Result<String, String> {
-    let output = std::process::Command::new("git")
+    let output = crate::hidden_command::new_command("git")
         .args(&["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(&workspace_path)
         .output();
@@ -1758,9 +1764,6 @@ pub fn run() {
                 start_scheduler_watchdog(app_handle.clone());
                 swarm_lifecycle::start_lock_watchdog(app_handle.clone());
                 team::watcher::start_team_lock_watchdog(app_handle.clone());
-
-                // Phase 4: Pre-warm PTY shell pools
-                prewarm_pty_pools(app_handle.clone());
             });
 
             Ok(())
@@ -1906,9 +1909,11 @@ pub fn run() {
     app.run(|_app_handle, event| match event {
         tauri::RunEvent::Exit => {
             // Close spawned electron browser by calling its control server endpoint /close
-            if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:30120") {
-                use std::io::Write;
-                let _ = stream.write_all(b"GET /close HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
+            if let Ok(addr) = "127.0.0.1:30120".parse::<std::net::SocketAddr>() {
+                if let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(50)) {
+                    use std::io::Write;
+                    let _ = stream.write_all(b"GET /close HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n");
+                }
             }
         }
         _ => {}

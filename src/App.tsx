@@ -1342,7 +1342,7 @@ function App() {
         <div 
           className={`flex flex-col gap-1 overflow-hidden ${
             isAgentPanelPinned 
-              ? (settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'flex-shrink-0 relative ml-1' : 'flex-shrink-0 relative mr-1') 
+              ? 'flex-shrink-0 relative' 
               : `absolute top-0 bottom-0 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'right-2' : 'left-2'}`
           } ${
             isSidebarDragging ? '' : 'transition-[width,opacity,margin,transform] duration-300 ease-out'
@@ -1367,32 +1367,33 @@ function App() {
           </div>
         </div>
 
-        {isSidebarVisible && isAgentPanelPinned && (
+        {/* Floating Resizer (used for both pinned and unpinned to avoid flex gaps) */}
+        {isSidebarVisible && (
           <div
             onMouseDown={startSidebarResize}
-            onDoubleClick={() => setSidebarVisible(false)}
-            className={`w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'ml-1' : 'mr-1'}`}
-            title="Drag to resize sidebar, Double-click to collapse"
+            onDoubleClick={() => isAgentPanelPinned ? setSidebarVisible(false) : null}
+            className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
+            style={
+              settings?.appearance?.workspace?.sidebarPosition === 'right' 
+                ? { 
+                    right: isAgentPanelPinned 
+                      ? `calc(var(--sidebar-width) + (var(--pane-spacing) / 2) - 4px)` 
+                      : `calc(var(--sidebar-width) + 8px)`
+                  } 
+                : { 
+                    left: isAgentPanelPinned 
+                      ? `calc(var(--sidebar-width) + (var(--pane-spacing) / 2) - 4px)` 
+                      : `calc(var(--sidebar-width) + 8px)`
+                  }
+            }
+            title={isAgentPanelPinned ? "Drag to resize sidebar, Double-click to collapse" : "Drag to resize sidebar"}
           >
-            {/* Vertical line divider */}
-            <div className="w-[1px] h-full bg-border-glass group-hover:bg-accent-primary/50 group-active:bg-accent-primary transition-colors duration-150" />
+            {/* Vertical line divider (only visible in pinned mode usually, or on hover) */}
+            {isAgentPanelPinned && (
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[1px] h-full bg-border-glass group-hover:bg-accent-primary/50 group-active:bg-accent-primary transition-colors duration-150" />
+            )}
             
             {/* Drag handle button */}
-            <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-            </div>
-          </div>
-        )}
-        
-        {/* Floating Resizer for unpinned Agent Panel */}
-        {isSidebarVisible && !isAgentPanelPinned && (
-          <div
-            onMouseDown={startSidebarResize}
-            className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
-            style={settings?.appearance?.workspace?.sidebarPosition === 'right' ? { right: 'calc(var(--sidebar-width) + 8px)' } : { left: 'calc(var(--sidebar-width) + 8px)' }}
-          >
             <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />

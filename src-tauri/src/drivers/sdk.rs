@@ -1,5 +1,5 @@
 use crate::drivers::errors::DriverError;
-use std::process::Command;
+
 
 pub fn is_executable_in_path(command: &str) -> bool {
     let check_cmd = if cfg!(target_os = "windows") {
@@ -8,7 +8,7 @@ pub fn is_executable_in_path(command: &str) -> bool {
         "which"
     };
 
-    let mut cmd = Command::new(check_cmd);
+    let mut cmd = crate::hidden_command::new_command(check_cmd);
 
     #[cfg(target_os = "windows")]
     {

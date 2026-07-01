@@ -78,9 +78,10 @@ function startControlServer() {
       res.end(JSON.stringify({ status: 'ok' }));
     } else if (parsedUrl.pathname === '/close') {
       isQuitting = true;
-      app.quit();
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok' }));
+      res.end(JSON.stringify({ status: 'ok' }), () => {
+        app.exit(0);
+      });
     } else if (parsedUrl.pathname === '/show') {
       if (mainWindow) {
         mainWindow.show();
@@ -800,19 +801,8 @@ function createWindow() {
   });
 
   mainWindow.on('close', (event) => {
-    // Destroy helper windows if they exist
-    if (settingsWindow && !settingsWindow.isDestroyed()) {
-      try {
-        settingsWindow.destroy();
-      } catch (e) {}
-    }
-    if (hoverPreviewWindow && !hoverPreviewWindow.isDestroyed()) {
-      try {
-        hoverPreviewWindow.destroy();
-      } catch (e) {}
-    }
-    // Quit app completely to release memory and free up port 30120
-    app.quit();
+    // Quit app completely using forceful exit to prevent background zombies
+    app.exit(0);
   });
 
   mainWindow.once('ready-to-show', () => {

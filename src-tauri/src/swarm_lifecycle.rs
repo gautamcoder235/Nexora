@@ -316,7 +316,7 @@ pub fn recover_swarm_state(
 
             if !repo_path.is_empty() {
                 // Check if commit exists
-                let log_output = std::process::Command::new("git")
+                let log_output = crate::hidden_command::new_command("git")
                     .args(["log", "--oneline", "-n", "10"])
                     .current_dir(&repo_path)
                     .output()
@@ -343,15 +343,15 @@ pub fn recover_swarm_state(
                     );
                 } else {
                     // Reset half-applied patches safely by stashing untracked/dirty files first
-                    let _ = std::process::Command::new("git")
+                    let _ = crate::hidden_command::new_command("git")
                         .args(["stash", "-u", "-m", &format!("Nexora Recovery Backup for {}", exec_id)])
                         .current_dir(&repo_path)
                         .status();
-                    let _ = std::process::Command::new("git")
+                    let _ = crate::hidden_command::new_command("git")
                         .args(["reset", "--hard"])
                         .current_dir(&repo_path)
                         .status();
-                    let _ = std::process::Command::new("git")
+                    let _ = crate::hidden_command::new_command("git")
                         .args(["clean", "-fd"])
                         .current_dir(&repo_path)
                         .status();
@@ -414,7 +414,7 @@ pub fn spawn_agent_session(
         .map_err(|e| format!("Agent not found: {}", e))?;
 
     // 3. Agent Pre-Flight Validation
-    let mut cmd = std::process::Command::new(&agent_cmd);
+    let mut cmd = crate::hidden_command::new_command(&agent_cmd);
     cmd.arg("--version");
     
     #[cfg(target_os = "windows")]
@@ -538,7 +538,7 @@ pub fn start_agent_watchdog(app_handle: AppHandle) {
                                 }
 
                                 #[cfg(windows)]
-                                let _ = std::process::Command::new("taskkill")
+                                let _ = crate::hidden_command::new_command("taskkill")
                                     .args(["/T", "/F", "/PID", &pid.to_string()])
                                     .output();
                             }

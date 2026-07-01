@@ -1,4 +1,4 @@
-use std::process::Command;
+
 use rusqlite::Connection;
 use crate::team::task_distributor::{get_tasks, update_task_state};
 use crate::team::messages::log_system_message;
@@ -70,12 +70,12 @@ pub fn run_validation(
         );
 
         let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
+            crate::hidden_command::new_command("cmd")
                 .args(&["/C", &format!("{} {}", config.command, config.args.join(" "))])
                 .current_dir(project_dir)
                 .output()
         } else {
-            Command::new(&config.command)
+            crate::hidden_command::new_command(&config.command)
                 .args(&config.args)
                 .current_dir(project_dir)
                 .output()
@@ -222,7 +222,7 @@ pub fn run_task_validation(
     // 1. Gate A: Snapshot Check
     tests_total += 1;
     append_to_builder_log(&task_dir, "Running Gate A: Snapshot check...");
-    let git_head = Command::new("git")
+    let git_head = crate::hidden_command::new_command("git")
         .current_dir(&worktree_path)
         .args(&["rev-parse", "HEAD"])
         .output();
@@ -309,7 +309,7 @@ pub fn run_task_validation(
     if validation_passed {
         tests_total += 1;
         append_to_builder_log(&task_dir, "Running Gate C: Git Integrity...");
-        let status_out = Command::new("git")
+        let status_out = crate::hidden_command::new_command("git")
             .current_dir(&worktree_path)
             .args(&["status", "--porcelain"])
             .output();
@@ -343,12 +343,12 @@ pub fn run_task_validation(
             append_to_builder_log(&task_dir, &format!("Running check: {} {}", config.command, config.args.join(" ")));
 
             let output = if cfg!(target_os = "windows") {
-                Command::new("cmd")
+                crate::hidden_command::new_command("cmd")
                     .args(&["/C", &format!("{} {}", config.command, config.args.join(" "))])
                     .current_dir(&worktree_path)
                     .output()
             } else {
-                Command::new(&config.command)
+                crate::hidden_command::new_command(&config.command)
                     .args(&config.args)
                     .current_dir(&worktree_path)
                     .output()
@@ -389,7 +389,7 @@ pub fn run_task_validation(
     // 5. Gate G: Patch Generation & Draft Artifact Promotion
     if validation_passed {
         append_to_builder_log(&task_dir, "Generating workspace diff patch...");
-        let patch_out = Command::new("git")
+        let patch_out = crate::hidden_command::new_command("git")
             .current_dir(&worktree_path)
             .args(&["diff", "HEAD~1"]) // Or diff against main/branch if HEAD~1 is not present
             .output();
@@ -398,7 +398,7 @@ pub fn run_task_validation(
             Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
             _ => {
                 // Try diffing against HEAD
-                let fallback_diff = Command::new("git")
+                let fallback_diff = crate::hidden_command::new_command("git")
                     .current_dir(&worktree_path)
                     .args(&["diff", "HEAD"])
                     .output();

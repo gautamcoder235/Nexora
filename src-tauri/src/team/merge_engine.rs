@@ -1,4 +1,4 @@
-use std::process::Command;
+
 use std::fs;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
@@ -29,7 +29,7 @@ pub fn merge_task_changes(
     let _state = read_task_state(project_path, task_id)?;
 
     // 1. Check cleanliness of the main project root
-    let status_out = Command::new("git")
+    let status_out = crate::hidden_command::new_command("git")
         .current_dir(project_path)
         .args(&["status", "--porcelain"])
         .output()
@@ -47,7 +47,7 @@ pub fn merge_task_changes(
     // 2. Identify the task branch name.
     // In swarm_worktrees.rs: branch_name = format!("task-{}-exec-{}", task_id, execution_id);
     // Let's list git branches to find any branch starting with task-{task_id}
-    let branch_list_out = Command::new("git")
+    let branch_list_out = crate::hidden_command::new_command("git")
         .current_dir(project_path)
         .args(&["branch", "--list", &format!("task-{}*", task_id)])
         .output()
@@ -62,7 +62,7 @@ pub fn merge_task_changes(
     if let Some(ref b_name) = branch_name {
         if !b_name.is_empty() {
             // Squash merge the branch
-            let merge_out = Command::new("git")
+            let merge_out = crate::hidden_command::new_command("git")
                 .current_dir(project_path)
                 .args(&["merge", "--squash", b_name])
                 .output();
@@ -74,7 +74,7 @@ pub fn merge_task_changes(
                 Ok(out) => {
                     merge_error = String::from_utf8_lossy(&out.stderr).to_string();
                     // Abort merge if it failed
-                    let _ = Command::new("git")
+                    let _ = crate::hidden_command::new_command("git")
                         .current_dir(project_path)
                         .args(&["merge", "--abort"])
                         .output();
@@ -92,7 +92,7 @@ pub fn merge_task_changes(
         if patch_path.exists() {
             let patch_content = fs::read_to_string(&patch_path).unwrap_or_default();
             if !patch_content.trim().is_empty() {
-                let apply_out = Command::new("git")
+                let apply_out = crate::hidden_command::new_command("git")
                     .current_dir(project_path)
                     .args(&["apply", &patch_path.to_string_lossy()])
                     .output();
@@ -100,7 +100,7 @@ pub fn merge_task_changes(
                 match apply_out {
                     Ok(out) if out.status.success() => {
                         // Stage applied changes
-                        let _ = Command::new("git")
+                        let _ = crate::hidden_command::new_command("git")
                             .current_dir(project_path)
                             .args(&["add", "."])
                             .output();
@@ -123,7 +123,7 @@ pub fn merge_task_changes(
 
     // 4. Commit changes
     let commit_msg = format!("Squash Merge: task_{} - {}", task_id, spec.title);
-    let commit_out = Command::new("git")
+    let commit_out = crate::hidden_command::new_command("git")
         .current_dir(project_path)
         .args(&["commit", "-m", &commit_msg])
         .output()
@@ -131,7 +131,7 @@ pub fn merge_task_changes(
 
     if !commit_out.status.success() {
         // Rollback commit attempt by resetting
-        let _ = Command::new("git")
+        let _ = crate::hidden_command::new_command("git")
             .current_dir(project_path)
             .args(&["reset", "--hard", "HEAD"])
             .output();

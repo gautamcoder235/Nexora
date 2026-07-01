@@ -1,7 +1,7 @@
 use globset::{Glob, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::process::Command;
+
 
 use crate::swarm_db::DbState;
 use rusqlite::OptionalExtension;
@@ -28,7 +28,7 @@ pub fn validate_ownership(
 
     // 1. Get all modified, added, deleted, or untracked files
     // `git status --porcelain` gives us everything that has changed.
-    let output = Command::new("git")
+    let output = crate::hidden_command::new_command("git")
         .current_dir(root)
         .arg("status")
         .arg("--porcelain")

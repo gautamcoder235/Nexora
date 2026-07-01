@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
@@ -162,7 +162,7 @@ pub fn run_validation_pipeline(
 
     // GATE A: Repository Snapshot
     let start_a = Instant::now();
-    let git_head = Command::new("git")
+    let git_head = crate::hidden_command::new_command("git")
         .current_dir(worktree_path)
         .arg("rev-parse")
         .arg("HEAD")
@@ -260,7 +260,7 @@ pub fn run_validation_pipeline(
 
     // GATE C: Git Integrity
     let start_c = Instant::now();
-    let status_out = Command::new("git")
+    let status_out = crate::hidden_command::new_command("git")
         .current_dir(worktree_path)
         .arg("status")
         .arg("--porcelain")
@@ -275,7 +275,7 @@ pub fn run_validation_pipeline(
     }
 
     if profile.deep_git_integrity {
-        let fsck_out = Command::new("git")
+        let fsck_out = crate::hidden_command::new_command("git")
             .current_dir(worktree_path)
             .args(["fsck", "--no-progress"])
             .output();
@@ -307,7 +307,7 @@ pub fn run_validation_pipeline(
                 return Ok((true, Some(0), "Empty command".to_string()));
             }
 
-            let mut child = Command::new(parts[0])
+            let mut child = crate::hidden_command::new_command(parts[0])
                 .args(&parts[1..])
                 .current_dir(worktree)
                 .stdout(Stdio::piped())
@@ -422,7 +422,7 @@ pub fn run_validation_pipeline(
     }
 
     // PATCH GENERATION & ARTIFACT STORAGE
-    let patch_out = Command::new("git")
+    let patch_out = crate::hidden_command::new_command("git")
         .current_dir(worktree_path)
         .args(["format-patch", "HEAD~1", "--stdout"])
         .output();
@@ -431,7 +431,7 @@ pub fn run_validation_pipeline(
         patch_content = String::from_utf8_lossy(&out.stdout).to_string();
     }
 
-    let diff_stat_out = Command::new("git")
+    let diff_stat_out = crate::hidden_command::new_command("git")
         .current_dir(worktree_path)
         .args(["diff", "HEAD~1", "--stat"])
         .output();

@@ -4,7 +4,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
-use std::process::Command;
+
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Serialize, Deserialize)]
@@ -37,7 +37,7 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
     };
 
     // 1. Check if git is installed
-    let git_check = Command::new("git").arg("--version").output();
+    let git_check = crate::hidden_command::new_command("git").arg("--version").output();
 
     if git_check.is_err() {
         result.is_valid = false;
@@ -71,7 +71,7 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
     }
 
     // 3. Check for at least one commit
-    let commit_check = Command::new("git")
+    let commit_check = crate::hidden_command::new_command("git")
         .current_dir(root)
         .arg("rev-parse")
         .arg("HEAD")
@@ -99,7 +99,7 @@ pub fn validate_git_repository(root_path: String) -> Result<GitValidationResult,
     }
 
     // 4. Check for uncommitted changes (Warning only)
-    let status_check = Command::new("git")
+    let status_check = crate::hidden_command::new_command("git")
         .current_dir(root)
         .arg("status")
         .arg("--porcelain")
@@ -176,7 +176,7 @@ pub fn create_worktree(
 
     // If a worktree already exists here (from a previous aborted run), we should remove it first, but for safety let git handle it.
     // 1. Run git worktree add
-    let output = Command::new("git")
+    let output = crate::hidden_command::new_command("git")
         .current_dir(root)
         .arg("worktree")
         .arg("add")
@@ -200,7 +200,7 @@ pub fn create_worktree(
     let contract_dir = worktree_path.join(".nexora");
     if let Err(e) = fs::create_dir_all(&contract_dir) {
         // Cleanup worktree if we fail to create the contract
-        let _ = Command::new("git")
+        let _ = crate::hidden_command::new_command("git")
             .current_dir(root)
             .arg("worktree")
             .arg("remove")
@@ -291,7 +291,7 @@ pub fn remove_worktree(
     let root = Path::new(&project_root);
 
     // 1. Remove the worktree
-    let output = Command::new("git")
+    let output = crate::hidden_command::new_command("git")
         .current_dir(root)
         .arg("worktree")
         .arg("remove")
@@ -309,7 +309,7 @@ pub fn remove_worktree(
     }
 
     // 2. Delete the branch
-    let output = Command::new("git")
+    let output = crate::hidden_command::new_command("git")
         .current_dir(root)
         .arg("branch")
         .arg("-D")
@@ -347,7 +347,7 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
                         .to_string();
                     if dir_name.starts_with("task_") {
                         // Attempt to run git worktree remove on it
-                        let _ = Command::new("git")
+                        let _ = crate::hidden_command::new_command("git")
                             .current_dir(root)
                             .arg("worktree")
                             .arg("remove")
@@ -359,7 +359,7 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
                         let task_id_extracted = dir_name.trim_start_matches("task_");
                         let branch_prefix = format!("task-{}", task_id_extracted);
 
-                        let branches_output = Command::new("git")
+                        let branches_output = crate::hidden_command::new_command("git")
                             .current_dir(root)
                             .arg("branch")
                             .arg("--list")
@@ -371,7 +371,7 @@ pub fn cleanup_worktrees(project_root: String) -> Result<Vec<String>, String> {
                             for branch in branches_str.lines() {
                                 let clean_branch = branch.replace('*', "").trim().to_string();
                                 if !clean_branch.is_empty() {
-                                    let _ = Command::new("git")
+                                    let _ = crate::hidden_command::new_command("git")
                                         .current_dir(root)
                                         .arg("branch")
                                         .arg("-D")
@@ -430,7 +430,7 @@ pub fn revert_execution_snapshot(
     drop(conn_guard);
 
     // 3. Execute git reset --hard
-    let output = std::process::Command::new("git")
+    let output = crate::hidden_command::new_command("git")
         .current_dir(&worktree_path)
         .arg("reset")
         .arg("--hard")

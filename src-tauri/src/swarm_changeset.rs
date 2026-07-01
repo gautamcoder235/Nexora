@@ -570,7 +570,7 @@ pub async fn validate_changeset_shadow(
         let shell = if is_windows { "powershell" } else { "sh" };
         let arg_prefix = if is_windows { "-Command" } else { "-c" };
 
-        let output = std::process::Command::new(shell)
+        let output = crate::hidden_command::new_command(shell)
             .args([arg_prefix, cmd_str])
             .current_dir(shadow_dir_path)
             .stdout(std::process::Stdio::piped())

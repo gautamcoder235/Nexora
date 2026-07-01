@@ -1,10 +1,10 @@
-use std::process::Command;
+
 use std::fs;
 use std::path::Path;
 
 pub fn create_checkpoint(project_dir: &str, execution_id: &str) -> Result<String, String> {
     // 1. Get current HEAD commit hash
-    let output = Command::new("git")
+    let output = crate::hidden_command::new_command("git")
         .args(&["rev-parse", "HEAD"])
         .current_dir(project_dir)
         .output()
@@ -20,7 +20,7 @@ pub fn create_checkpoint(project_dir: &str, execution_id: &str) -> Result<String
     // 2. We can create a temporary git stash to hold any uncommitted work if needed
     // or a temporary git branch/tag for the checkpoint.
     let stash_msg = format!("checkpoint-{}", execution_id);
-    let stash_output = Command::new("git")
+    let stash_output = crate::hidden_command::new_command("git")
         .args(&["stash", "push", "-u", "-m", &stash_msg])
         .current_dir(project_dir)
         .output()
@@ -36,7 +36,7 @@ pub fn create_checkpoint(project_dir: &str, execution_id: &str) -> Result<String
 
 pub fn restore_checkpoint(project_dir: &str, execution_id: &str) -> Result<(), String> {
     // 1. Discard current modifications
-    let reset_output = Command::new("git")
+    let reset_output = crate::hidden_command::new_command("git")
         .args(&["reset", "--hard", "HEAD"])
         .current_dir(project_dir)
         .output()
@@ -47,7 +47,7 @@ pub fn restore_checkpoint(project_dir: &str, execution_id: &str) -> Result<(), S
         return Err(format!("Git reset hard failed: {}", err));
     }
 
-    let clean_output = Command::new("git")
+    let clean_output = crate::hidden_command::new_command("git")
         .args(&["clean", "-fd"])
         .current_dir(project_dir)
         .output()
@@ -60,7 +60,7 @@ pub fn restore_checkpoint(project_dir: &str, execution_id: &str) -> Result<(), S
 
     // 2. See if there is a stash created for this execution and pop/apply it
     // First, list stashes and find if any message matches checkpoint-<execution_id>
-    let list_output = Command::new("git")
+    let list_output = crate::hidden_command::new_command("git")
         .args(&["stash", "list"])
         .current_dir(project_dir)
         .output()
@@ -74,7 +74,7 @@ pub fn restore_checkpoint(project_dir: &str, execution_id: &str) -> Result<(), S
             if line.contains(&target_msg) {
                 // Found it! Let's pop it
                 let stash_ref = format!("stash@{{{}}}", i);
-                let pop_output = Command::new("git")
+                let pop_output = crate::hidden_command::new_command("git")
                     .args(&["stash", "pop", &stash_ref])
                     .current_dir(project_dir)
                     .output()
@@ -123,7 +123,7 @@ pub fn create_task_checkpoint(project_path: &str, task_id: &str, transition_name
 
     let mut head_hash = String::new();
     if worktree_path.exists() {
-        let output = Command::new("git")
+        let output = crate::hidden_command::new_command("git")
             .args(&["rev-parse", "HEAD"])
             .current_dir(&worktree_path)
             .output();
@@ -176,7 +176,7 @@ pub fn restore_task_checkpoint(project_path: &str, task_id: &str, transition_nam
     if worktree_path.exists() && commit_hash_path.exists() {
         let commit_hash = fs::read_to_string(&commit_hash_path).unwrap_or_default().trim().to_string();
         if !commit_hash.is_empty() {
-            let output = Command::new("git")
+            let output = crate::hidden_command::new_command("git")
                 .args(&["reset", "--hard", &commit_hash])
                 .current_dir(&worktree_path)
                 .output();

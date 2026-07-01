@@ -581,7 +581,7 @@ pub async fn terminate_execution(
     if let Some(pid) = pid_opt {
         // Attempt graceful terminate
         #[cfg(windows)]
-        let _ = std::process::Command::new("taskkill")
+        let _ = crate::hidden_command::new_command("taskkill")
             .args(["/PID", &pid.to_string()])
             .output();
         #[cfg(unix)]
@@ -593,7 +593,7 @@ pub async fn terminate_execution(
 
         // Force kill tree
         #[cfg(windows)]
-        let _ = std::process::Command::new("taskkill")
+        let _ = crate::hidden_command::new_command("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .output();
         #[cfg(unix)]

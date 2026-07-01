@@ -209,6 +209,9 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       cursorStyle: (settings.appearance?.terminal?.cursorStyle ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorStyle) as any,
       fontSize: settings.appearance?.typography?.terminalFontSize ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontSize,
       fontFamily: settings.appearance?.typography?.terminalFontFamily ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontFamily,
+      scrollback: settings.appearance?.terminal?.terminalScrollbackLimit ?? DEFAULT_APP_SETTINGS.appearance.terminal.terminalScrollbackLimit,
+      // @ts-ignore
+      bellStyle: (settings.appearance?.terminal?.bellStyle === 'visual' ? 'none' : (settings.appearance?.terminal?.bellStyle || 'none')) as any,
       theme: {
         background: termTheme.background,
         foreground: termTheme.foreground,
@@ -622,19 +625,28 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       const tFf = settings.appearance?.typography?.terminalFontFamily ?? DEFAULT_APP_SETTINGS.appearance.typography.terminalFontFamily;
       const tCb = settings.appearance?.terminal?.cursorBlink ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorBlink;
       const tCs = settings.appearance?.terminal?.cursorStyle ?? DEFAULT_APP_SETTINGS.appearance.terminal.cursorStyle;
+      const tSb = settings.appearance?.terminal?.terminalScrollbackLimit ?? DEFAULT_APP_SETTINGS.appearance.terminal.terminalScrollbackLimit;
+      const tBs = settings.appearance?.terminal?.bellStyle ?? DEFAULT_APP_SETTINGS.appearance.terminal.bellStyle;
 
-      term.options = {
-        fontSize: tFs,
-        fontFamily: tFf,
-        cursorBlink: tCb,
-        cursorStyle: tCs as any
-      };
+      term.options.fontSize = tFs;
+      term.options.fontFamily = tFf;
+      term.options.cursorBlink = tCb;
+      term.options.cursorStyle = tCs as any;
+      term.options.cursorInactiveStyle = tCs as any; // Forces unfocused cursor to match preview!
+      term.options.scrollback = tSb;
+      // @ts-ignore
+      term.options.bellStyle = (tBs === 'visual' ? 'none' : (tBs || 'none')) as any;
+      
+      // Force focus to trigger immediate cursor redraw in WebGL
+      term.focus();
     }
   }, [
     settings.appearance?.typography?.terminalFontSize,
     settings.appearance?.typography?.terminalFontFamily,
     settings.appearance?.terminal?.cursorBlink,
-    settings.appearance?.terminal?.cursorStyle
+    settings.appearance?.terminal?.cursorStyle,
+    settings.appearance?.terminal?.terminalScrollbackLimit,
+    settings.appearance?.terminal?.bellStyle
   ]);
 
   // Fit layout once transitions complete has been removed as ResizeObserver natively handles it.
