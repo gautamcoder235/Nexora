@@ -44,10 +44,9 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
   const handleDomDragEnter = (e: React.DragEvent) => {
     const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : [];
-    const hasFiles = types.includes('Files');
-    const hasText = types.includes('text/plain') || types.includes('text/html') || types.includes('text/uri-list');
+    const hasFiles = types.includes('Files') || types.includes('files') || types.some(t => t.toLowerCase().includes('file'));
     
-    if (hasText && !hasFiles) {
+    if (!hasFiles) {
       e.preventDefault();
       dragCounter.current++;
       setIsDomDragOver(true);
@@ -79,7 +78,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       setDomDragType(null);
       dragCounter.current = 0;
       
-      const text = e.dataTransfer.getData('text/plain');
+      const text = e.dataTransfer.getData('text/plain') || 
+                   e.dataTransfer.getData('text') || 
+                   e.dataTransfer.getData('Text') || 
+                   e.dataTransfer.getData('text/html');
+                   
       if (text) {
         const cleanText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
         try {
