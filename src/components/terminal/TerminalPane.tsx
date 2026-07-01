@@ -38,17 +38,12 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   const isBlackoutRef = useRef(isBlackout);
   const blackoutTimerRef = useRef<any>(null);
 
-  const dragCounter = useRef(0);
   const [isDomDragOver, setIsDomDragOver] = useState(false);
   const [domDragType, setDomDragType] = useState<'text' | null>(null);
 
   const handleDomDragEnter = (e: React.DragEvent) => {
-    const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : [];
-    const hasFiles = types.includes('Files') || types.includes('files') || types.some(t => t.toLowerCase().includes('file'));
-    
-    if (!hasFiles) {
+    if (e.dataTransfer.types.includes('text/plain') && !e.dataTransfer.types.includes('Files')) {
       e.preventDefault();
-      dragCounter.current++;
       setIsDomDragOver(true);
       setDomDragType('text');
     }
@@ -60,14 +55,9 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     }
   };
 
-  const handleDomDragLeave = (e: React.DragEvent) => {
-    if (domDragType === 'text') {
-      dragCounter.current--;
-      if (dragCounter.current === 0) {
-        setIsDomDragOver(false);
-        setDomDragType(null);
-      }
-    }
+  const handleDomDragLeave = () => {
+    setIsDomDragOver(false);
+    setDomDragType(null);
   };
 
   const handleDomDrop = async (e: React.DragEvent) => {
@@ -76,13 +66,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       e.stopPropagation();
       setIsDomDragOver(false);
       setDomDragType(null);
-      dragCounter.current = 0;
-      
-      const text = e.dataTransfer.getData('text/plain') || 
-                   e.dataTransfer.getData('text') || 
-                   e.dataTransfer.getData('Text') || 
-                   e.dataTransfer.getData('text/html');
-                   
+      const text = e.dataTransfer.getData('text/plain');
       if (text) {
         const cleanText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
         try {
@@ -718,10 +702,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     <div 
       data-pane-id={paneId}
       className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden"
-      onDragEnterCapture={handleDomDragEnter}
-      onDragOverCapture={handleDomDragOver}
-      onDragLeaveCapture={handleDomDragLeave}
-      onDropCapture={handleDomDrop}
+      onDragEnter={handleDomDragEnter}
+      onDragOver={handleDomDragOver}
+      onDragLeave={handleDomDragLeave}
+      onDrop={handleDomDrop}
     >
       {/* Connecting/Loading Overlay */}
       {termSession?.status === 'connecting' && (

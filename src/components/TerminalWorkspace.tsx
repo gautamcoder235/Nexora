@@ -221,7 +221,8 @@ export const TerminalWorkspace: React.FC = () => {
     const unlistenOver = listen<{ position: { x: number; y: number } }>("tauri://drag-over", (event) => {
       if (!dragOverType) return;
       const { x, y } = event.payload.position;
-      const el = document.elementFromPoint(x, y);
+      const dpr = window.devicePixelRatio || 1;
+      const el = document.elementFromPoint(x / dpr, y / dpr);
       const paneEl = el?.closest('.terminal-pane');
       const paneId = paneEl?.getAttribute('data-pane-id');
       setDragOverPaneId(paneId || null);
@@ -237,7 +238,8 @@ export const TerminalWorkspace: React.FC = () => {
       
       setDragOverType(null);
       const { x, y } = event.payload.position;
-      const el = document.elementFromPoint(x, y);
+      const dpr = window.devicePixelRatio || 1;
+      const el = document.elementFromPoint(x / dpr, y / dpr);
       const paneEl = el?.closest('.terminal-pane');
       const paneId = paneEl?.getAttribute('data-pane-id');
 
