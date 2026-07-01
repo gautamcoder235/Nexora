@@ -25,7 +25,7 @@ interface TerminalPaneProps {
   isFocused: boolean;
   isAnimating: boolean;
   refreshKey?: number;
-  dragFileType?: 'image' | 'file' | 'text' | null;
+  dragFileType?: 'image' | 'file' | null;
 }
 
 export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey, dragFileType = null }) => {
@@ -745,32 +745,28 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         }} 
       />
 
-      {/* Transparent Glassmorphic File/Text Drop Overlay */}
+      {/* Transparent Glassmorphic File Drop Overlay */}
       {dragFileType && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
           <div className={`m-2.5 inset-0 absolute border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3 ${
-            dragFileType === 'image' ? 'border-[#38bdf8]/40' : dragFileType === 'text' ? 'border-[#a855f7]/40' : 'border-[#10b981]/40'
+            dragFileType === 'image' ? 'border-[#38bdf8]/40' : 'border-[#10b981]/40'
           }`}>
             <div className={`p-3 border rounded-full animate-bounce ${
-              dragFileType === 'image' ? 'bg-[#38bdf8]/10 border-[#38bdf8]/20' : dragFileType === 'text' ? 'bg-[#a855f7]/10 border-[#a855f7]/20' : 'bg-[#10b981]/10 border-[#10b981]/20'
+              dragFileType === 'image' ? 'bg-[#38bdf8]/10 border-[#38bdf8]/20' : 'bg-[#10b981]/10 border-[#10b981]/20'
             }`}>
               {dragFileType === 'image' ? (
                 <ImageIcon className="w-6 h-6 text-[#38bdf8]" />
-              ) : dragFileType === 'text' ? (
-                <FileText className="w-6 h-6 text-[#a855f7]" />
               ) : (
                 <FileText className="w-6 h-6 text-[#10b981]" />
               )}
             </div>
             <div>
               <p className="text-zinc-100 text-[11px] font-bold tracking-wider uppercase font-sans">
-                {dragFileType === 'image' ? 'Drop to send image' : dragFileType === 'text' ? 'Drop to paste text' : 'Drop to paste file path'}
+                {dragFileType === 'image' ? 'Drop to send image' : 'Drop to paste file path'}
               </p>
               <p className="text-zinc-400 text-[9px] font-mono mt-1 max-w-[200px]">
                 {dragFileType === 'image' 
-                  ? 'Inserts absolute image path into terminal input'
-                  : dragFileType === 'text'
-                  ? 'Pastes selected text into terminal session'
+                  ? 'Inserts absolute image path into terminal input' 
                   : 'Inserts absolute file path into terminal input'
                 }
               </p>
