@@ -91,11 +91,13 @@ export const ActivityBar: React.FC = () => {
       const paths = event.payload.paths;
       if (paths && paths.length > 0) {
         const folderPath = paths[0];
-        const ext = folderPath.split('.').pop()?.toLowerCase();
-        const isImage = ext ? ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(ext) : false;
         
-        if (isImage) {
-          // Ignore image files so individual components (like Terminal drag drop overlay) can process them
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const isDir = await invoke<boolean>('is_directory', { path: folderPath });
+          if (!isDir) return; // Ignore files, only allow directories
+        } catch (err) {
+          console.warn("Failed to check if dropped path is directory:", err);
           return;
         }
 

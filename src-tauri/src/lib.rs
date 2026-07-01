@@ -1388,6 +1388,11 @@ pub struct FileNode {
 }
 
 #[tauri::command]
+fn is_directory(path: String) -> bool {
+    std::path::Path::new(&path).is_dir()
+}
+
+#[tauri::command]
 fn list_directory(dir_path: String) -> Result<Vec<FileNode>, String> {
     let path = std::path::Path::new(&dir_path);
     if !path.exists() {
@@ -1793,6 +1798,7 @@ pub fn run() {
             write_project_file,
             init_project_memory,
             list_directory,
+            is_directory,
             set_terminal_visibility,
             get_pty_process_info,
             get_terminal_metrics,
