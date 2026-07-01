@@ -43,8 +43,9 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   const dragCounterRef = useRef(0);
 
   const handleDomDragEnter = (e: React.DragEvent) => {
-    const isTextDrag = e.dataTransfer.types.includes('text/plain') || e.dataTransfer.types.includes('text/html');
-    if (isTextDrag && !e.dataTransfer.types.includes('Files')) {
+    const types = Array.from(e.dataTransfer.types || []);
+    const isTextDrag = types.includes('text/plain') || types.includes('text/html');
+    if (isTextDrag && !types.includes('Files')) {
       e.preventDefault();
       dragCounterRef.current++;
       if (dragCounterRef.current === 1) {
