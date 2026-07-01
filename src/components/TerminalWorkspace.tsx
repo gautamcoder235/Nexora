@@ -18,7 +18,7 @@ interface TerminalFrameProps {
   isHidden?: boolean;
   globalRefreshKey: number;
   onFocusToggle: (element: HTMLElement | null) => void;
-  dragFileType?: 'image' | 'file' | null;
+  dragFileType?: 'image' | 'file' | 'text' | null;
 }
 
 const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFocused, isAnimating, isHighlighted, isHidden = false, globalRefreshKey, onFocusToggle, dragFileType = null }) => {
@@ -202,7 +202,7 @@ export const TerminalWorkspace: React.FC = () => {
   const [globalRefreshKey, setGlobalRefreshKey] = useState(0);
   
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null);
-  const [dragOverType, setDragOverType] = useState<'image' | 'file' | null>(null);
+  const [dragOverType, setDragOverType] = useState<'image' | 'file' | 'text' | null>(null);
 
   useEffect(() => {
     const isImageFile = (path: string) => {
@@ -210,6 +210,7 @@ export const TerminalWorkspace: React.FC = () => {
       return ext ? ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(ext) : false;
     };
 
+    // Native file drag-drop
     const unlistenEnter = listen<{ paths: string[] }>("tauri://drag-enter", (event) => {
       const paths = event.payload.paths;
       if (paths && paths.length > 0) {
@@ -219,57 +220,126 @@ export const TerminalWorkspace: React.FC = () => {
     });
 
     const unlistenOver = listen<{ position: { x: number; y: number } }>("tauri://drag-over", (event) => {
-      if (!dragOverType) return;
-      const { x, y } = event.payload.position;
-      const dpr = window.devicePixelRatio || 1;
-      const el = document.elementFromPoint(x / dpr, y / dpr);
-      const paneEl = el?.closest('.terminal-pane');
-      const paneId = paneEl?.getAttribute('data-pane-id');
-      setDragOverPaneId(paneId || null);
+      if (dragOverType === 'image' || dragOverType === 'file') {
+        const { x, y } = event.payload.position;
+        const dpr = window.devicePixelRatio || 1;
+        const el = document.elementFromPoint(x / dpr, y / dpr);
+        const paneEl = el?.closest('.terminal-pane');
+        const paneId = paneEl?.getAttribute('data-pane-id');
+        setDragOverPaneId(paneId || null);
+      }
     });
 
     const unlistenLeave = listen<void>("tauri://drag-leave", () => {
-      setDragOverType(null);
-      setDragOverPaneId(null);
+      if (dragOverType === 'image' || dragOverType === 'file') {
+        setDragOverType(null);
+        setDragOverPaneId(null);
+      }
     });
 
     const unlistenDrop = listen<{ paths: string[]; position: { x: number; y: number } }>("tauri://drag-drop", async (event) => {
-      if (!dragOverType) return;
-      
-      setDragOverType(null);
-      const { x, y } = event.payload.position;
-      const dpr = window.devicePixelRatio || 1;
-      const el = document.elementFromPoint(x / dpr, y / dpr);
-      const paneEl = el?.closest('.terminal-pane');
-      const paneId = paneEl?.getAttribute('data-pane-id');
+      if (dragOverType === 'image' || dragOverType === 'file') {
+        setDragOverType(null);
+        const { x, y } = event.payload.position;
+        const dpr = window.devicePixelRatio || 1;
+        const el = document.elementFromPoint(x / dpr, y / dpr);
+        const paneEl = el?.closest('.terminal-pane');
+        const paneId = paneEl?.getAttribute('data-pane-id');
 
-      setDragOverPaneId(null);
+        setDragOverPaneId(null);
 
-      if (paneId && event.payload.paths && event.payload.paths.length > 0) {
-        const filePath = event.payload.paths[0];
-        const formattedPath = filePath.includes(" ") ? `"${filePath}" ` : `${filePath} `;
-        
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('write_pty', { sessionId: paneId, data: formattedPath });
+        if (paneId && event.payload.paths && event.payload.paths.length > 0) {
+          const filePath = event.payload.paths[0];
+          const formattedPath = filePath.includes(" ") ? `"${filePath}" ` : `${filePath} `;
           
-          // Re-arm watchdog/execution state
-          const store = useOrchestratorStore.getState();
-          const session = store.terminals.find(t => t.id === paneId);
-          if (session && session.executionState === 'idle') {
-            store.updateTerminalExecutionState(paneId, 'running');
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('write_pty', { sessionId: paneId, data: formattedPath });
+            
+            // Re-arm watchdog/execution state
+            const store = useOrchestratorStore.getState();
+            const session = store.terminals.find(t => t.id === paneId);
+            if (session && session.executionState === 'idle') {
+              store.updateTerminalExecutionState(paneId, 'running');
+            }
+          } catch (err) {
+            console.error('Failed to write file path via native drop:', err);
           }
-        } catch (err) {
-          console.error('Failed to write file path via native drop:', err);
         }
       }
     });
+
+    // HTML5 DOM Text Drag and Drop (from outside/inside browser selections)
+    const handleDragEnter = (e: DragEvent) => {
+      const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : [];
+      if (types.includes('text/plain') && !types.includes('Files')) {
+        e.preventDefault();
+        setDragOverType('text');
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      if (dragOverType === 'text') {
+        e.preventDefault();
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const paneEl = el?.closest('.terminal-pane');
+        const paneId = paneEl?.getAttribute('data-pane-id');
+        setDragOverPaneId(paneId || null);
+      }
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      if (dragOverType === 'text' && e.clientX === 0 && e.clientY === 0) {
+        setDragOverType(null);
+        setDragOverPaneId(null);
+      }
+    };
+
+    const handleDrop = async (e: DragEvent) => {
+      if (dragOverType === 'text') {
+        e.preventDefault();
+        setDragOverType(null);
+        setDragOverPaneId(null);
+
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const paneEl = el?.closest('.terminal-pane');
+        const paneId = paneEl?.getAttribute('data-pane-id');
+
+        if (paneId) {
+          const text = e.dataTransfer?.getData('text/plain');
+          if (text) {
+            const cleanText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              await invoke('write_pty', { sessionId: paneId, data: cleanText });
+              
+              const store = useOrchestratorStore.getState();
+              const session = store.terminals.find(t => t.id === paneId);
+              if (session && session.executionState === 'idle') {
+                store.updateTerminalExecutionState(paneId, 'running');
+              }
+            } catch (err) {
+              console.error('PTY write failed during drag-drop text paste:', err);
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
 
     return () => {
       unlistenEnter.then((fn) => fn());
       unlistenOver.then((fn) => fn());
       unlistenLeave.then((fn) => fn());
       unlistenDrop.then((fn) => fn());
+      window.removeEventListener('dragenter', handleDragEnter);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
     };
   }, [dragOverType]);
 

@@ -25,7 +25,7 @@ interface TerminalPaneProps {
   isFocused: boolean;
   isAnimating: boolean;
   refreshKey?: number;
-  dragFileType?: 'image' | 'file' | null;
+  dragFileType?: 'image' | 'file' | 'text' | null;
 }
 
 export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey, dragFileType = null }) => {
@@ -37,53 +37,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   const [isBlackout, setIsBlackout] = useState(true); // Always start fully blacked out
   const isBlackoutRef = useRef(isBlackout);
   const blackoutTimerRef = useRef<any>(null);
-
-  const [isDomDragOver, setIsDomDragOver] = useState(false);
-  const [domDragType, setDomDragType] = useState<'text' | null>(null);
-
-  const handleDomDragEnter = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('text/plain') && !e.dataTransfer.types.includes('Files')) {
-      e.preventDefault();
-      setIsDomDragOver(true);
-      setDomDragType('text');
-    }
-  };
-
-  const handleDomDragOver = (e: React.DragEvent) => {
-    if (domDragType === 'text') {
-      e.preventDefault();
-    }
-  };
-
-  const handleDomDragLeave = () => {
-    setIsDomDragOver(false);
-    setDomDragType(null);
-  };
-
-  const handleDomDrop = async (e: React.DragEvent) => {
-    if (domDragType === 'text') {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDomDragOver(false);
-      setDomDragType(null);
-      const text = e.dataTransfer.getData('text/plain');
-      if (text) {
-        const cleanText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('write_pty', { sessionId: paneId, data: cleanText });
-          
-          const store = useOrchestratorStore.getState();
-          const session = store.terminals.find(t => t.id === paneId);
-          if (session && session.executionState === 'idle') {
-            store.updateTerminalExecutionState(paneId, 'running');
-          }
-        } catch (err) {
-          console.error('PTY write failed during drag-drop text paste:', err);
-        }
-      }
-    }
-  };
 
   const startBlackout = () => {
     if (!isBlackoutRef.current) {
@@ -702,10 +655,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     <div 
       data-pane-id={paneId}
       className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden"
-      onDragEnter={handleDomDragEnter}
-      onDragOver={handleDomDragOver}
-      onDragLeave={handleDomDragLeave}
-      onDrop={handleDomDrop}
     >
       {/* Connecting/Loading Overlay */}
       {termSession?.status === 'connecting' && (
@@ -734,7 +683,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       />
 
       {/* Transparent Glassmorphic File Drop Overlay */}
-      {dragFileType && (
+      {dragFileType && dragFileType !== 'text' && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
           <div className={`m-2.5 inset-0 absolute border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3 ${
             dragFileType === 'image' ? 'border-[#38bdf8]/40' : 'border-[#10b981]/40'
@@ -764,7 +713,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       )}
 
       {/* Transparent Glassmorphic DOM Text Drop Overlay */}
-      {isDomDragOver && domDragType === 'text' && (
+      {dragFileType === 'text' && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
           <div className="m-2.5 inset-0 absolute border-2 border-dashed border-[#a855f7]/40 rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3">
             <div className="p-3 bg-[#a855f7]/10 border border-[#a855f7]/20 rounded-full animate-bounce">
