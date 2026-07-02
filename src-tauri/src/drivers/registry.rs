@@ -10,6 +10,7 @@ use crate::drivers::aider::AiderDriver;
 use crate::drivers::cline::ClineDriver;
 use crate::drivers::opencode::OpencodeDriver;
 use crate::drivers::generic::GenericDriver;
+use crate::drivers::nexora::NexoraDriver;
 
 pub struct DriverRegistry {
     drivers: HashMap<String, Arc<dyn CliDriver>>,
@@ -29,6 +30,7 @@ impl DriverRegistry {
         drivers.insert("aider".to_string(), Arc::new(AiderDriver::new()));
         drivers.insert("cline".to_string(), Arc::new(ClineDriver::new()));
         drivers.insert("opencode".to_string(), Arc::new(OpencodeDriver::new()));
+        drivers.insert("nexora".to_string(), Arc::new(NexoraDriver::new()));
         drivers.insert("generic".to_string(), Arc::new(GenericDriver::new()));
 
         DriverRegistry { drivers }

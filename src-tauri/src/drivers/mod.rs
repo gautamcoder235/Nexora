@@ -13,6 +13,7 @@ pub mod aider;
 pub mod cline;
 pub mod opencode;
 pub mod generic;
+pub mod nexora;
 
 #[tauri::command]
 pub fn resolve_driver_launch(

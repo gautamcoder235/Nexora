@@ -34,6 +34,7 @@ chrono = { version = "0.4.45", features = ["serde"] }
 uuid = { version = "1.10.0", features = ["v4", "serde"] }
 notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
 windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+nexora-core = { path = "../core" }
 
 [features]
 devtools = []

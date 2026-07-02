@@ -5,6 +5,7 @@ import { agyPlugin } from "./agy";
 import { codexPlugin } from "./codex";
 import { opencodePlugin } from "./opencode";
 import { genericPlugin } from "./generic";
+import { nexoraPlugin } from "./nexora";
 
 export class PluginRegistry {
   private static plugins: Map<string, AgentPlugin> = new Map([
@@ -12,6 +13,7 @@ export class PluginRegistry {
     ["agy", agyPlugin],
     ["codex", codexPlugin],
     ["opencode", opencodePlugin],
+    ["nexora", nexoraPlugin],
     ["generic", genericPlugin]
   ]);
 

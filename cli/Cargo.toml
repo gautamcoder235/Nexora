@@ -1,0 +1,29 @@
+[package]
+name = "nexora-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Nexora command-line tool (nx) backing production-grade AI-aware developer workflows"
+
+[[bin]]
+name = "nx"
+path = "src/main.rs"
+
+[dependencies]
+nexora-core = { path = "../core" }
+clap = { version = "4.4", features = ["derive", "cargo", "env"] }
+crossterm = { version = "0.27", features = ["events"] }
+ratatui = "0.26"
+indicatif = "0.17"
+tokio = { version = "1.35", features = ["full"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+owo-colors = "4.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+uuid = { version = "1.7", features = ["v4"] }
+parking_lot = "0.12"
+

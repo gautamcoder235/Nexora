@@ -24,6 +24,7 @@ pub mod swarm_worktrees;
 pub mod team;
 pub mod comms_watcher;
 pub mod drivers;
+pub mod ipc_server;
 
 #[derive(Serialize, Clone, Default)]
 pub struct BackendMetrics {
@@ -1764,6 +1765,9 @@ pub fn run() {
                 start_scheduler_watchdog(app_handle.clone());
                 swarm_lifecycle::start_lock_watchdog(app_handle.clone());
                 team::watcher::start_team_lock_watchdog(app_handle.clone());
+
+                // Start native IPC Server for CLI communication
+                tauri::async_runtime::spawn(crate::ipc_server::start_ipc_server(app_handle.clone()));
             });
 
             Ok(())

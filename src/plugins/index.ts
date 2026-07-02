@@ -5,4 +5,5 @@ export * from "./agy";
 export * from "./codex";
 export * from "./opencode";
 export * from "./generic";
+export * from "./nexora";
 
