@@ -237,7 +237,28 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                             }
                         }
                         KeyCode::Enter => {
-                            if state.active_tab == 1 {
+                            if state.command_palette.is_active {
+                                if !state.command_palette.items.is_empty() {
+                                    let selected = &state.command_palette.items[state.command_palette.selected_index];
+                                    match selected.as_str() {
+                                        "Settings" => { state.active_tab = 3; terminal.clear().ok(); }
+                                        "Models" => { 
+                                            state.active_tab = 1;
+                                            state.input_buffer = "/model ".to_string();
+                                            terminal.clear().ok();
+                                        }
+                                        "Providers" => {
+                                            state.active_tab = 1;
+                                            state.input_buffer = "/provider ".to_string();
+                                            terminal.clear().ok();
+                                        }
+                                        "History" => { state.active_tab = 1; terminal.clear().ok(); }
+                                        "Exit" => { break; }
+                                        _ => {}
+                                    }
+                                }
+                                state.command_palette.is_active = false;
+                            } else if state.active_tab == 1 {
                                 // Chat Send Prompt
                                 let prompt = state.input_buffer.drain(..).collect::<String>();
                                 if !prompt.trim().is_empty() {
@@ -816,7 +837,6 @@ fn render_workspace(f: &mut Frame, area: Rect, services: &ServiceContainer, stat
     let details = vec![
         Line::from(vec![Span::raw("File Name: "), Span::styled(active_file, RatatuiStyle::default().fg(primary).add_modifier(Modifier::BOLD))]),
         Line::from(vec![Span::raw("Workspace Path: "), Span::raw(services.workspace.root_path.join(active_file).to_string_lossy().to_string())]),
-        Line::from(""),
         Line::from(Span::styled("Instructions: ", RatatuiStyle::default().fg(Color::Yellow))),
         Line::from(Span::raw("• Press Up/Down arrow keys to navigate files.")),
         Line::from(Span::raw("• Press [Enter] to query the assistant for a file analysis.")),
