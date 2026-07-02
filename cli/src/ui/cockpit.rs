@@ -647,10 +647,11 @@ fn render_dashboard(f: &mut Frame, area: Rect, services: &ServiceContainer, stat
     };
     status_lines.push(Line::from(vec![Span::raw("Desktop IPC:    "), conn_span]));
 
-    let dashboard_block = Paragraph::new(status_lines)
-        .block(Block::default().borders(Borders::ALL).title(" Nexora Status Overview ").border_style(RatatuiStyle::default().fg(primary)))
-        .wrap(Wrap { trim: true });
+    let dashboard_block = Block::default().borders(Borders::ALL).title(" Nexora Status Overview ").border_style(RatatuiStyle::default().fg(primary));
+    let dashboard_area = dashboard_block.inner(chunks[0]);
     f.render_widget(dashboard_block, chunks[0]);
+    let dashboard_para = Paragraph::new(status_lines).wrap(Wrap { trim: true });
+    f.render_widget(dashboard_para, dashboard_area);
 
     // Right Side box with recent events & commands
     let recent_events = vec![
@@ -661,10 +662,11 @@ fn render_dashboard(f: &mut Frame, area: Rect, services: &ServiceContainer, stat
         Line::from("• Registered Chat loop subcommands dispatcher"),
     ];
 
-    let events_para = Paragraph::new(recent_events)
-        .block(Block::default().borders(Borders::ALL).title(" Event Bus Logs ").border_style(RatatuiStyle::default().fg(border)))
-        .wrap(Wrap { trim: true });
-    f.render_widget(events_para, chunks[1]);
+    let events_block = Block::default().borders(Borders::ALL).title(" Event Bus Logs ").border_style(RatatuiStyle::default().fg(border));
+    let events_area = events_block.inner(chunks[1]);
+    f.render_widget(events_block, chunks[1]);
+    let events_para = Paragraph::new(recent_events).wrap(Wrap { trim: true });
+    f.render_widget(events_para, events_area);
 }
 
 fn render_chat(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &CockpitState, primary: Color, border: Color) {
@@ -711,16 +713,17 @@ fn render_chat(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &C
     let max_lines = if chat_chunks[0].height > 2 { chat_chunks[0].height - 2 } else { 0 };
     let scroll_y = if num_lines > max_lines { num_lines - max_lines } else { 0 };
 
-    let chat_paragraph = Paragraph::new(chat_lines)
-        .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT).title(" Active AI Assistant Session ").border_style(RatatuiStyle::default().fg(primary)))
-        .scroll((scroll_y, 0));
-    f.render_widget(chat_paragraph, chat_chunks[0]);
+    let chat_block = Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT).title(" Active AI Assistant Session ").border_style(RatatuiStyle::default().fg(primary));
+    let chat_area = chat_block.inner(chat_chunks[0]);
+    f.render_widget(chat_block, chat_chunks[0]);
+    let chat_paragraph = Paragraph::new(chat_lines).scroll((scroll_y, 0));
+    f.render_widget(chat_paragraph, chat_area);
 
-    // Chat Prompt input buffer field
-    let input_field = Paragraph::new(state.input_buffer.clone())
-        .block(Block::default().borders(Borders::ALL).title(" Type Prompt (Press Enter to Send) ").border_style(RatatuiStyle::default().fg(border)))
-        .style(RatatuiStyle::default().fg(Color::White));
-    f.render_widget(input_field, chat_chunks[1]);
+    let input_block = Block::default().borders(Borders::ALL).title(" Type Prompt (Press Enter to Send) ").border_style(RatatuiStyle::default().fg(border));
+    let input_area = input_block.inner(chat_chunks[1]);
+    f.render_widget(input_block, chat_chunks[1]);
+    let input_field = Paragraph::new(state.input_buffer.clone()).style(RatatuiStyle::default().fg(Color::White));
+    f.render_widget(input_field, input_area);
 
     // Draw floating Slash Command autocomplete list if user types '/'
     if state.input_buffer.starts_with('/') && chat_chunks[1].y > 7 {
@@ -800,10 +803,11 @@ fn render_chat(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &C
         Line::from("[Esc / Q]: Exit Cockpit"),
     ];
 
-    let sidebar = Paragraph::new(sidebar_info)
-        .block(Block::default().borders(Borders::ALL).title(" Context Details ").border_style(RatatuiStyle::default().fg(border)))
-        .wrap(Wrap { trim: true });
-    f.render_widget(sidebar, h_chunks[1]);
+    let sidebar_block = Block::default().borders(Borders::ALL).title(" Context Details ").border_style(RatatuiStyle::default().fg(border));
+    let sidebar_area = sidebar_block.inner(h_chunks[1]);
+    f.render_widget(sidebar_block, h_chunks[1]);
+    let sidebar = Paragraph::new(sidebar_info).wrap(Wrap { trim: true });
+    f.render_widget(sidebar, sidebar_area);
 }
 
 fn render_workspace(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &CockpitState, primary: Color, border: Color) {
@@ -825,27 +829,29 @@ fn render_workspace(f: &mut Frame, area: Rect, services: &ServiceContainer, stat
         ListItem::new(Span::styled(format!(" 📄 {}", name), style))
     }).collect();
 
-    let files_list = List::new(list_items)
-        .block(Block::default().borders(Borders::ALL).title(" Workspace Files Explorer ").border_style(RatatuiStyle::default().fg(primary)));
-    
+    let files_block = Block::default().borders(Borders::ALL).title(" Workspace Files Explorer ").border_style(RatatuiStyle::default().fg(primary));
+    let files_area = files_block.inner(chunks[0]);
+    f.render_widget(files_block, chunks[0]);
+    let files_list = List::new(list_items);
     let mut list_state = ListState::default();
     list_state.select(Some(state.file_cursor));
-    f.render_stateful_widget(files_list, chunks[0], &mut list_state);
+    f.render_stateful_widget(files_list, files_area, &mut list_state);
 
     // Right Side Info Panel
     let active_file = &state.file_list[state.file_cursor];
     let details = vec![
-        Line::from(vec![Span::raw("File Name: "), Span::styled(active_file, RatatuiStyle::default().fg(primary).add_modifier(Modifier::BOLD))]),
-        Line::from(vec![Span::raw("Workspace Path: "), Span::raw(services.workspace.root_path.join(active_file).to_string_lossy().to_string())]),
-        Line::from(Span::styled("Instructions: ", RatatuiStyle::default().fg(Color::Yellow))),
-        Line::from(Span::raw("• Press Up/Down arrow keys to navigate files.")),
-        Line::from(Span::raw("• Press [Enter] to query the assistant for a file analysis.")),
+        Line::from(vec![Span::raw(" File Name: "), Span::styled(active_file, RatatuiStyle::default().fg(primary).add_modifier(Modifier::BOLD))]),
+        Line::from(vec![Span::raw(" Workspace Path: "), Span::raw(services.workspace.root_path.join(active_file).to_string_lossy().to_string())]),
+        Line::from(Span::styled(" Instructions: ", RatatuiStyle::default().fg(Color::Yellow))),
+        Line::from(Span::raw(" • Press Up/Down arrow keys to navigate files.")),
+        Line::from(Span::raw(" • Press [Enter] to query the assistant for a file analysis.")),
     ];
 
-    let info_box = Paragraph::new(details)
-        .block(Block::default().borders(Borders::ALL).title(" File Context Card ").border_style(RatatuiStyle::default().fg(border)))
-        .wrap(Wrap { trim: true });
-    f.render_widget(info_box, chunks[1]);
+    let info_block = Block::default().borders(Borders::ALL).title(" File Context Card ").border_style(RatatuiStyle::default().fg(border));
+    let info_area = info_block.inner(chunks[1]);
+    f.render_widget(info_block, chunks[1]);
+    let info_box = Paragraph::new(details).wrap(Wrap { trim: true });
+    f.render_widget(info_box, info_area);
 }
 
 fn render_doctor(f: &mut Frame, area: Rect, _services: &ServiceContainer, state: &CockpitState, primary: Color, _border: Color, success: Color) {
@@ -885,24 +891,27 @@ fn render_monitors(f: &mut Frame, area: Rect, _services: &ServiceContainer, stat
 
     // 1. CPU Bar
     let cpu_bars = "█".repeat((state.cpu_usage / 4) as usize);
-    let cpu_para = Paragraph::new(format!("{:<12} [ {:-<25} ] {}%", "CPU Usage", cpu_bars.cyan(), state.cpu_usage))
-        .block(Block::default().borders(Borders::ALL).border_style(RatatuiStyle::default().fg(border)))
-        .style(RatatuiStyle::default().fg(Color::White));
-    f.render_widget(cpu_para, chunks[0]);
+    let cpu_block = Block::default().borders(Borders::ALL).border_style(RatatuiStyle::default().fg(border));
+    let cpu_area = cpu_block.inner(chunks[0]);
+    f.render_widget(cpu_block, chunks[0]);
+    let cpu_para = Paragraph::new(format!("{:<12} [ {:-<25} ] {}%", "CPU Usage", cpu_bars.cyan(), state.cpu_usage)).style(RatatuiStyle::default().fg(Color::White));
+    f.render_widget(cpu_para, cpu_area);
 
     // 2. Memory Bar
     let mem_bars = "█".repeat((state.memory_mb / 20) as usize);
-    let mem_para = Paragraph::new(format!("{:<12} [ {:-<25} ] {} MB", "Memory", mem_bars.cyan(), state.memory_mb))
-        .block(Block::default().borders(Borders::ALL).border_style(RatatuiStyle::default().fg(border)))
-        .style(RatatuiStyle::default().fg(Color::White));
-    f.render_widget(mem_para, chunks[1]);
+    let mem_block = Block::default().borders(Borders::ALL).border_style(RatatuiStyle::default().fg(border));
+    let mem_area = mem_block.inner(chunks[1]);
+    f.render_widget(mem_block, chunks[1]);
+    let mem_para = Paragraph::new(format!("{:<12} [ {:-<25} ] {} MB", "Memory", mem_bars.cyan(), state.memory_mb)).style(RatatuiStyle::default().fg(Color::White));
+    f.render_widget(mem_para, mem_area);
 
     // 3. Latency Bar
     let latency_bars = "█".repeat((state.latency_ms / 2) as usize);
-    let latency_para = Paragraph::new(format!("{:<12} [ {:-<25} ] {} ms", "IPC Ping", latency_bars.cyan(), state.latency_ms))
-        .block(Block::default().borders(Borders::ALL).border_style(RatatuiStyle::default().fg(border)))
-        .style(RatatuiStyle::default().fg(Color::White));
-    f.render_widget(latency_para, chunks[2]);
+    let latency_block = Block::default().borders(Borders::ALL).border_style(RatatuiStyle::default().fg(border));
+    let latency_area = latency_block.inner(chunks[2]);
+    f.render_widget(latency_block, chunks[2]);
+    let latency_para = Paragraph::new(format!("{:<12} [ {:-<25} ] {} ms", "IPC Ping", latency_bars.cyan(), state.latency_ms)).style(RatatuiStyle::default().fg(Color::White));
+    f.render_widget(latency_para, latency_area);
 
     // 4. Extra stats
     let extra_lines = vec![
