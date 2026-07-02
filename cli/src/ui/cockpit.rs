@@ -562,11 +562,6 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
 
 fn draw_ui(f: &mut Frame, services: &ServiceContainer, state: &CockpitState) {
     let size = f.size();
-    
-    // We force a solid background on the main frame to bypass a known Windows ConPTY bug 
-    // where it drops trailing sparse borders (like the right edge of a panel) if the line 
-    // has no text. Explicit backgrounds force ConPTY to render the entire row.
-    f.render_widget(ratatui::widgets::Block::default().style(RatatuiStyle::default().bg(Color::Black)), size);
 
     // Theme Colors
     let color_primary = Color::Cyan;
