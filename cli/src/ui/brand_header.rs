@@ -31,16 +31,16 @@ impl BrandHeader {
                 ])
                 .split(inner_area);
 
-            // True Rigid Geometry Kerning - perfectly slanted across 47 columns (1 visual space minimum)
+            // True Rigid Geometry Kerning - perfectly slanted across 48 columns (1 visual space minimum)
             const SLANT_LOGO: [&str; 5] = [
-                r#"    _   __  ______  _  __  ____    ____    ___ "#,
-                r#"   / | / / / ____/ | |/ / / __ \  / __ \  /   |"#,
-                r#"  /  |/ / / __/    |   / / / / / / /_/ / / /| |"#,
-                r#" / /|  / / /___   /   | / /_/ / / _  _/ / ___ |"#,
-                r#"/_/ |_/ /_____/  /_/|_| \____/ /_/ |_| /_/  |_|"#,
+                r#"    _   __  ______  _  __  ____    ____    ___  "#,
+                r#"   / | / / / ____/ | |/ / / __ \  / __ \  /   | "#,
+                r#"  /  |/ / / __/    |   / / / / / / /_/ / / /-| |"#,
+                r#" / /|  / / /___   /   | / /_/ / / _  _/ / ___ | "#,
+                r#"/_/ |_/ /_____/  /_/|_| \____/ /_/ |_| /_/  |_| "#,
             ];
 
-            let colors: [Color; 47] = [
+            let colors: [Color; 48] = [
                 Color::Rgb(0, 255, 255), Color::Rgb(0, 255, 238), Color::Rgb(0, 255, 221), Color::Rgb(0, 255, 204),
                 Color::Rgb(0, 255, 187), Color::Rgb(0, 255, 171), Color::Rgb(0, 255, 154), Color::Rgb(0, 255, 137),
                 Color::Rgb(0, 255, 120), Color::Rgb(0, 255, 103), Color::Rgb(0, 255, 87), Color::Rgb(0, 255, 70),
@@ -52,7 +52,7 @@ impl BrandHeader {
                 Color::Rgb(255, 228, 0), Color::Rgb(255, 211, 0), Color::Rgb(255, 195, 0), Color::Rgb(255, 179, 0),
                 Color::Rgb(255, 163, 0), Color::Rgb(255, 146, 0), Color::Rgb(255, 130, 0), Color::Rgb(255, 114, 0),
                 Color::Rgb(255, 97, 0), Color::Rgb(255, 81, 0), Color::Rgb(255, 65, 0), Color::Rgb(255, 48, 0),
-                Color::Rgb(255, 32, 0), Color::Rgb(255, 16, 0), Color::Rgb(255, 0, 0),
+                Color::Rgb(255, 32, 0), Color::Rgb(255, 16, 0), Color::Rgb(255, 0, 0), Color::Rgb(255, 0, 0),
             ];
 
             let mut brand_lines: Vec<Line> = Vec::new();
