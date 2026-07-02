@@ -53,6 +53,7 @@ pub struct CockpitState {
     pub active_model_override: Option<String>,
     pub active_provider_override: Option<String>,
     pub command_palette: crate::ui::palette::CommandPalette,
+    pub chat_scroll_offset: u16,
 }
 
 impl CockpitState {
@@ -88,6 +89,7 @@ impl CockpitState {
             active_model_override: None,
             active_provider_override: None,
             command_palette: crate::ui::palette::CommandPalette::new(),
+            chat_scroll_offset: 0,
         }
     }
 
@@ -145,6 +147,7 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                     last.1.push_str(&chunk);
                 }
             }
+            state.chat_scroll_offset = 0;
             received = true;
         }
 
@@ -223,6 +226,8 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                 }
                             } else if state.active_tab == 2 && state.file_cursor > 0 {
                                 state.file_cursor -= 1;
+                            } else if state.active_tab == 1 {
+                                state.chat_scroll_offset = state.chat_scroll_offset.saturating_add(1);
                             }
                         }
                         KeyCode::Down => {
@@ -234,6 +239,18 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                 }
                             } else if state.active_tab == 2 && state.file_cursor < state.file_list.len() - 1 {
                                 state.file_cursor += 1;
+                            } else if state.active_tab == 1 {
+                                state.chat_scroll_offset = state.chat_scroll_offset.saturating_sub(1);
+                            }
+                        }
+                        KeyCode::PageUp => {
+                            if state.active_tab == 1 {
+                                state.chat_scroll_offset = state.chat_scroll_offset.saturating_add(10);
+                            }
+                        }
+                        KeyCode::PageDown => {
+                            if state.active_tab == 1 {
+                                state.chat_scroll_offset = state.chat_scroll_offset.saturating_sub(10);
                             }
                         }
                         KeyCode::Enter => {
@@ -263,6 +280,7 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                 let prompt = state.input_buffer.drain(..).collect::<String>();
                                 if !prompt.trim().is_empty() {
                                     state.chat_history.push(("You".to_string(), prompt.clone()));
+                                    state.chat_scroll_offset = 0;
                                     
                                     // Handle TUI slash commands
                                     if prompt.starts_with('/') {
@@ -766,7 +784,8 @@ fn render_chat(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &C
     }
 
     let max_lines = if chat_chunks[0].height > 2 { chat_chunks[0].height - 2 } else { 0 };
-    let scroll_y = if num_lines > max_lines { num_lines - max_lines } else { 0 };
+    let mut scroll_y = if num_lines > max_lines { num_lines - max_lines } else { 0 };
+    scroll_y = scroll_y.saturating_sub(state.chat_scroll_offset);
 
     let chat_block = Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT).title(" Active AI Assistant Session ").border_style(RatatuiStyle::default().fg(primary)).style(RatatuiStyle::default().bg(Color::Black));
     let chat_area = chat_block.inner(chat_chunks[0]);

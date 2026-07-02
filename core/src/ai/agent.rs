@@ -9,6 +9,11 @@ impl AgentRuntime {
     pub fn new() -> Self {
         let registry = crate::ai::tools::ToolRegistry::new();
         registry.register(std::sync::Arc::new(crate::ai::tools::fs::WriteFileTool));
+        registry.register(std::sync::Arc::new(crate::ai::tools::fs::ReadFileTool));
+        registry.register(std::sync::Arc::new(crate::ai::tools::fs::ListDirTool));
+        registry.register(std::sync::Arc::new(crate::ai::tools::fs::ReplaceFileContentTool));
+        registry.register(std::sync::Arc::new(crate::ai::tools::fs::GrepSearchTool));
+        registry.register(std::sync::Arc::new(crate::ai::tools::cmd::RunCommandTool));
 
         Self {
             credential_manager: crate::config::credentials::CredentialManager::new(),
@@ -85,7 +90,14 @@ impl AgentRuntime {
                 format!("System Instructions:\n{}\n\nUser Request:\n{}", sys_prompt, prompt_owned) 
             };
 
+            let mut iterations = 0;
             loop {
+                iterations += 1;
+                if iterations > 5 {
+                    yield Ok("\n\n[Agent stopped to prevent infinite execution loop. Max tool iterations reached.]".to_string());
+                    break;
+                }
+                
                 let mut full_response = String::new();
                 
                 {
