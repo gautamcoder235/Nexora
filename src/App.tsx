@@ -1424,19 +1424,22 @@ function App() {
       </div>
     );
   }
+  React.useLayoutEffect(() => {
+    if (appRef.current) {
+      if (!isSidebarDragging) appRef.current.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
+      if (!isHeightDragging) appRef.current.style.setProperty('--top-panel-height', `${topPanelHeight}px`);
+      if (!isBrowserDragging) appRef.current.style.setProperty('--browser-panel-width', `${browserPanelWidth}px`);
+      if (!isReviewDragging) appRef.current.style.setProperty('--review-panel-width', `${reviewPanelWidth}px`);
+      appRef.current.style.setProperty('--pane-spacing', `${paneSpacing}px`);
+    }
+  }, [sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging]);
 
   return (
     <div className="relative h-screen w-screen bg-bg-primary overflow-hidden">
       <TitleBar />
       <div 
         ref={appRef}
-        style={{ 
-          '--sidebar-width': `${sidebarWidth}px`, 
-          '--top-panel-height': `${topPanelHeight}px`,
-          '--browser-panel-width': `${browserPanelWidth}px`,
-          '--review-panel-width': `${reviewPanelWidth}px`,
-          '--pane-spacing': `${paneSpacing}px`
-        } as React.CSSProperties}
+        style={{} as React.CSSProperties}
         className={`h-full w-full pt-[34px] text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-bg-primary ${(isSidebarDragging || isHeightDragging || isTeamDragging || isBrowserDragging || isReviewDragging) ? "is-dragging" : ""}`}
       >
       {settings?.appearance?.workspace?.showActivityBar !== false && <ActivityBar />}
