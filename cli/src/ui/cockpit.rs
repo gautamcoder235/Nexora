@@ -18,7 +18,7 @@ use crate::runtime::ServiceContainer;
 use crate::services::ipc::IpcRequest;
 
 const PROVIDERS_LIST: &[(&str, &[&str])] = &[
-    ("groq", &["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]),
+    ("groq", &["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]),
     ("deepseek", &["deepseek-chat", "deepseek-coder", "deepseek-reasoner"]),
     ("gemini", &["gemini-1.5-pro-latest", "gemini-1.5-flash-latest", "gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]),
     ("mistral", &["mistral-large-latest", "open-mixtral-8x22", "mistral-small-latest"]),
