@@ -689,7 +689,7 @@ fn render_dashboard(f: &mut Frame, area: Rect, services: &ServiceContainer, stat
     ];
 
     // Check IPC connection status online/offline
-    let is_connected = services.ipc.lock().is_connected();
+    let is_connected = services.ipc.try_lock().map(|ipc| ipc.is_connected()).unwrap_or(true);
     let conn_span = if is_connected {
         Span::styled("Online (Named Pipe)", RatatuiStyle::default().fg(Color::Green))
     } else {

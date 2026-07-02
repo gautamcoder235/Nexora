@@ -85,7 +85,7 @@ impl BrandHeader {
             // ── Right status panel (Aligned to the top) ──
             let mut status_lines = Vec::new();
 
-            let is_connected = services.ipc.lock().is_connected();
+            let is_connected = services.ipc.try_lock().map(|ipc| ipc.is_connected()).unwrap_or(true);
             let conn_span = if is_connected {
                 Span::styled("● Active (Named Pipe)", RatatuiStyle::default().fg(Color::Green).add_modifier(Modifier::BOLD))
             } else {
@@ -127,7 +127,7 @@ impl BrandHeader {
                 .border_style(RatatuiStyle::default().fg(Color::DarkGray))
                 .title(" Nexora ");
 
-            let is_connected = services.ipc.lock().is_connected();
+            let is_connected = services.ipc.try_lock().map(|ipc| ipc.is_connected()).unwrap_or(true);
             let conn_str = if is_connected { "● Online" } else { "○ Offline" };
             let conn_color = if is_connected { Color::Green } else { Color::Red };
 
@@ -150,7 +150,7 @@ impl BrandHeader {
             // ==========================================
             // Mini Minimal Inline Bar (1 line)
             // ==========================================
-            let is_connected = services.ipc.lock().is_connected();
+            let is_connected = services.ipc.try_lock().map(|ipc| ipc.is_connected()).unwrap_or(true);
             let conn_str = if is_connected { "●" } else { "○" };
             let conn_color = if is_connected { Color::Green } else { Color::Red };
 
