@@ -1,4 +1,3 @@
-pub mod openrouter;
 pub mod openai;
 
 use std::error::Error;
