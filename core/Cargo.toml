@@ -23,3 +23,5 @@ async-stream = "0.3.6"
 tokio-stream = "0.1.18"
 tokio = { version = "1.52.3", features = ["full"] }
 futures = "0.3.32"
+async-trait = "0.1.89"
+uuid = { version = "1.23.4", features = ["v4"] }

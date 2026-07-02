@@ -1,4 +1,5 @@
 pub mod openai;
+pub mod factory;
 
 use std::error::Error;
 use std::collections::HashMap;

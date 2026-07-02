@@ -4,3 +4,5 @@ pub mod config;
 pub mod ask;
 pub mod explain;
 pub mod commit;
+pub mod setup;
+

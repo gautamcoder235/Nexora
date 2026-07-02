@@ -17,6 +17,28 @@ use nexora_core::error::NexoraError;
 use crate::runtime::ServiceContainer;
 use crate::services::ipc::IpcRequest;
 
+const PROVIDERS_LIST: &[(&str, &[&str])] = &[
+    ("groq", &["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]),
+    ("deepseek", &["deepseek-chat", "deepseek-coder"]),
+    ("gemini", &["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]),
+    ("mistral", &["mistral-large-latest", "open-mixtral-8x22", "mistral-small-latest"]),
+    ("codestral", &["codestral-latest"]),
+    ("kimi", &["moonshot-v1-8k", "moonshot-v1-32k"]),
+    ("nvidia", &["meta/llama3-70b-instruct", "nvidia/nemotron-4-340b-instruct"]),
+    ("openrouter", &["meta-llama/llama-3-70b-instruct", "anthropic/claude-3-opus", "google/gemini-pro"]),
+    ("opencode", &["opencode-default-model"]),
+];
+
+fn get_all_models() -> Vec<(&'static str, &'static str)> {
+    let mut all = Vec::new();
+    for &(prov, models) in PROVIDERS_LIST {
+        for &model in models {
+            all.push((prov, model));
+        }
+    }
+    all
+}
+
 pub struct CockpitState {
     pub active_tab: usize,
     pub input_buffer: String,
@@ -28,6 +50,9 @@ pub struct CockpitState {
     pub cpu_usage: u8,
     pub memory_mb: u32,
     pub latency_ms: u128,
+    pub active_model_override: Option<String>,
+    pub active_provider_override: Option<String>,
+    pub command_palette: crate::ui::palette::CommandPalette,
 }
 
 impl CockpitState {
@@ -60,6 +85,9 @@ impl CockpitState {
             cpu_usage: 12,
             memory_mb: 184,
             latency_ms: 12,
+            active_model_override: None,
+            active_provider_override: None,
+            command_palette: crate::ui::palette::CommandPalette::new(),
         }
     }
 
@@ -134,18 +162,47 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
             })? {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
+                        KeyCode::Char('k') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                            state.command_palette.is_active = !state.command_palette.is_active;
+                        }
                         KeyCode::Char('q') | KeyCode::Esc => {
-                            break;
+                            if state.command_palette.is_active {
+                                state.command_palette.is_active = false;
+                            } else {
+                                break;
+                            }
                         }
                         KeyCode::Tab => {
-                            state.active_tab = (state.active_tab + 1) % 5;
-                            if state.active_tab == 3 { state.run_diagnostics(services); }
-                            terminal.clear().ok();
+                            if state.active_tab == 1 && state.input_buffer.starts_with('/') {
+                                let filter = state.input_buffer.trim();
+                                let mut best_match = None;
+                                
+                                if state.input_buffer.starts_with("/model") {
+                                    for (_, model) in get_all_models() {
+                                        let cmd = format!("/model {}", model);
+                                        if cmd.to_lowercase().starts_with(&filter.to_lowercase()) {
+                                            best_match = Some(cmd);
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    let commands = &["/clear", "/model", "/provider", "/setup", "/exit"];
+                                    for cmd in commands {
+                                        if cmd.starts_with(filter) {
+                                            best_match = Some(cmd.to_string());
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                if let Some(m) = best_match {
+                                    state.input_buffer = m;
+                                    state.input_buffer.push(' ');
+                                }
+                            }
                         }
                         KeyCode::BackTab => {
-                            state.active_tab = if state.active_tab == 0 { 4 } else { state.active_tab - 1 };
-                            if state.active_tab == 3 { state.run_diagnostics(services); }
-                            terminal.clear().ok();
+                            // Disabled shift-tab view switching
                         }
                         KeyCode::Char('1') => { state.active_tab = 0; terminal.clear().ok(); }
                         KeyCode::Char('2') => { state.active_tab = 1; terminal.clear().ok(); }
@@ -157,14 +214,25 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                         }
                         KeyCode::Char('5') => { state.active_tab = 4; terminal.clear().ok(); }
                         
-                        // Workspace Navigation
                         KeyCode::Up => {
-                            if state.active_tab == 2 && state.file_cursor > 0 {
+                            if state.command_palette.is_active {
+                                if state.command_palette.selected_index > 0 {
+                                    state.command_palette.selected_index -= 1;
+                                } else {
+                                    state.command_palette.selected_index = state.command_palette.items.len().saturating_sub(1);
+                                }
+                            } else if state.active_tab == 2 && state.file_cursor > 0 {
                                 state.file_cursor -= 1;
                             }
                         }
                         KeyCode::Down => {
-                            if state.active_tab == 2 && state.file_cursor < state.file_list.len() - 1 {
+                            if state.command_palette.is_active {
+                                if state.command_palette.selected_index < state.command_palette.items.len().saturating_sub(1) {
+                                    state.command_palette.selected_index += 1;
+                                } else {
+                                    state.command_palette.selected_index = 0;
+                                }
+                            } else if state.active_tab == 2 && state.file_cursor < state.file_list.len() - 1 {
                                 state.file_cursor += 1;
                             }
                         }
@@ -174,6 +242,164 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                 let prompt = state.input_buffer.drain(..).collect::<String>();
                                 if !prompt.trim().is_empty() {
                                     state.chat_history.push(("You".to_string(), prompt.clone()));
+                                    
+                                    // Handle TUI slash commands
+                                    if prompt.starts_with('/') {
+                                        let trimmed = prompt.trim();
+                                        if trimmed == "/model" || trimmed.starts_with("/model ") {
+                                            let model_arg = trimmed["/model".len()..].trim();
+                                            if model_arg.is_empty() {
+                                                // Interactive Model Selector
+                                                disable_raw_mode().ok();
+                                                execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen).ok();
+
+                                                let mut flat_models: Vec<String> = Vec::new();
+                                                for &(prov, models) in PROVIDERS_LIST {
+                                                    for m in models {
+                                                        flat_models.push(format!("{} / {}", prov, m));
+                                                    }
+                                                }
+
+                                                println!("\n🔍 Search or select a model for your active profile:");
+                                                let selection = dialoguer::FuzzySelect::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                                                    .with_prompt("Model")
+                                                    .items(&flat_models)
+                                                    .default(0)
+                                                    .interact_opt()
+                                                    .unwrap_or(None);
+
+                                                enable_raw_mode().ok();
+                                                execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen).ok();
+                                                terminal.clear().ok();
+
+                                                if let Some(idx) = selection {
+                                                    let selected_str = &flat_models[idx];
+                                                    let parts: Vec<&str> = selected_str.split(" / ").collect();
+                                                    if parts.len() == 2 {
+                                                        let provider = parts[0];
+                                                        let model_name = parts[1];
+                                                        
+                                                        // Update global config.toml
+                                                        if let Some(global_path) = nexora_core::config::get_global_config_path() {
+                                                            let mut config_struct = if global_path.exists() {
+                                                                let content = std::fs::read_to_string(&global_path).unwrap_or_default();
+                                                                toml::from_str::<nexora_core::config::NexoraConfig>(&content).unwrap_or_default()
+                                                            } else {
+                                                                nexora_core::config::NexoraConfig::default()
+                                                            };
+
+                                                            let active = config_struct.active_profile.clone();
+                                                            let profile = config_struct.profiles.entry(active).or_default();
+                                                            profile.model = Some(model_name.to_string());
+                                                            profile.provider = Some(provider.to_string());
+
+                                                            if let Ok(serialized) = toml::to_string_pretty(&config_struct) {
+                                                                if let Err(e) = std::fs::write(&global_path, serialized) {
+                                                                    state.chat_history.push(("System".to_string(), format!("Error writing config to disk: {}", e)));
+                                                                } else {
+                                                                    state.active_model_override = Some(model_name.to_string());
+                                                                    state.active_provider_override = Some(provider.to_string());
+                                                                    state.chat_history.push(("System".to_string(), format!("Successfully switched to model '{}' (provider: '{}').", model_name, provider)));
+                                                                }
+                                                            } else {
+                                                                state.chat_history.push(("System".to_string(), "Error serializing config.".to_string()));
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    state.chat_history.push(("System".to_string(), "Model selection cancelled.".to_string()));
+                                                }
+                                            } else {
+                                                let mut found_provider = None;
+                                                for &(prov, models) in PROVIDERS_LIST {
+                                                    if models.contains(&model_arg) {
+                                                        found_provider = Some(prov);
+                                                        break;
+                                                    }
+                                                }
+
+                                                if let Some(provider) = found_provider {
+                                                    // Update global config.toml
+                                                    match nexora_core::config::get_global_config_path() {
+                                                        Some(global_path) => {
+                                                            let mut config_struct = if global_path.exists() {
+                                                                let content = std::fs::read_to_string(&global_path).unwrap_or_default();
+                                                                toml::from_str::<nexora_core::config::NexoraConfig>(&content).unwrap_or_default()
+                                                            } else {
+                                                                nexora_core::config::NexoraConfig::default()
+                                                            };
+
+                                                            // Update active profile model and provider
+                                                            let active = config_struct.active_profile.clone();
+                                                            let profile = config_struct.profiles.entry(active).or_default();
+                                                            profile.model = Some(model_arg.to_string());
+                                                            profile.provider = Some(provider.to_string());
+
+                                                            // Write back
+                                                            match toml::to_string_pretty(&config_struct) {
+                                                                Ok(serialized) => {
+                                                                    if let Err(e) = std::fs::write(&global_path, serialized) {
+                                                                        state.chat_history.push(("System".to_string(), format!("Error writing config to disk: {}", e)));
+                                                                    } else {
+                                                                        // Update in-memory session override
+                                                                        state.active_model_override = Some(model_arg.to_string());
+                                                                        state.active_provider_override = Some(provider.to_string());
+                                                                        state.chat_history.push(("System".to_string(), format!("Successfully switched to model '{}' (provider: '{}').", model_arg, provider)));
+                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    state.chat_history.push(("System".to_string(), format!("Error serializing config: {}", e)));
+                                                                }
+                                                            }
+                                                        }
+                                                        None => {
+                                                            state.chat_history.push(("System".to_string(), "Error: Unable to find global config path.".to_string()));
+                                                        }
+                                                    }
+                                                } else {
+                                                    state.chat_history.push(("System".to_string(), format!("Model '{}' not recognized. Type `/model` to search available models.", model_arg)));
+                                                }
+                                            }
+                                            continue;
+                                        }
+
+                                        match trimmed {
+                                            "/help" => {
+                                                state.chat_history.push(("System".to_string(), "Available commands:\n• /clear - Clear chat history\n• /model - Show active model\n• /provider - Show active provider\n• /setup - Open setup wizard\n• /exit - Exit cockpit".to_string()));
+                                            }
+                                            "/clear" => {
+                                                state.chat_history.clear();
+                                                state.chat_history.push(("System".to_string(), "Chat history cleared.".to_string()));
+                                            }
+                                            "/provider" => {
+                                                let provider = state.active_provider_override.clone()
+                                                    .unwrap_or_else(|| services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string()));
+                                                state.chat_history.push(("System".to_string(), format!("Active Provider: {}", provider)));
+                                            }
+                                            "/setup" => {
+                                                disable_raw_mode().ok();
+                                                execute!(std::io::stdout(), LeaveAlternateScreen).ok();
+
+                                                use crate::commands::setup::SetupCommand;
+                                                use crate::command_dispatcher::Command;
+                                                let setup_cmd = SetupCommand;
+                                                let _ = setup_cmd.execute(services, &clap::ArgMatches::default());
+
+                                                enable_raw_mode().ok();
+                                                execute!(std::io::stdout(), EnterAlternateScreen).ok();
+                                                let _ = terminal.clear();
+
+                                                state.chat_history.push(("System".to_string(), "Wizard completed, returning to cockpit session.".to_string()));
+                                            }
+                                            "/exit" | "/quit" => {
+                                                break;
+                                            }
+                                            _ => {
+                                                state.chat_history.push(("System".to_string(), format!("Unknown command: '{}'. Type /help for a list of commands.", prompt)));
+                                            }
+                                        }
+                                        continue;
+                                    }
                                     
                                     // Query IPC
                                     let mut ipc = services.ipc.lock();
@@ -185,8 +411,8 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                             method: "chat/send".to_string(),
                                             params: serde_json::json!({
                                                 "prompt": prompt,
-                                                "model": services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string()),
-                                                "provider": services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string()),
+                                                "model": state.active_model_override.clone().unwrap_or_else(|| services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string())),
+                                                "provider": state.active_provider_override.clone().unwrap_or_else(|| services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string())),
                                             }),
                                             id: 99,
                                         };
@@ -244,8 +470,8 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                 method: "chat/send".to_string(),
                                                 params: serde_json::json!({
                                                     "prompt": format!("Explain what this file '{}' does:\n\n```\n{}\n```", file_name, content),
-                                                    "model": services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string()),
-                                                    "provider": services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string()),
+                                                    "model": state.active_model_override.clone().unwrap_or_else(|| services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string())),
+                                                    "provider": state.active_provider_override.clone().unwrap_or_else(|| services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string())),
                                                 }),
                                                 id: 100,
                                             };
@@ -280,12 +506,16 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                             }
                         }
                         KeyCode::Backspace => {
-                            if state.active_tab == 1 {
+                            if state.command_palette.is_active {
+                                state.command_palette.search_query.pop();
+                            } else if state.active_tab == 1 {
                                 state.input_buffer.pop();
                             }
                         }
                         KeyCode::Char(c) => {
-                            if state.active_tab == 1 {
+                            if state.command_palette.is_active {
+                                state.command_palette.search_query.push(c);
+                            } else if state.active_tab == 1 {
                                 state.input_buffer.push(c);
                             }
                         }
@@ -317,10 +547,10 @@ fn draw_ui(f: &mut Frame, services: &ServiceContainer, state: &CockpitState) {
     let color_border = Color::DarkGray;
     let color_success = Color::Green;
 
-    let (header_height, help_height) = if size.height > 20 {
-        (7, 3)
+    let (header_height, _) = if size.height > 20 {
+        (7, 0)
     } else if size.height > 14 {
-        (3, 3)
+        (3, 0)
     } else if size.height > 9 {
         (1, 0)
     } else {
@@ -334,7 +564,6 @@ fn draw_ui(f: &mut Frame, services: &ServiceContainer, state: &CockpitState) {
             Constraint::Length(header_height), // Brand Header (dynamic 7, 3, 1, or 0)
             Constraint::Length(3),             // Header Tab bar (Navigation)
             Constraint::Min(2),                // Main content area
-            Constraint::Length(help_height),   // Bottom Help Bar (dynamic 3 or 0)
         ])
         .split(size);
 
@@ -361,22 +590,14 @@ fn draw_ui(f: &mut Frame, services: &ServiceContainer, state: &CockpitState) {
         4 => render_monitors(f, chunks[2], services, state, color_primary, color_border),
         _ => {}
     }
-
-    // 3. Render bottom helper instructions if height allocated
-    if help_height > 0 {
-        let help_text = format!(
-            " [1-5 / Tab]: Switch Views | [Esc / Q]: Exit Cockpit | Active Profile: {} | Model: {}", 
-            services.config.active_profile,
-            services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string())
-        );
-        let help_para = Paragraph::new(help_text)
-            .block(Block::default().borders(Borders::ALL).border_style(RatatuiStyle::default().fg(color_border)))
-            .style(RatatuiStyle::default().fg(Color::DarkGray));
-        f.render_widget(help_para, chunks[3]);
+    
+    // Render the Command Palette overlay if active
+    if state.command_palette.is_active {
+        state.command_palette.render(f, size);
     }
 }
 
-fn render_dashboard(f: &mut Frame, area: Rect, services: &ServiceContainer, _state: &CockpitState, primary: Color, border: Color) {
+fn render_dashboard(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &CockpitState, primary: Color, border: Color) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -388,7 +609,10 @@ fn render_dashboard(f: &mut Frame, area: Rect, services: &ServiceContainer, _sta
     let mut status_lines = vec![
         Line::from(vec![Span::raw("System Status:  "), Span::styled("Connected", RatatuiStyle::default().fg(Color::Green).add_modifier(Modifier::BOLD))]),
         Line::from(vec![Span::raw("Active Profile: "), Span::styled(&services.config.active_profile, RatatuiStyle::default().fg(Color::Magenta))]),
-        Line::from(vec![Span::raw("Active Model:   "), Span::styled(services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string()), RatatuiStyle::default().fg(primary))]),
+        Line::from(vec![Span::raw("Active Model:   "), Span::styled(
+            state.active_model_override.clone().unwrap_or_else(|| services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string())),
+            RatatuiStyle::default().fg(primary)
+        )]),
         Line::from(vec![Span::raw("Workspace Root: "), Span::styled(services.workspace.root_path.to_string_lossy().to_string(), RatatuiStyle::default().fg(Color::Gray))]),
         Line::from(vec![Span::raw("Project Stack:  "), Span::styled(format!("{:?}", services.workspace.project_types), RatatuiStyle::default().fg(Color::Yellow))]),
     ];
@@ -422,14 +646,22 @@ fn render_dashboard(f: &mut Frame, area: Rect, services: &ServiceContainer, _sta
     f.render_widget(events_para, chunks[1]);
 }
 
-fn render_chat(f: &mut Frame, area: Rect, _services: &ServiceContainer, state: &CockpitState, primary: Color, border: Color) {
-    let chunks = Layout::default()
+fn render_chat(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &CockpitState, primary: Color, border: Color) {
+    let h_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(75),
+            Constraint::Percentage(25),
+        ])
+        .split(area);
+
+    let chat_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(5),
             Constraint::Length(3),
         ])
-        .split(area);
+        .split(h_chunks[0]);
 
     // Chat dialog box history
     let mut chat_lines = Vec::new();
@@ -443,7 +675,7 @@ fn render_chat(f: &mut Frame, area: Rect, _services: &ServiceContainer, state: &
         };
         chat_lines.push(Line::from(Span::styled(format!("{}:", author), title_style)));
         
-        let wrap_width = if chunks[0].width > 4 { chunks[0].width - 4 } else { 40 } as usize;
+        let wrap_width = if chat_chunks[0].width > 4 { chat_chunks[0].width - 4 } else { 40 } as usize;
         let mut text = content.as_str();
         while !text.is_empty() {
             let limit = std::cmp::min(text.len(), wrap_width);
@@ -455,19 +687,102 @@ fn render_chat(f: &mut Frame, area: Rect, _services: &ServiceContainer, state: &
     }
 
     let num_lines = chat_lines.len() as u16;
-    let max_lines = if chunks[0].height > 2 { chunks[0].height - 2 } else { 0 };
+    let max_lines = if chat_chunks[0].height > 2 { chat_chunks[0].height - 2 } else { 0 };
     let scroll_y = if num_lines > max_lines { num_lines - max_lines } else { 0 };
 
     let chat_paragraph = Paragraph::new(chat_lines)
-        .block(Block::default().borders(Borders::ALL).title(" Active AI Assistant Session ").border_style(RatatuiStyle::default().fg(primary)))
+        .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT).title(" Active AI Assistant Session ").border_style(RatatuiStyle::default().fg(primary)))
         .scroll((scroll_y, 0));
-    f.render_widget(chat_paragraph, chunks[0]);
+    f.render_widget(chat_paragraph, chat_chunks[0]);
 
     // Chat Prompt input buffer field
     let input_field = Paragraph::new(state.input_buffer.clone())
         .block(Block::default().borders(Borders::ALL).title(" Type Prompt (Press Enter to Send) ").border_style(RatatuiStyle::default().fg(border)))
         .style(RatatuiStyle::default().fg(Color::White));
-    f.render_widget(input_field, chunks[1]);
+    f.render_widget(input_field, chat_chunks[1]);
+
+    // Draw floating Slash Command autocomplete list if user types '/'
+    if state.input_buffer.starts_with('/') && chat_chunks[1].y > 7 {
+        let commands = &[
+            "/clear    — Clear chat history",
+            "/model    — Show active model",
+            "/provider — Show active provider",
+            "/setup    — Open setup wizard",
+            "/exit     — Exit cockpit",
+        ];
+
+        let filter = state.input_buffer.trim();
+        let mut filtered: Vec<ListItem> = if state.input_buffer.starts_with("/model") {
+            get_all_models().iter()
+                .map(|(_, model)| format!("/model {}", model))
+                .filter(|cmd| {
+                    if filter.len() > 0 {
+                        cmd.to_lowercase().starts_with(&filter.to_lowercase())
+                    } else {
+                        true
+                    }
+                })
+                .map(|cmd| ListItem::new(Span::raw(cmd)))
+                .collect()
+        } else {
+            commands.iter()
+                .filter(|cmd| {
+                    if filter.len() > 0 {
+                        cmd.starts_with(filter)
+                    } else {
+                        true
+                    }
+                })
+                .map(|cmd| ListItem::new(Span::raw(*cmd)))
+                .collect()
+        };
+
+        if !filtered.is_empty() {
+            let max_height = if chat_chunks[1].y > 2 { chat_chunks[1].y - 2 } else { 0 } as usize;
+            let limit = std::cmp::min(12, max_height);
+            if filtered.len() > limit {
+                filtered.truncate(limit);
+            }
+            let popup_height = (filtered.len() + 2) as u16;
+            let popup_rect = Rect {
+                x: chat_chunks[1].x + 2,
+                y: chat_chunks[1].y - popup_height,
+                width: 50,
+                height: popup_height,
+            };
+
+            let popup_block = List::new(filtered)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Slash Commands ")
+                    .border_style(RatatuiStyle::default().fg(primary))
+                )
+                .style(RatatuiStyle::default().fg(Color::Yellow));
+
+            f.render_widget(ratatui::widgets::Clear, popup_rect);
+            f.render_widget(popup_block, popup_rect);
+        }
+    }
+
+    // Right Sidebar for Help/Context Info
+    let sidebar_info = vec![
+        Line::from(Span::styled("Session Context", RatatuiStyle::default().fg(primary).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from(vec![Span::raw("Profile: "), Span::styled(services.config.active_profile.clone(), RatatuiStyle::default().fg(Color::Magenta))]),
+        Line::from(vec![Span::raw("Provider: "), Span::styled(state.active_provider_override.clone().unwrap_or_else(|| services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string())), RatatuiStyle::default().fg(Color::Gray))]),
+        Line::from(vec![Span::raw("Model: "), Span::styled(state.active_model_override.clone().unwrap_or_else(|| services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string())), RatatuiStyle::default().fg(Color::Yellow))]),
+        Line::from(""),
+        Line::from(Span::styled("Hotkeys", RatatuiStyle::default().fg(primary).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from("[1-5]: Switch Views"),
+        Line::from("[Tab]: Autocomplete"),
+        Line::from("[Esc / Q]: Exit Cockpit"),
+    ];
+
+    let sidebar = Paragraph::new(sidebar_info)
+        .block(Block::default().borders(Borders::ALL).title(" Context Details ").border_style(RatatuiStyle::default().fg(border)))
+        .wrap(Wrap { trim: true });
+    f.render_widget(sidebar, h_chunks[1]);
 }
 
 fn render_workspace(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &CockpitState, primary: Color, border: Color) {

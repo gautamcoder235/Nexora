@@ -8,16 +8,16 @@ use std::error::Error;
 pub struct GenericOpenAIProvider {
     client: Client,
     base_url: String,
-    api_key_env: String,
+    api_key: String,
     auth_header_format: String, // E.g. "Bearer {}"
 }
 
 impl GenericOpenAIProvider {
-    pub fn new(base_url: &str, api_key_env: &str, auth_header_format: &str) -> Self {
+    pub fn new(base_url: &str, api_key: &str, auth_header_format: &str) -> Self {
         Self {
             client: Client::new(),
             base_url: base_url.to_string(),
-            api_key_env: api_key_env.to_string(),
+            api_key: api_key.to_string(),
             auth_header_format: auth_header_format.to_string(),
         }
     }
@@ -25,7 +25,7 @@ impl GenericOpenAIProvider {
 
 impl ModelProvider for GenericOpenAIProvider {
     fn generate<'a>(&'a self, prompt: &'a str, model: &'a str) -> BoxStream<'a, Result<String, Box<dyn Error + Send + Sync>>> {
-        let api_key = std::env::var(&self.api_key_env).unwrap_or_default();
+        let api_key = self.api_key.clone();
         let client = self.client.clone();
         
         let prompt_owned = prompt.to_string();
@@ -54,7 +54,15 @@ impl ModelProvider for GenericOpenAIProvider {
             }
 
             let mut res = match req.send().await {
-                Ok(r) => r,
+                Ok(r) => {
+                    if !r.status().is_success() {
+                        let status = r.status();
+                        let text = r.text().await.unwrap_or_default();
+                        yield Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("HTTP Error {}: {}", status, text))) as Box<dyn Error + Send + Sync>);
+                        return;
+                    }
+                    r
+                },
                 Err(e) => {
                     yield Err(Box::new(e) as Box<dyn Error + Send + Sync>);
                     return;

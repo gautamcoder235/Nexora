@@ -10,6 +10,7 @@ use crate::commands::ask::AskCommand;
 use crate::commands::explain::ExplainCommand;
 use crate::commands::commit::CommitCommand;
 use crate::commands::chat::ChatCommand;
+use crate::commands::setup::SetupCommand;
 
 pub mod runtime;
 pub mod services;
@@ -116,6 +117,10 @@ fn main() {
             ClapCommand::new("chat")
                 .about("Starts an interactive live coding chat session with the assistant")
         )
+        .subcommand(
+            ClapCommand::new("setup")
+                .about("Interactive guide to set API keys, select active provider, and search/select models")
+        )
         .get_matches();
 
     // 2. Resolve Global Profile and CLI Flags Overrides
@@ -162,6 +167,7 @@ fn main() {
     pipeline.register_command(Box::new(ExplainCommand));
     pipeline.register_command(Box::new(CommitCommand));
     pipeline.register_command(Box::new(ChatCommand));
+    pipeline.register_command(Box::new(SetupCommand));
 
     // 7. Dispatch to Command Pipeline
     let result = match matches.subcommand() {

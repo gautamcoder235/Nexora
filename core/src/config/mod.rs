@@ -1,3 +1,5 @@
+pub mod credentials;
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -27,6 +29,7 @@ pub struct TelemetryConfig {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ProfileConfig {
     pub model: Option<String>,
+    pub provider: Option<String>,
     pub api_key: Option<String>,
     pub workspace_root: Option<String>,
     pub plugins: Option<Vec<String>>,
@@ -49,6 +52,7 @@ impl Default for NexoraConfig {
             "default".to_string(),
             ProfileConfig {
                 model: Some("gemini-1.5-flash".to_string()),
+                provider: Some("openrouter".to_string()),
                 api_key: None,
                 workspace_root: None,
                 plugins: Some(vec![]),
@@ -84,6 +88,21 @@ pub struct ConfigContext {
 
 impl ConfigContext {
     pub fn load(cli_profile_override: Option<String>, cli_overrides: HashMap<String, String>) -> Result<Self, NexoraError> {
+        // Load local .env file if it exists
+        if let Ok(content) = fs::read_to_string(".env") {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if let Some((key, val)) = trimmed.split_once('=') {
+                    // Remove quotes if present
+                    let val_clean = val.trim().trim_matches('"').trim_matches('\'');
+                    std::env::set_var(key.trim(), val_clean);
+                }
+            }
+        }
+
         let mut loaded = NexoraConfig::default();
 
         // 1. Load System Config (lowest priority after defaults)
@@ -171,6 +190,8 @@ impl ConfigContext {
         match key {
             "model" => profile.and_then(|p| p.model.clone())
                 .or_else(|| default_profile.and_then(|p| p.model.clone())),
+            "provider" => profile.and_then(|p| p.provider.clone())
+                .or_else(|| default_profile.and_then(|p| p.provider.clone())),
             "api_key" => profile.and_then(|p| p.api_key.clone())
                 .or_else(|| default_profile.and_then(|p| p.api_key.clone())),
             "workspace_root" => profile.and_then(|p| p.workspace_root.clone())
@@ -200,6 +221,9 @@ fn merge_configs(target: &mut NexoraConfig, source: NexoraConfig) {
         let entry = target.profiles.entry(profile_name).or_insert_with(ProfileConfig::default);
         if profile_cfg.model.is_some() {
             entry.model = profile_cfg.model;
+        }
+        if profile_cfg.provider.is_some() {
+            entry.provider = profile_cfg.provider;
         }
         if profile_cfg.api_key.is_some() {
             entry.api_key = profile_cfg.api_key;

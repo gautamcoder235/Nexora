@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // Block reload/refresh shortcuts (F5, Ctrl+F5, Ctrl+R, Cmd+R, etc.)
 window.addEventListener("keydown", (e) => {
@@ -85,3 +86,8 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     </AppErrorBoundary>
   </React.StrictMode>,
 );
+
+// Show the window only after React renders to eliminate the initial white flash
+try {
+  getCurrentWindow().show().catch(() => {});
+} catch (_) {}

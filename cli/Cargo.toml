@@ -26,4 +26,5 @@ thiserror = "1.0"
 tracing = "0.1"
 uuid = { version = "1.7", features = ["v4"] }
 parking_lot = "0.12"
+dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
 
