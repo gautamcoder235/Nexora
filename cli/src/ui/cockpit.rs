@@ -507,8 +507,9 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                     } else {
                                                         false
                                                     }
-                                                } else if resp.error.is_some() {
-                                                    let _ = tx_clone.send("\n[Streaming Error]".to_string());
+                                                } else if let Some(err) = resp.error {
+                                                    let err_str = err.get("message").and_then(|m| m.as_str()).map(|s| s.to_string()).unwrap_or_else(|| err.to_string());
+                                                    let _ = tx_clone.send(format!("\n[Streaming Error: {}]", err_str));
                                                     false
                                                 } else {
                                                     false
