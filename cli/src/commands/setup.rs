@@ -64,10 +64,18 @@ impl Command for SetupCommand {
                     return Ok(CommandResult::Text("API Key update cancelled".to_string()));
                 }
 
-                // Write to local .env
+                // Write to global .env
+                let global_path = nexora_core::config::get_global_config_path().ok_or_else(|| {
+                    NexoraError::ConfigError {
+                        message: "Unable to find global config folder".to_string(),
+                        path: None,
+                    }
+                })?;
+                let env_file_path = global_path.parent().unwrap().join(".env");
+                
                 let mut env_content = String::new();
-                if std::path::Path::new(".env").exists() {
-                    env_content = std::fs::read_to_string(".env").unwrap_or_default();
+                if env_file_path.exists() {
+                    env_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
                 }
 
                 let mut lines: Vec<String> = env_content.lines().map(|s| s.to_string()).collect();
@@ -86,7 +94,7 @@ impl Command for SetupCommand {
                     lines.push(new_line);
                 }
 
-                std::fs::write(".env", lines.join("\n") + "\n").map_err(|e| NexoraError::CommandError {
+                std::fs::write(&env_file_path, lines.join("\n") + "\n").map_err(|e| NexoraError::CommandError {
                     message: format!("Failed to write to .env file: {}", e),
                 })?;
 

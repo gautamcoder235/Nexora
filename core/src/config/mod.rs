@@ -90,7 +90,24 @@ pub struct ConfigContext {
 
 impl ConfigContext {
     pub fn load(cli_profile_override: Option<String>, cli_overrides: HashMap<String, String>) -> Result<Self, NexoraError> {
-        // Load local .env file if it exists
+        // Load global .env file if it exists
+        if let Some(global_path) = get_global_config_path() {
+            if let Some(parent) = global_path.parent() {
+                let global_env_path = parent.join(".env");
+                if let Ok(content) = fs::read_to_string(&global_env_path) {
+                    for line in content.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+                        if let Some((key, val)) = trimmed.split_once('=') {
+                            let val_clean = val.trim().trim_matches('"').trim_matches('\'');
+                            std::env::set_var(key.trim(), val_clean);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Load local .env file if it exists (overrides global)
         if let Ok(content) = fs::read_to_string(".env") {
             for line in content.lines() {
                 let trimmed = line.trim();
