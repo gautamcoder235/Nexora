@@ -25,6 +25,7 @@ impl CredentialManager {
 
     pub async fn load_from_config(&self) -> anyhow::Result<()> {
         if let Some(config_path) = crate::config::get_global_config_path() {
+            // Load from config.toml
             if config_path.exists() {
                 let content = std::fs::read_to_string(&config_path)?;
                 if let Ok(config) = toml::from_str::<crate::config::NexoraConfig>(&content) {
@@ -34,6 +35,28 @@ impl CredentialManager {
                     for (_, profile) in config.profiles {
                         if let (Some(provider), Some(api_key)) = (profile.provider, profile.api_key) {
                             keys.insert(provider, api_key);
+                        }
+                    }
+                }
+            }
+            
+            // Hot-reload from global .env so the daemon picks up `nx setup` changes
+            if let Some(parent) = config_path.parent() {
+                let env_path = parent.join(".env");
+                if env_path.exists() {
+                    if let Ok(env_content) = std::fs::read_to_string(&env_path) {
+                        let mut keys = self.keys.write().await;
+                        for line in env_content.lines() {
+                            let trimmed = line.trim();
+                            if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+                            if let Some((env_key, val)) = trimmed.split_once('=') {
+                                let val_clean = val.trim().trim_matches('"').trim_matches('\'');
+                                // E.g. OPENROUTER_API_KEY -> openrouter
+                                if env_key.ends_with("_API_KEY") {
+                                    let provider = env_key.replace("_API_KEY", "").to_lowercase();
+                                    keys.insert(provider, val_clean.to_string());
+                                }
+                            }
                         }
                     }
                 }
