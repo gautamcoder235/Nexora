@@ -4,6 +4,7 @@ pub mod palette;
 pub mod approval;
 pub mod autocomplete;
 pub mod notifications;
+pub mod markdown;
 
 use owo_colors::OwoColorize;
 use nexora_core::theme::Theme;

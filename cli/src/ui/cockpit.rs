@@ -748,25 +748,30 @@ fn render_chat(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &C
         };
         chat_lines.push(Line::from(Span::styled(format!("{}:", author), title_style)));
         
-        let wrap_width = if chat_chunks[0].width > 4 { chat_chunks[0].width - 4 } else { 40 } as usize;
-        let mut text = content.as_str();
-        while !text.is_empty() {
-            let limit = std::cmp::min(text.len(), wrap_width);
-            let chunk = &text[..limit];
-            chat_lines.push(Line::from(Span::raw(chunk.to_string())));
-            text = &text[limit..];
+        if author == "You" {
+            chat_lines.push(Line::from(Span::raw(content.clone())));
+            chat_lines.push(Line::from(""));
+        } else {
+            let parsed_lines = crate::ui::markdown::parse_rich_text(content.as_str());
+            chat_lines.extend(parsed_lines);
+            chat_lines.push(Line::from(""));
         }
-        chat_lines.push(Line::from(""));
     }
 
-    let num_lines = chat_lines.len() as u16;
+    let wrap_width = if chat_chunks[0].width > 4 { chat_chunks[0].width - 4 } else { 40 } as u16;
+    let mut num_lines: u16 = 0;
+    for line in &chat_lines {
+        let w = line.width() as u16;
+        num_lines += (w / wrap_width) + 1;
+    }
+
     let max_lines = if chat_chunks[0].height > 2 { chat_chunks[0].height - 2 } else { 0 };
     let scroll_y = if num_lines > max_lines { num_lines - max_lines } else { 0 };
 
     let chat_block = Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT).title(" Active AI Assistant Session ").border_style(RatatuiStyle::default().fg(primary)).style(RatatuiStyle::default().bg(Color::Black));
     let chat_area = chat_block.inner(chat_chunks[0]);
     f.render_widget(chat_block, chat_chunks[0]);
-    let chat_paragraph = Paragraph::new(chat_lines).scroll((scroll_y, 0));
+    let chat_paragraph = Paragraph::new(chat_lines).wrap(ratatui::widgets::Wrap { trim: false }).scroll((scroll_y, 0));
     f.render_widget(chat_paragraph, chat_area);
 
     let input_block = Block::default().borders(Borders::ALL).title(" Type Prompt (Press Enter to Send) ").border_style(RatatuiStyle::default().fg(border)).style(RatatuiStyle::default().bg(Color::Black));
