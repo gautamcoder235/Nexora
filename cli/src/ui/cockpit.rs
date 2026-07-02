@@ -477,7 +477,25 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                 execute!(std::io::stdout(), EnterAlternateScreen).ok();
                                                 let _ = terminal.clear();
 
-                                                state.chat_history.push(("System".to_string(), "Wizard completed, returning to cockpit session.".to_string()));
+                                                // Reload config from disk to apply setup changes instantly
+                                                if let Some(global_path) = nexora_core::config::get_global_config_path() {
+                                                    if global_path.exists() {
+                                                        let content = std::fs::read_to_string(&global_path).unwrap_or_default();
+                                                        if let Ok(config_struct) = toml::from_str::<nexora_core::config::NexoraConfig>(&content) {
+                                                            let active = &config_struct.active_profile;
+                                                            if let Some(profile) = config_struct.profiles.get(active) {
+                                                                if let Some(ref m) = profile.model {
+                                                                    state.active_model_override = Some(m.clone());
+                                                                }
+                                                                if let Some(ref p) = profile.provider {
+                                                                    state.active_provider_override = Some(p.clone());
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                state.chat_history.push(("System".to_string(), "Wizard completed, applying new configuration...".to_string()));
                                             }
                                             "/exit" | "/quit" => {
                                                 break;

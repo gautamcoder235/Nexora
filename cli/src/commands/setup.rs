@@ -152,7 +152,7 @@ impl Command for SetupCommand {
             1 => {
                 // Choose Provider & Select Model
                 let providers_list = &[
-                    ("groq", vec!["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]),
+                    ("groq", vec!["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]),
                     ("deepseek", vec!["deepseek-chat", "deepseek-coder"]),
                     ("gemini", vec!["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]),
                     ("mistral", vec!["mistral-large-latest", "open-mixtral-8x22", "mistral-small-latest"]),
