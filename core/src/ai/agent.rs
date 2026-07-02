@@ -3,10 +3,11 @@ pub struct AgentRuntime {
     pub session_manager: crate::ai::session::SessionManager,
     pub intent_analyzer: crate::ai::intent::IntentAnalyzer,
     pub tool_registry: crate::ai::tools::ToolRegistry,
+    pub workspace_path: Option<String>,
 }
 
 impl AgentRuntime {
-    pub fn new() -> Self {
+    pub fn new(workspace_path: Option<String>) -> Self {
         let registry = crate::ai::tools::ToolRegistry::new();
         registry.register(std::sync::Arc::new(crate::ai::tools::fs::WriteFileTool));
         registry.register(std::sync::Arc::new(crate::ai::tools::fs::ReadFileTool));
@@ -20,6 +21,7 @@ impl AgentRuntime {
             session_manager: crate::ai::session::SessionManager::new(),
             intent_analyzer: crate::ai::intent::IntentAnalyzer::new(),
             tool_registry: registry,
+            workspace_path,
         }
     }
     
@@ -79,6 +81,10 @@ impl AgentRuntime {
             let mut sys_prompt = String::new();
             if !tools.is_empty() {
                 sys_prompt.push_str("You are Nexora AI, an autonomous system capable of taking actions. You have access to the following tools. To use a tool, output a block starting EXACTLY with `<tool_call>` followed by a JSON object with 'name' and 'args' keys, and ending EXACTLY with `</tool_call>`. After the tool executes, you will receive the result in a `<tool_result>` block, after which you should continue your response to the user. Do NOT invent tools. If you use a tool, your output MUST end immediately after `</tool_call>`.\n\n");
+                
+                if let Some(ws) = &self.workspace_path {
+                    sys_prompt.push_str(&format!("CURRENT WORKSPACE DIRECTORY: {}\nAssume all relative paths are relative to this directory.\n\n", ws));
+                }
                 for tool in tools {
                     sys_prompt.push_str(&format!("Tool: {}\nDescription: {}\nSchema: {}\n\n", tool.name(), tool.description(), serde_json::to_string_pretty(&tool.schema()).unwrap_or_default()));
                 }

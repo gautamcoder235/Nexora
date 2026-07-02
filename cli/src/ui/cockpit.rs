@@ -501,6 +501,7 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                 "prompt": prompt,
                                                 "model": state.active_model_override.clone().unwrap_or_else(|| services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string())),
                                                 "provider": state.active_provider_override.clone().unwrap_or_else(|| services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string())),
+                                                "workspace_path": services.workspace.root_path.to_string_lossy(),
                                             }),
                                             id: 99,
                                         };
@@ -561,6 +562,7 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                     "prompt": format!("Explain what this file '{}' does:\n\n```\n{}\n```", file_name, content),
                                                     "model": state.active_model_override.clone().unwrap_or_else(|| services.config.get_value("model").unwrap_or_else(|| "gemini-1.5-flash".to_string())),
                                                     "provider": state.active_provider_override.clone().unwrap_or_else(|| services.config.get_value("provider").unwrap_or_else(|| "openrouter".to_string())),
+                                                    "workspace_path": services.workspace.root_path.to_string_lossy(),
                                                 }),
                                                 id: 100,
                                             };

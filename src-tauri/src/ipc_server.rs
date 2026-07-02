@@ -145,8 +145,9 @@ async fn handle_request(raw_line: &str, _app: &AppHandle, tx: tokio::sync::mpsc:
             let prompt = request.params.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
             let model = request.params.get("model").and_then(|p| p.as_str()).unwrap_or("gemini-1.5-flash");
             let provider = request.params.get("provider").and_then(|p| p.as_str()).unwrap_or("openrouter");
+            let workspace_path = request.params.get("workspace_path").and_then(|p| p.as_str()).map(|s| s.to_string());
             
-            let agent = nexora_core::ai::agent::AgentRuntime::new();
+            let agent = nexora_core::ai::agent::AgentRuntime::new(workspace_path);
             use futures::StreamExt;
             
             let mut stream = agent.chat_stream(provider, model, prompt);
