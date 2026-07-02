@@ -2,7 +2,59 @@ use nexora_core::error::NexoraError;
 use crate::runtime::ServiceContainer;
 use crate::command_dispatcher::{Command, CommandResult};
 use crate::ui::print_alert;
-use dialoguer::{Select, Password, theme::ColorfulTheme};
+use dialoguer::{Select, theme::ColorfulTheme};
+
+fn read_password_with_asterisks(prompt_text: &str) -> Result<String, NexoraError> {
+    use crossterm::{
+        event::{self, Event, KeyCode, KeyModifiers},
+        terminal::{disable_raw_mode, enable_raw_mode},
+    };
+    use std::io::{Write, stdout};
+    use dialoguer::console::style;
+
+    print!("{} {} {} ", 
+        style("?").yellow().bold(),
+        style(prompt_text).bold(),
+        style("›").black().bright()
+    );
+    stdout().flush().unwrap_or_default();
+    
+    if enable_raw_mode().is_err() {
+        return Err(NexoraError::CommandError { message: "Failed to enable raw terminal mode".to_string() });
+    }
+    
+    let mut input = String::new();
+    loop {
+        if let Ok(Event::Key(key)) = event::read() {
+            if key.kind == event::KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Enter => {
+                        break;
+                    }
+                    KeyCode::Char(c) => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'c' {
+                            disable_raw_mode().unwrap_or_default();
+                            std::process::exit(1);
+                        }
+                        input.push(c);
+                        print!("*");
+                        stdout().flush().unwrap_or_default();
+                    }
+                    KeyCode::Backspace => {
+                        if input.pop().is_some() {
+                            print!("\x08 \x08"); // move back, print space, move back
+                            stdout().flush().unwrap_or_default();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    disable_raw_mode().unwrap_or_default();
+    println!();
+    Ok(input)
+}
 
 pub struct SetupCommand;
 
@@ -54,10 +106,7 @@ impl Command for SetupCommand {
 
                 let env_var = providers[prov_selection].1;
 
-                let key: String = Password::with_theme(&colorful_theme)
-                    .with_prompt(format!("Enter API Key for {}", providers[prov_selection].0))
-                    .interact()
-                    .map_err(|e| NexoraError::CommandError { message: format!("Failed to read key: {}", e) })?;
+                let key: String = read_password_with_asterisks(&format!("Enter API Key for {}", providers[prov_selection].0))?;
 
                 if key.trim().is_empty() {
                     print_alert(theme, "error", "API Key cannot be empty!");
