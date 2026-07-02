@@ -54,11 +54,20 @@ pub async fn start_ipc_server(app_handle: AppHandle) {
                 while let Ok(n) = reader.read_line(&mut line).await {
                     if n == 0 { break; }
                     
-                    let response = handle_request(&line, &app).await;
-                    if let Ok(serialized) = serde_json::to_string(&response) {
-                        let _ = writer.write_all(serialized.as_bytes()).await;
-                        let _ = writer.write_all(b"\n").await;
-                        let _ = writer.flush().await;
+                    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+                    let line_clone = line.clone();
+                    let app_clone = app.clone();
+                    
+                    tokio::spawn(async move {
+                        handle_request(&line_clone, &app_clone, tx).await;
+                    });
+                    
+                    while let Some(response) = rx.recv().await {
+                        if let Ok(serialized) = serde_json::to_string(&response) {
+                            let _ = writer.write_all(serialized.as_bytes()).await;
+                            let _ = writer.write_all(b"\n").await;
+                            let _ = writer.flush().await;
+                        }
                     }
                     line.clear();
                 }
@@ -92,11 +101,20 @@ pub async fn start_ipc_server(app_handle: AppHandle) {
                 while let Ok(n) = reader.read_line(&mut line).await {
                     if n == 0 { break; }
                     
-                    let response = handle_request(&line, &app).await;
-                    if let Ok(serialized) = serde_json::to_string(&response) {
-                        let _ = writer.write_all(serialized.as_bytes()).await;
-                        let _ = writer.write_all(b"\n").await;
-                        let _ = writer.flush().await;
+                    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+                    let line_clone = line.clone();
+                    let app_clone = app.clone();
+                    
+                    tokio::spawn(async move {
+                        handle_request(&line_clone, &app_clone, tx).await;
+                    });
+                    
+                    while let Some(response) = rx.recv().await {
+                        if let Ok(serialized) = serde_json::to_string(&response) {
+                            let _ = writer.write_all(serialized.as_bytes()).await;
+                            let _ = writer.write_all(b"\n").await;
+                            let _ = writer.flush().await;
+                        }
                     }
                     line.clear();
                 }
@@ -105,11 +123,11 @@ pub async fn start_ipc_server(app_handle: AppHandle) {
     }
 }
 
-async fn handle_request(raw_line: &str, _app: &AppHandle) -> IpcResponse {
+async fn handle_request(raw_line: &str, _app: &AppHandle, tx: tokio::sync::mpsc::Sender<IpcResponse>) {
     let request: IpcRequest = match serde_json::from_str(raw_line) {
         Ok(req) => req,
         Err(e) => {
-            return IpcResponse {
+            let _ = tx.send(IpcResponse {
                 jsonrpc: "2.0".to_string(),
                 result: None,
                 error: Some(serde_json::json!({
@@ -117,33 +135,76 @@ async fn handle_request(raw_line: &str, _app: &AppHandle) -> IpcResponse {
                     "message": format!("Parse error: {}", e)
                 })),
                 id: 0,
-            };
+            }).await;
+            return;
         }
     };
 
-    let result = match request.method.as_str() {
+    match request.method.as_str() {
         "chat/send" => {
             let prompt = request.params.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
+            let model = request.params.get("model").and_then(|p| p.as_str()).unwrap_or("gemini-1.5-flash");
+            let provider = request.params.get("provider").and_then(|p| p.as_str()).unwrap_or("openrouter");
             
-            // Invoke the Shared Core AI Engine
             let agent = nexora_core::ai::agent::AgentRuntime::new();
-            let reply = agent.chat(prompt).await;
+            use futures::StreamExt;
             
-            serde_json::json!({
-                "status": "success",
-                "reply": reply
-            })
+            let mut stream = agent.chat_stream(provider, model, prompt);
+            
+            while let Some(chunk) = stream.next().await {
+                match chunk {
+                    Ok(text) => {
+                        let _ = tx.send(IpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            result: Some(serde_json::json!({
+                                "status": "streaming",
+                                "chunk": text
+                            })),
+                            error: None,
+                            id: request.id,
+                        }).await;
+                    },
+                    Err(e) => {
+                        let _ = tx.send(IpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            result: None,
+                            error: Some(serde_json::json!({
+                                "code": -32000,
+                                "message": format!("Streaming error: {}", e)
+                            })),
+                            id: request.id,
+                        }).await;
+                        return;
+                    }
+                }
+            }
+            
+            // Send final completion message
+            let _ = tx.send(IpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: Some(serde_json::json!({
+                    "status": "success",
+                    "reply": ""
+                })),
+                error: None,
+                id: request.id,
+            }).await;
         }
         "workspace/open" => {
             let path = request.params.get("path").and_then(|p| p.as_str()).unwrap_or(".");
-            serde_json::json!({
-                "status": "success",
-                "path_opened": path,
-                "session_id": "0190a6e7-1339-78b1-bbfa-6b9432658b10"
-            })
+            let _ = tx.send(IpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: Some(serde_json::json!({
+                    "status": "success",
+                    "path_opened": path,
+                    "session_id": "0190a6e7-1339-78b1-bbfa-6b9432658b10"
+                })),
+                error: None,
+                id: request.id,
+            }).await;
         }
         _ => {
-            return IpcResponse {
+            let _ = tx.send(IpcResponse {
                 jsonrpc: "2.0".to_string(),
                 result: None,
                 error: Some(serde_json::json!({
@@ -151,14 +212,7 @@ async fn handle_request(raw_line: &str, _app: &AppHandle) -> IpcResponse {
                     "message": "Method not found"
                 })),
                 id: request.id,
-            };
+            }).await;
         }
-    };
-
-    IpcResponse {
-        jsonrpc: "2.0".to_string(),
-        result: Some(result),
-        error: None,
-        id: request.id,
     }
 }

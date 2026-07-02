@@ -106,14 +106,26 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
 
     let mut state = CockpitState::new(services);
     let mut last_tick = Instant::now();
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
 
     loop {
+        // Check for streaming IPC tokens
+        let mut received = false;
+        while let Ok(chunk) = rx.try_recv() {
+            if let Some(last) = state.chat_history.last_mut() {
+                if last.0 == "Nexora" {
+                    last.1.push_str(&chunk);
+                }
+            }
+            received = true;
+        }
+
         terminal.draw(|f| draw_ui(f, services, &state)).map_err(|e| NexoraError::CommandError {
             message: format!("Failed to draw terminal frame: {}", e),
         })?;
 
-        // Limit tick duration to handle live monitor updates
-        let timeout = Duration::from_millis(200);
+        // Limit tick duration to handle live monitor updates (reduce timeout for smoother streaming redraws)
+        let timeout = if received { Duration::from_millis(10) } else { Duration::from_millis(100) };
         if event::poll(timeout).map_err(|e| NexoraError::CommandError {
             message: format!("Polling event failed: {}", e),
         })? {
@@ -179,19 +191,34 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                             id: 99,
                                         };
 
-                                        match ipc.send(&request) {
-                                            Ok(resp) => {
+                                        // Push empty message that will be populated by streaming chunks
+                                        state.chat_history.push(("Nexora".to_string(), String::new()));
+                                        
+                                        // Drop lock before moving to thread
+                                        drop(ipc);
+                                        let ipc_clone = services.ipc.clone();
+                                        let tx_clone = tx.clone();
+                                        
+                                        std::thread::spawn(move || {
+                                            let mut ipc = ipc_clone.lock();
+                                            let _ = ipc.send_streaming(&request, &mut |resp| {
                                                 if let Some(res) = resp.result {
-                                                    let reply = res.get("reply").and_then(|r| r.as_str()).unwrap_or("No reply field.");
-                                                    state.chat_history.push(("Nexora".to_string(), reply.to_string()));
+                                                    if res.get("status").and_then(|s: &serde_json::Value| s.as_str()) == Some("streaming") {
+                                                        if let Some(chunk) = res.get("chunk").and_then(|c: &serde_json::Value| c.as_str()) {
+                                                            let _ = tx_clone.send(chunk.to_string());
+                                                        }
+                                                        true
+                                                    } else {
+                                                        false
+                                                    }
+                                                } else if resp.error.is_some() {
+                                                    let _ = tx_clone.send("\n[Streaming Error]".to_string());
+                                                    false
                                                 } else {
-                                                    state.chat_history.push(("Nexora".to_string(), "Invalid IPC result format.".to_string()));
+                                                    false
                                                 }
-                                            }
-                                            Err(_) => {
-                                                state.chat_history.push(("System".to_string(), "Failed to send message over Named Pipe.".to_string()));
-                                            }
-                                        }
+                                            });
+                                        });
                                     } else {
                                         state.chat_history.push(("System".to_string(), "Desktop IPC is offline. To chat with the AI assistant, please launch the Nexora Desktop application.".to_string()));
                                     }
@@ -209,7 +236,9 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                         
                                         // Request explanation
                                         let mut ipc = services.ipc.lock();
-                                        if ipc.is_connected() || ipc.connect(Duration::from_millis(500)).is_ok() {
+                                        let is_online = ipc.is_connected() || ipc.connect(Duration::from_millis(500)).is_ok();
+                                        
+                                        if is_online {
                                             let request = IpcRequest {
                                                 jsonrpc: "2.0".to_string(),
                                                 method: "chat/send".to_string(),
@@ -220,10 +249,29 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                 }),
                                                 id: 100,
                                             };
-                                            if let Ok(resp) = ipc.send(&request) {
-                                                let reply = resp.result.and_then(|r| r.get("reply").and_then(|y| y.as_str()).map(|s| s.to_string())).unwrap_or_else(|| "No analysis could be compiled.".to_string());
-                                                state.chat_history.push(("Nexora".to_string(), reply));
-                                            }
+                                            
+                                            state.chat_history.push(("Nexora".to_string(), String::new()));
+                                            drop(ipc);
+                                            let ipc_clone = services.ipc.clone();
+                                            let tx_clone = tx.clone();
+                                            
+                                            std::thread::spawn(move || {
+                                                let mut ipc = ipc_clone.lock();
+                                                let _ = ipc.send_streaming(&request, &mut |resp| {
+                                                    if let Some(res) = resp.result {
+                                                        if res.get("status").and_then(|s: &serde_json::Value| s.as_str()) == Some("streaming") {
+                                                            if let Some(chunk) = res.get("chunk").and_then(|c: &serde_json::Value| c.as_str()) {
+                                                                let _ = tx_clone.send(chunk.to_string());
+                                                            }
+                                                            true
+                                                        } else {
+                                                            false
+                                                        }
+                                                    } else {
+                                                        false
+                                                    }
+                                                });
+                                            });
                                         } else {
                                             state.chat_history.push(("System".to_string(), "Desktop app is offline. Visual file scan summary:\nLines: ".to_string() + &content.lines().count().to_string()));
                                         }

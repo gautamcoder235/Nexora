@@ -22,6 +22,7 @@ pub struct IpcResponse {
 pub trait IpcConnection: Send + Sync {
     fn connect(&mut self, timeout: Duration) -> Result<(), NexoraError>;
     fn send(&mut self, request: &IpcRequest) -> Result<IpcResponse, NexoraError>;
+    fn send_streaming(&mut self, request: &IpcRequest, callback: &mut dyn FnMut(IpcResponse) -> bool) -> Result<(), NexoraError>;
     fn is_connected(&self) -> bool;
 }
 
@@ -44,8 +45,6 @@ impl NativeIpcConnection {
 #[cfg(windows)]
 impl IpcConnection for NativeIpcConnection {
     fn connect(&mut self, _timeout: Duration) -> Result<(), NexoraError> {
-// OpenOptionsExt is not needed for standard open options
-        
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -95,6 +94,45 @@ impl IpcConnection for NativeIpcConnection {
         })?;
 
         Ok(response)
+    }
+
+    fn send_streaming(&mut self, request: &IpcRequest, callback: &mut dyn FnMut(IpcResponse) -> bool) -> Result<(), NexoraError> {
+        let stream = self.stream.as_mut().ok_or_else(|| NexoraError::IpcError {
+            message: "Not connected to IPC named pipe".to_string(),
+            details: None,
+        })?;
+
+        let payload = serde_json::to_vec(request).map_err(|e| NexoraError::IpcError {
+            message: "Failed to serialize IPC request".to_string(),
+            details: Some(e.to_string()),
+        })?;
+
+        stream.write_all(&payload).map_err(|e| NexoraError::IpcError {
+            message: "Failed to write to Named Pipe stream".to_string(),
+            details: Some(e.to_string()),
+        })?;
+        stream.write_all(b"\n").map_err(|e| NexoraError::IpcError {
+            message: "Failed to write newline separator to pipe".to_string(),
+            details: Some(e.to_string()),
+        })?;
+        stream.flush().ok();
+
+        // Read streaming responses
+        let mut reader = std::io::BufReader::new(stream);
+        use std::io::BufRead;
+        loop {
+            let mut line = String::new();
+            if let Ok(n) = reader.read_line(&mut line) {
+                if n == 0 { break; }
+                if let Ok(response) = serde_json::from_str::<IpcResponse>(&line) {
+                    let should_continue = callback(response);
+                    if !should_continue { break; }
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(())
     }
 
     fn is_connected(&self) -> bool {
@@ -170,6 +208,45 @@ impl IpcConnection for NativeIpcConnection {
         Ok(response)
     }
 
+    fn send_streaming(&mut self, request: &IpcRequest, callback: &mut dyn FnMut(IpcResponse) -> bool) -> Result<(), NexoraError> {
+        let stream = self.stream.as_mut().ok_or_else(|| NexoraError::IpcError {
+            message: "Not connected to UNIX Socket".to_string(),
+            details: None,
+        })?;
+
+        let payload = serde_json::to_vec(request).map_err(|e| NexoraError::IpcError {
+            message: "Failed to serialize IPC request".to_string(),
+            details: Some(e.to_string()),
+        })?;
+
+        stream.write_all(&payload).map_err(|e| NexoraError::IpcError {
+            message: "Failed to write to UNIX socket".to_string(),
+            details: Some(e.to_string()),
+        })?;
+        stream.write_all(b"\n").map_err(|e| NexoraError::IpcError {
+            message: "Failed to write newline separator to socket".to_string(),
+            details: Some(e.to_string()),
+        })?;
+        stream.flush().ok();
+
+        // Read streaming responses
+        let mut reader = std::io::BufReader::new(stream);
+        use std::io::BufRead;
+        loop {
+            let mut line = String::new();
+            if let Ok(n) = reader.read_line(&mut line) {
+                if n == 0 { break; }
+                if let Ok(response) = serde_json::from_str::<IpcResponse>(&line) {
+                    let should_continue = callback(response);
+                    if !should_continue { break; }
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     fn is_connected(&self) -> bool {
         self.stream.is_some()
     }
@@ -225,6 +302,12 @@ impl IpcConnection for MockIpcConnection {
             error: None,
             id: request.id,
         })
+    }
+
+    fn send_streaming(&mut self, request: &IpcRequest, callback: &mut dyn FnMut(IpcResponse) -> bool) -> Result<(), NexoraError> {
+        let resp = self.send(request)?;
+        callback(resp);
+        Ok(())
     }
 
     fn is_connected(&self) -> bool {
