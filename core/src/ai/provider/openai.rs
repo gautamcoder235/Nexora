@@ -25,7 +25,7 @@ impl GenericOpenAIProvider {
 
 impl ModelProvider for GenericOpenAIProvider {
     fn generate<'a>(&'a self, prompt: &'a str, model: &'a str) -> BoxStream<'a, Result<String, Box<dyn Error + Send + Sync>>> {
-        let api_key = std::env::var(&self.api_key).unwrap_or_default();
+        let api_key = self.api_key.clone();
         let client = self.client.clone();
         
         let prompt_owned = prompt.to_string();
