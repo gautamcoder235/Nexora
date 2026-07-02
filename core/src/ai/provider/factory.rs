@@ -22,7 +22,7 @@ impl ProviderFactory {
 
                 Some(Arc::new(GenericOpenAIProvider::new(
                     base_url,
-                    "", // Env var no longer needed with new credential manager
+                    &config.api_key,
                     "Bearer {}",
                 )))
             }
