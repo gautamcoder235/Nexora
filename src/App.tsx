@@ -799,7 +799,7 @@ function App() {
       if (!isReviewDragging) appRef.current.style.setProperty('--review-panel-width', `${reviewPanelWidth}px`);
       appRef.current.style.setProperty('--pane-spacing', `${paneSpacing}px`);
     }
-  }, [sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging]);
+  }, [activeWorkspaceId, sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging]);
 
   const handleInitWorkspace = async () => {
     if (!initName.trim()) return;
