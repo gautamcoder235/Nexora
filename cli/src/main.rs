@@ -30,6 +30,22 @@ fn main() {
                 .action(ArgAction::Set)
         )
         .arg(
+            Arg::new("model")
+                .long("model")
+                .short('m')
+                .help("Specify LLM model inline")
+                .action(ArgAction::Set)
+                .global(true)
+        )
+        .arg(
+            Arg::new("provider")
+                .long("provider")
+                .short('p')
+                .help("Specify LLM provider inline")
+                .action(ArgAction::Set)
+                .global(true)
+        )
+        .arg(
             Arg::new("json")
                 .long("json")
                 .help("Format command output as JSON")
@@ -104,7 +120,13 @@ fn main() {
 
     // 2. Resolve Global Profile and CLI Flags Overrides
     let profile_override = matches.get_one::<String>("profile").cloned();
-    let overrides = HashMap::new();
+    let mut overrides = HashMap::new();
+    if let Some(m) = matches.get_one::<String>("model") {
+        overrides.insert("model".to_string(), m.clone());
+    }
+    if let Some(p) = matches.get_one::<String>("provider") {
+        overrides.insert("provider".to_string(), p.clone());
+    }
 
     // 3. Resolve OutputMode
     let output_mode = if matches.get_flag("json") {
