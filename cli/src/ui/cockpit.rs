@@ -584,7 +584,7 @@ fn draw_ui(f: &mut Frame, services: &ServiceContainer, state: &CockpitState) {
         .constraints([
             Constraint::Length(header_height), // Brand Header (dynamic 7, 3, 1, or 0)
             Constraint::Length(3),             // Header Tab bar (Navigation)
-            Constraint::Min(2),                // Main content area
+            Constraint::Fill(1),               // Main content area
         ])
         .split(size);
 
