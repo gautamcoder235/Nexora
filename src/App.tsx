@@ -240,6 +240,7 @@ function App() {
     return `Last opened ${formatWorkspaceTime(timestamp).toLowerCase()}`;
   };
 
+
   const handleRenameWs = async () => {
     if (!renameWsName.trim() || !renameWsId) return;
     try {
@@ -789,6 +790,16 @@ function App() {
       }
     };
   }, [initStore]);
+
+  React.useLayoutEffect(() => {
+    if (appRef.current) {
+      if (!isSidebarDragging) appRef.current.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
+      if (!isHeightDragging) appRef.current.style.setProperty('--top-panel-height', `${topPanelHeight}px`);
+      if (!isBrowserDragging) appRef.current.style.setProperty('--browser-panel-width', `${browserPanelWidth}px`);
+      if (!isReviewDragging) appRef.current.style.setProperty('--review-panel-width', `${reviewPanelWidth}px`);
+      appRef.current.style.setProperty('--pane-spacing', `${paneSpacing}px`);
+    }
+  }, [sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging]);
 
   const handleInitWorkspace = async () => {
     if (!initName.trim()) return;
@@ -1424,15 +1435,7 @@ function App() {
       </div>
     );
   }
-  React.useLayoutEffect(() => {
-    if (appRef.current) {
-      if (!isSidebarDragging) appRef.current.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
-      if (!isHeightDragging) appRef.current.style.setProperty('--top-panel-height', `${topPanelHeight}px`);
-      if (!isBrowserDragging) appRef.current.style.setProperty('--browser-panel-width', `${browserPanelWidth}px`);
-      if (!isReviewDragging) appRef.current.style.setProperty('--review-panel-width', `${reviewPanelWidth}px`);
-      appRef.current.style.setProperty('--pane-spacing', `${paneSpacing}px`);
-    }
-  }, [sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging]);
+
 
   return (
     <div className="relative h-screen w-screen bg-bg-primary overflow-hidden">
