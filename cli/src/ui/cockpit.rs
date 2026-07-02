@@ -18,14 +18,14 @@ use crate::runtime::ServiceContainer;
 use crate::services::ipc::IpcRequest;
 
 const PROVIDERS_LIST: &[(&str, &[&str])] = &[
-    ("groq", &["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]),
-    ("deepseek", &["deepseek-chat", "deepseek-coder"]),
-    ("gemini", &["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]),
+    ("groq", &["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]),
+    ("deepseek", &["deepseek-chat", "deepseek-coder", "deepseek-reasoner"]),
+    ("gemini", &["gemini-1.5-pro-latest", "gemini-1.5-flash-latest", "gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]),
     ("mistral", &["mistral-large-latest", "open-mixtral-8x22", "mistral-small-latest"]),
     ("codestral", &["codestral-latest"]),
     ("kimi", &["moonshot-v1-8k", "moonshot-v1-32k"]),
     ("nvidia", &["meta/llama3-70b-instruct", "nvidia/nemotron-4-340b-instruct"]),
-    ("openrouter", &["meta-llama/llama-3-70b-instruct", "anthropic/claude-3-opus", "google/gemini-pro"]),
+    ("openrouter", &["meta-llama/llama-3.1-70b-instruct", "meta-llama/llama-3-70b-instruct", "anthropic/claude-3.5-sonnet", "anthropic/claude-3-opus", "google/gemini-pro", "google/gemini-flash-1.5"]),
     ("opencode", &["opencode-default-model"]),
 ];
 
@@ -275,6 +275,24 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                 execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen).ok();
 
                                                 let mut flat_models: Vec<String> = Vec::new();
+                                                
+                                                // Load recent models
+                                                if let Some(global_path) = nexora_core::config::get_global_config_path() {
+                                                    if global_path.exists() {
+                                                        let content = std::fs::read_to_string(&global_path).unwrap_or_default();
+                                                        if let Ok(config_struct) = toml::from_str::<nexora_core::config::NexoraConfig>(&content) {
+                                                            let active = &config_struct.active_profile;
+                                                            if let Some(profile) = config_struct.profiles.get(active) {
+                                                                if let Some(recents) = &profile.recent_models {
+                                                                    for r in recents {
+                                                                        flat_models.push(format!("(Recent) {}", r));
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
                                                 for &(prov, models) in PROVIDERS_LIST {
                                                     for m in models {
                                                         flat_models.push(format!("{} / {}", prov, m));
@@ -294,7 +312,11 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                 terminal.clear().ok();
 
                                                 if let Some(idx) = selection {
-                                                    let selected_str = &flat_models[idx];
+                                                    let mut selected_str = flat_models[idx].as_str();
+                                                    if selected_str.starts_with("(Recent) ") {
+                                                        selected_str = &selected_str["(Recent) ".len()..];
+                                                    }
+
                                                     let parts: Vec<&str> = selected_str.split(" / ").collect();
                                                     if parts.len() == 2 {
                                                         let provider = parts[0];
@@ -314,6 +336,15 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                             profile.model = Some(model_name.to_string());
                                                             profile.provider = Some(provider.to_string());
 
+                                                            let recent_entry = format!("{} / {}", provider, model_name);
+                                                            let mut recents = profile.recent_models.clone().unwrap_or_default();
+                                                            recents.retain(|x| x != &recent_entry);
+                                                            recents.insert(0, recent_entry);
+                                                            if recents.len() > 5 {
+                                                                recents.truncate(5);
+                                                            }
+                                                            profile.recent_models = Some(recents);
+
                                                             if let Ok(serialized) = toml::to_string_pretty(&config_struct) {
                                                                 if let Err(e) = std::fs::write(&global_path, serialized) {
                                                                     state.chat_history.push(("System".to_string(), format!("Error writing config to disk: {}", e)));
@@ -331,15 +362,24 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                     state.chat_history.push(("System".to_string(), "Model selection cancelled.".to_string()));
                                                 }
                                             } else {
-                                                let mut found_provider = None;
-                                                for &(prov, models) in PROVIDERS_LIST {
-                                                    if models.contains(&model_arg) {
-                                                        found_provider = Some(prov);
-                                                        break;
+                                                let mut actual_provider = None;
+                                                let mut actual_model = model_arg;
+
+                                                if let Some((p, m)) = model_arg.split_once(" / ") {
+                                                    actual_provider = Some(p.trim());
+                                                    actual_model = m.trim();
+                                                }
+
+                                                if actual_provider.is_none() {
+                                                    for &(prov, models) in PROVIDERS_LIST {
+                                                        if models.contains(&actual_model) {
+                                                            actual_provider = Some(prov);
+                                                            break;
+                                                        }
                                                     }
                                                 }
 
-                                                if let Some(provider) = found_provider {
+                                                if let Some(provider) = actual_provider {
                                                     // Update global config.toml
                                                     match nexora_core::config::get_global_config_path() {
                                                         Some(global_path) => {
@@ -353,8 +393,17 @@ pub fn start_cockpit(services: &ServiceContainer) -> Result<(), NexoraError> {
                                                             // Update active profile model and provider
                                                             let active = config_struct.active_profile.clone();
                                                             let profile = config_struct.profiles.entry(active).or_default();
-                                                            profile.model = Some(model_arg.to_string());
+                                                            profile.model = Some(actual_model.to_string());
                                                             profile.provider = Some(provider.to_string());
+
+                                                            let recent_entry = format!("{} / {}", provider, actual_model);
+                                                            let mut recents = profile.recent_models.clone().unwrap_or_default();
+                                                            recents.retain(|x| x != &recent_entry);
+                                                            recents.insert(0, recent_entry);
+                                                            if recents.len() > 5 {
+                                                                recents.truncate(5);
+                                                            }
+                                                            profile.recent_models = Some(recents);
 
                                                             // Write back
                                                             match toml::to_string_pretty(&config_struct) {
@@ -737,16 +786,11 @@ fn render_chat(f: &mut Frame, area: Rect, services: &ServiceContainer, state: &C
 
         let filter = state.input_buffer.trim();
         let mut filtered: Vec<ListItem> = if state.input_buffer.starts_with("/model") {
-            get_all_models().iter()
-                .map(|(_, model)| format!("/model {}", model))
-                .filter(|cmd| {
-                    if filter.len() > 0 {
-                        cmd.to_lowercase().starts_with(&filter.to_lowercase())
-                    } else {
-                        true
-                    }
-                })
-                .map(|cmd| ListItem::new(Span::raw(cmd)))
+            let filter_str = state.input_buffer["/model".len()..].trim().to_lowercase();
+            get_all_models().into_iter()
+                .filter(|(prov, model)| model.to_lowercase().contains(&filter_str) || prov.to_lowercase().contains(&filter_str))
+                .map(|(prov, model)| format!("/model {} / {}", prov, model))
+                .map(|cmd| ListItem::new(Span::styled(cmd, RatatuiStyle::default().fg(Color::Yellow))))
                 .collect()
         } else {
             commands.iter()

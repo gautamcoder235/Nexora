@@ -33,6 +33,7 @@ pub struct ProfileConfig {
     pub api_key: Option<String>,
     pub workspace_root: Option<String>,
     pub plugins: Option<Vec<String>>,
+    pub recent_models: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -56,6 +57,7 @@ impl Default for NexoraConfig {
                 api_key: None,
                 workspace_root: None,
                 plugins: Some(vec![]),
+                recent_models: Some(vec![]),
             },
         );
 
