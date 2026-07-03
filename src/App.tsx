@@ -397,7 +397,7 @@ function App() {
         const newWidth = isLeftSidebar 
           ? Math.max(420, Math.min(e.clientX - activityBarWidth, maxWidth))
           : Math.max(420, Math.min(window.innerWidth - e.clientX, maxWidth));
-        if (appRef.current) appRef.current.style.setProperty('--sidebar-width', `${newWidth}px`);
+        document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
         resizeRef.current.lastWidth = newWidth;
       });
     };
@@ -429,7 +429,7 @@ function App() {
         const delta = e.clientY - resizeRef.current.startY;
         const maxHeight = window.innerHeight - 150; // Leave at least 150px for the terminal pane
         const newHeight = Math.max(150, Math.min(resizeRef.current.startHeight + delta, maxHeight));
-        if (appRef.current) appRef.current.style.setProperty('--top-panel-height', `${newHeight}px`);
+        document.documentElement.style.setProperty('--top-panel-height', `${newHeight}px`);
         resizeRef.current.lastHeight = newHeight;
       });
     };
@@ -520,10 +520,7 @@ function App() {
         );
         const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
         const newWidth = Math.max(320, rightEdge - currentX - 8);
-
-        if (appRef.current) {
-          appRef.current.style.setProperty('--browser-panel-width', `${newWidth}px`);
-        }
+        document.documentElement.style.setProperty('--browser-panel-width', `${newWidth}px`);
         resizeRef.current.lastWidth = newWidth;
       });
     };
@@ -569,10 +566,7 @@ function App() {
         const rightBoundary = rightEdge - 300;
         const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
         const newWidth = rightEdge - currentX - 8;
-
-        if (appRef.current) {
-          appRef.current.style.setProperty('--review-panel-width', `${newWidth}px`);
-        }
+        document.documentElement.style.setProperty('--review-panel-width', `${newWidth}px`);
         reviewResizeRef.current.lastWidth = newWidth;
       });
     };
@@ -792,14 +786,12 @@ function App() {
   }, [initStore]);
 
   React.useLayoutEffect(() => {
-    if (appRef.current) {
-      if (!isSidebarDragging) appRef.current.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
-      if (!isHeightDragging) appRef.current.style.setProperty('--top-panel-height', `${topPanelHeight}px`);
-      if (!isBrowserDragging) appRef.current.style.setProperty('--browser-panel-width', `${browserPanelWidth}px`);
-      if (!isReviewDragging) appRef.current.style.setProperty('--review-panel-width', `${reviewPanelWidth}px`);
-      appRef.current.style.setProperty('--pane-spacing', `${paneSpacing}px`);
-    }
-  }, [activeWorkspaceId, sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging]);
+    if (!isSidebarDragging) document.documentElement.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
+    if (!isHeightDragging) document.documentElement.style.setProperty('--top-panel-height', `${topPanelHeight}px`);
+    if (!isBrowserDragging) document.documentElement.style.setProperty('--browser-panel-width', `${browserPanelWidth}px`);
+    if (!isReviewDragging) document.documentElement.style.setProperty('--review-panel-width', `${reviewPanelWidth}px`);
+    document.documentElement.style.setProperty('--pane-spacing', `${paneSpacing}px`);
+  }, [activeWorkspaceId, sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging, isTaskCenterVisible, isTaskPanelPinned]);
 
   const handleInitWorkspace = async () => {
     if (!initName.trim()) return;
@@ -1554,13 +1546,14 @@ function App() {
                       height: isTaskCenterVisible ? 'var(--top-panel-height)' : '0px', 
                       opacity: isTaskCenterVisible ? 1 : 0,
                       padding: isTaskCenterVisible ? undefined : '0px',
-                      borderWidth: isTaskCenterVisible ? undefined : '0px'
+                      borderWidth: isTaskCenterVisible ? undefined : '0px',
+                      transform: isTaskCenterVisible ? 'translateY(0)' : 'translateY(-100%)'
                     }
                   : { 
                       height: 'var(--top-panel-height)',
                       left: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition !== 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
                       right: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition === 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
-                      transform: isTaskCenterVisible ? 'translateY(0)' : 'translateY(calc(-1 * var(--top-panel-height)))',
+                      transform: isTaskCenterVisible ? 'translateY(0)' : 'translateY(-100%)',
                       opacity: isTaskCenterVisible ? 1 : 0,
                       pointerEvents: isTaskCenterVisible ? 'auto' : 'none'
                     }
@@ -1704,7 +1697,7 @@ function App() {
             <div
               onMouseDown={startHeightResize}
               onDoubleClick={() => setTaskCenterVisible(false)}
-              className={`${isTaskPanelPinned ? 'relative w-full z-20' : 'absolute right-0 z-30'} h-2 bg-transparent cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
+              className={`${isTaskPanelPinned ? 'relative w-full z-20' : 'absolute left-0 right-0 z-30'} h-3 bg-transparent ${isHeightDragging ? '' : 'hover:bg-accent-primary/10 transition-all duration-200'} cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
               style={isTaskPanelPinned ? {} : { 
                 top: 'var(--top-panel-height)',
                 left: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition !== 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
@@ -1713,7 +1706,7 @@ function App() {
               title="Drag to resize top panel, Double-click to collapse"
             >
               {/* Drag handle button */}
-              <div className="absolute left-1/2 -translate-x-1/2 h-1.5 w-6 rounded glass-panel transition-all duration-150 flex justify-center items-center gap-[2px] px-1 shadow-md">
+              <div className="h-1.5 w-6 rounded glass-panel transition-all duration-150 flex justify-center items-center gap-[2px] px-1 shadow-md">
                 <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                 <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                 <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />

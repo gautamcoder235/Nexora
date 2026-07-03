@@ -4,4 +4,7 @@ members = [
     "core",
     "cli"
 ]
+exclude = [
+    "Nexora Voice/src-tauri"
+]
 resolver = "2"

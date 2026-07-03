@@ -116,6 +116,8 @@ export interface WorkspaceSnapshot {
   timestamp: string; // ISO Timestamp
   isSidebarVisible?: boolean;
   isTaskCenterVisible?: boolean;
+  isTaskPanelPinned?: boolean;
+  isAgentPanelPinned?: boolean;
   sidebarWidth?: number;
   topPanelHeight?: number;
   isBrowserPanelVisible?: boolean;

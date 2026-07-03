@@ -341,7 +341,7 @@ export class ThemeManager {
     const panelHeight = layout.topPanelHeight ? Math.max(180, Math.min(800, layout.topPanelHeight)) : 320;
 
     root.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
-    root.style.setProperty('--panel-height', `${panelHeight}px`);
+    root.style.setProperty('--top-panel-height', `${panelHeight}px`);
   }
 
   private static applyAdvancedOverrides(advanced?: AdvancedAppearanceSettings) {

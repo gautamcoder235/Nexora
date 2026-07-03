@@ -141,7 +141,11 @@
   --z-toast: 700;
 
   /* ── Layout ────────────────────────────────────────────── */
-  --sidebar-width: 260px;
+  --sidebar-width: 490px;
+  --top-panel-height: 320px;
+  --browser-panel-width: 480px;
+  --review-panel-width: 600px;
+  --pane-spacing: 8px;
   --sidebar-collapsed-width: 48px;
   --topbar-height: 48px;
   --bottombar-height: 24px;

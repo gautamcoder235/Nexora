@@ -1306,6 +1306,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           timestamp: new Date().toISOString(),
           isSidebarVisible: state.isSidebarVisible,
           isTaskCenterVisible: state.isTaskCenterVisible,
+          isTaskPanelPinned: state.isTaskPanelPinned,
+          isAgentPanelPinned: state.isAgentPanelPinned,
           sidebarWidth: state.sidebarWidth,
           topPanelHeight: state.topPanelHeight,
           isBrowserPanelVisible: browserState.isBrowserPanelVisible,
@@ -1368,6 +1370,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           layout: snapshot.layout || { type: 'grid', panels: [] }, // Restore terminal layout panels
           isSidebarVisible: false,
           isTaskCenterVisible: snapshot.isTaskCenterVisible !== undefined ? snapshot.isTaskCenterVisible : true,
+          isTaskPanelPinned: snapshot.isTaskPanelPinned !== undefined ? snapshot.isTaskPanelPinned : false,
+          isAgentPanelPinned: snapshot.isAgentPanelPinned !== undefined ? snapshot.isAgentPanelPinned : false,
           sidebarWidth: snapshot.sidebarWidth !== undefined ? snapshot.sidebarWidth : 490,
           topPanelHeight: snapshot.topPanelHeight !== undefined ? snapshot.topPanelHeight : 320
         });
