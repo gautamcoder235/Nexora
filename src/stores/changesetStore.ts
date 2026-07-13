@@ -23,6 +23,7 @@ export interface TimelineEntry {
   files: FileOperation[];
   session_source: string | null;
   session_desc: string | null;
+  project_path: string;
 }
 
 export interface HunkSelection {
@@ -58,9 +59,9 @@ interface ChangesetState {
   setActiveReviewTab: (tab: 'changeset' | 'workspace' | 'worktree_explorer') => void;
 
   // Actions — Memory Core
-  initMemory: (projectPath: string) => Promise<void>;
-  captureSnapshot: (projectPath: string, source: string, description?: string, sessionId?: string) => Promise<string | null>;
-  loadHistory: (projectPath: string) => Promise<void>;
+  initMemory: (projectPath: string | string[]) => Promise<void>;
+  captureSnapshot: (projectPath: string | string[], source: string, description?: string, sessionId?: string) => Promise<string | null>;
+  loadHistory: (projectPath: string | string[]) => Promise<void>;
   createCheckpoint: (projectPath: string, name: string) => Promise<string | null>;
   restoreCommit: (projectPath: string, commitHash: string, files?: string[]) => Promise<void>;
   reviewCommit: (projectPath: string, commitHash: string, status: 'approved' | 'rejected') => Promise<void>;
@@ -109,10 +110,13 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
 
   // ── Memory Core Actions ──
 
-  initMemory: async (projectPath: string) => {
+  initMemory: async (projectPath: string | string[]) => {
     set({ isInitializing: true });
     try {
-      await invoke<string>('memory_initialize', { projectPath });
+      const paths = Array.isArray(projectPath) ? projectPath : [projectPath];
+      for (const path of paths) {
+        await invoke<string>('memory_initialize', { projectPath: path });
+      }
       set({ isMemoryInitialized: true, isInitializing: false });
     } catch (e) {
       console.error('memory_initialize failed:', e);
@@ -120,19 +124,30 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
     }
   },
 
-  captureSnapshot: async (projectPath: string, source: string, description?: string, sessionId?: string) => {
+  captureSnapshot: async (projectPath: string | string[], source: string, description?: string, sessionId?: string) => {
     set({ isCapturing: true });
     try {
-      const commitHash = await invoke<string>('memory_snapshot', {
-        projectPath,
-        source,
-        description: description || null,
-        sessionId: sessionId || null
-      });
-      // Reload history timeline after snapshot
-      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
-      set({ timeline: history, isCapturing: false });
-      return commitHash;
+      const paths = Array.isArray(projectPath) ? projectPath : [projectPath];
+      let lastHash: string | null = null;
+      for (const path of paths) {
+        lastHash = await invoke<string>('memory_snapshot', {
+          projectPath: path,
+          source,
+          description: description || null,
+          sessionId: sessionId || null
+        });
+      }
+      // Reload history
+      let allEntries: TimelineEntry[] = [];
+      for (const path of paths) {
+        try {
+          const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath: path });
+          allEntries = allEntries.concat(history);
+        } catch {}
+      }
+      allEntries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      set({ timeline: allEntries, isCapturing: false });
+      return lastHash;
     } catch (e) {
       console.error('memory_snapshot failed:', e);
       set({ isCapturing: false });
@@ -140,13 +155,23 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
     }
   },
 
-  loadHistory: async (projectPath: string) => {
+  loadHistory: async (projectPath: string | string[]) => {
     set({ isLoadingChanges: true });
     try {
-      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
-      set({ timeline: history, isLoadingChanges: false });
+      const paths = Array.isArray(projectPath) ? projectPath : [projectPath];
+      let allEntries: TimelineEntry[] = [];
+      for (const path of paths) {
+        try {
+          const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath: path });
+          allEntries = allEntries.concat(history);
+        } catch (e) {
+          console.error(`memory_get_history failed for ${path}:`, e);
+        }
+      }
+      allEntries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      set({ timeline: allEntries, isLoadingChanges: false });
     } catch (e) {
-      console.error('memory_get_history failed:', e);
+      console.error('loadHistory failed:', e);
       set({ timeline: [], isLoadingChanges: false });
     }
   },

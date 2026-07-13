@@ -24,6 +24,7 @@ pub struct TimelineEntry {
     pub files: Vec<FileOperation>,
     pub session_source: Option<String>,
     pub session_desc: Option<String>,
+    pub project_path: String,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -551,6 +552,7 @@ pub fn memory_get_history(project_path: String) -> Result<Vec<TimelineEntry>, St
             files: ops,
             session_source: row.get(8).map_err(|e| e.to_string())?,
             session_desc: row.get(9).map_err(|e| e.to_string())?,
+            project_path: project_path.clone(),
         });
     }
     Ok(result)

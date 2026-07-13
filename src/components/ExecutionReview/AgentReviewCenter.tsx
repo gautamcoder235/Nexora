@@ -183,15 +183,23 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const loadedPaths = useRef<Set<string>>(new Set());
   const initDone = useRef(false);
 
-  // Initialize Memory Core on Mount
+  // Initialize all projects in the workspace on mount
   useEffect(() => {
-    if (initDone.current || !repoPath) return;
+    if (initDone.current || activeProjects.length === 0) return;
     initDone.current = true;
-    const target = scanScope !== 'all' ? scanScope : repoPath;
-    initMemory(target).then(() => {
-      loadHistory(target);
+    const paths = activeProjects.map(p => p.path);
+    initMemory(paths).then(() => {
+      const activePath = scanScope !== 'all' ? [scanScope] : paths;
+      loadHistory(activePath);
     });
-  }, [repoPath]);
+  }, [activeProjects]);
+
+  // Reload history when scanScope changes or memory is initialized
+  useEffect(() => {
+    if (!isMemoryInitialized || activeProjects.length === 0) return;
+    const activePath = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
+    loadHistory(activePath);
+  }, [scanScope, isMemoryInitialized, activeProjects]);
 
   // Load first commit expand automatically
   useEffect(() => {
@@ -229,7 +237,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   // Load diff content when a commit file is selected
   useEffect(() => {
     if (!selectedCommit || !selectedFileOp) return;
-    const target = scanScope !== 'all' ? scanScope : repoPath;
+    const target = selectedCommit.project_path;
     setIsDiffLoading(true);
 
     const loadDiff = async () => {
@@ -257,7 +265,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     };
 
     loadDiff();
-  }, [selectedCommit, selectedFileOp, scanScope, repoPath]);
+  }, [selectedCommit, selectedFileOp]);
 
   // Load workspace file content
   useEffect(() => {
@@ -310,39 +318,41 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   };
 
   const handleCapture = () => {
-    const target = scanScope !== 'all' ? scanScope : repoPath;
+    const target = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
     captureSnapshot(target, 'user', 'Manual snapshot');
   };
 
   const handleAccept = async (commitHash: string) => {
-    const target = scanScope !== 'all' ? scanScope : repoPath;
+    if (!selectedCommit) return;
+    const target = selectedCommit.project_path;
     await reviewCommit(target, commitHash, 'approved');
-    // Refresh selected commit details
-    if (selectedCommit?.git_commit_hash === commitHash) {
+    if (selectedCommit.git_commit_hash === commitHash) {
       setSelectedCommit(prev => prev ? { ...prev, status: 'approved' } : null);
     }
   };
 
   const handleRevert = async (commitHash: string) => {
-    const target = scanScope !== 'all' ? scanScope : repoPath;
+    if (!selectedCommit) return;
+    const target = selectedCommit.project_path;
     await reviewCommit(target, commitHash, 'rejected');
-    if (selectedCommit?.git_commit_hash === commitHash) {
+    if (selectedCommit.git_commit_hash === commitHash) {
       setSelectedCommit(prev => prev ? { ...prev, status: 'rejected' } : null);
     }
   };
 
   const handleRevertFile = async (commitHash: string, filePath: string) => {
-    const target = scanScope !== 'all' ? scanScope : repoPath;
-    // Revert only this file to commit~1
+    const target = selectedCommit?.project_path || (scanScope !== 'all' ? scanScope : activeProjects[0]?.path);
+    if (!target) return;
     await restoreCommit(target, `${commitHash}~1`, [filePath]);
-    // Create restore snapshot
     await captureSnapshot(target, 'system', `Reverted ${filePath} to before ${commitHash.substring(0,7)}`);
   };
 
   const handleCreateCheckpoint = async () => {
     if (!checkpointName.trim()) return;
-    const target = scanScope !== 'all' ? scanScope : repoPath;
-    await createCheckpoint(target, checkpointName.trim());
+    const target = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
+    for (const path of target) {
+      await createCheckpoint(path, checkpointName.trim());
+    }
     setCheckpointName('');
     setShowCheckpointInput(false);
   };
