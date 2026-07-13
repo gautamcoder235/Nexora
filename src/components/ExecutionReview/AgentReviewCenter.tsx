@@ -347,6 +347,12 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     await captureSnapshot(target, 'system', `Reverted ${filePath} to before ${commitHash.substring(0,7)}`);
   };
 
+  const handleRestoreProject = async (commit: TimelineEntry) => {
+    if (confirm(`Are you sure you want to restore the entire project state to ${commit.git_commit_hash.substring(0,7)}?`)) {
+      await restoreCommit(commit.project_path, commit.git_commit_hash);
+    }
+  };
+
   const handleCreateCheckpoint = async () => {
     if (!checkpointName.trim()) return;
     const target = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
@@ -443,11 +449,27 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot}`} title={`Review state: ${commit.status}`} />
                       <SourceIcon src={commit.source} />
                       <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-medium text-zinc-200 truncate leading-tight">{displayDesc}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[10px] font-medium text-zinc-200 truncate leading-tight">{displayDesc}</span>
+                          <span className="text-[8px] bg-[#1a1a22] text-[#22c55e] border border-[#22c55e]/20 px-1 py-px rounded font-mono shrink-0 font-bold" title={`${commit.files.length} files changed`}>
+                            {commit.files.length}
+                          </span>
+                        </div>
                         <span className="text-[8px] text-zinc-500 font-mono mt-0.5">{commit.git_commit_hash.substring(0, 7)} · {commit.source}</span>
                       </div>
                     </div>
-                    <ChevronDown size={12} className={`text-zinc-500 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isExpanded && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRestoreProject(commit); }}
+                          title="Restore entire project to this state"
+                          className="text-[8px] text-[#7C5CFF] hover:text-white bg-[#7C5CFF]/10 hover:bg-[#7C5CFF] border border-[#7C5CFF]/20 px-1.5 py-0.5 rounded transition-all cursor-pointer font-bold select-none"
+                        >
+                          Restore
+                        </button>
+                      )}
+                      <ChevronDown size={12} className={`text-zinc-500 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                    </div>
                   </div>
 
                   {/* Expanded Files */}
