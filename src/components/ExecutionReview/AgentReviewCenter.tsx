@@ -758,51 +758,51 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   };
 
   return (
-    <div className="h-full w-full flex bg-[#0c0c0e] text-zinc-150 select-none overflow-hidden font-sans border border-[#1b1b22] rounded-xl shadow-2xl">
+    <div className="h-full w-full flex bg-[var(--bg-glass)] backdrop-blur-xl text-[var(--text-primary)] select-none overflow-hidden font-sans border border-[var(--border-glass)] rounded-xl shadow-2xl">
       {/* Sidebar */}
-      <div className="w-72 border-r border-[#1B1B22] flex flex-col bg-[#0D0D10] shrink-0">
+      <div className="w-72 border-r border-[var(--border-glass)] flex flex-col bg-black/20 shrink-0">
         {/* Header */}
-        <div className="h-10 px-3 border-b border-[#1B1B22] flex items-center justify-between shrink-0">
-          <span className="text-[11px] font-bold text-zinc-200 uppercase tracking-wider">Memory Core</span>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-[#1B1B22] transition-colors cursor-pointer">
+        <div className="h-10 px-3 border-b border-[var(--border-glass)] flex items-center justify-between shrink-0">
+          <span className="text-[11px] font-bold text-[var(--text-primary)] uppercase tracking-wider">Memory Core</span>
+          <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 rounded hover:bg-[var(--border-glass)] transition-colors cursor-pointer">
             <X size={14} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-px p-1 bg-[#09090b] border-b border-[#1B1B22] shrink-0">
+        <div className="flex items-center gap-px p-1 bg-black/40 border-b border-[var(--border-glass)] shrink-0">
           <button onClick={() => setActiveTab('changeset')}
             className={`flex-1 h-7 flex items-center justify-center gap-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'changeset' ? 'bg-[#7C5CFF]/15 border border-[#7C5CFF]/30 text-[#7C5CFF]' : 'text-zinc-500 hover:text-zinc-300 bg-transparent border border-transparent'
+              activeTab === 'changeset' ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] border border-[rgba(var(--accent-primary-rgb),0.3)] text-[var(--accent-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border border-transparent'
             }`}>
             <History size={11} /> Timeline
           </button>
           <button onClick={() => setActiveTab('workspace')}
             className={`flex-1 h-7 flex items-center justify-center gap-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'workspace' ? 'bg-[#7C5CFF]/15 border border-[#7C5CFF]/30 text-[#7C5CFF]' : 'text-zinc-500 hover:text-zinc-300 bg-transparent border border-transparent'
+              activeTab === 'workspace' ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] border border-[rgba(var(--accent-primary-rgb),0.3)] text-[var(--accent-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border border-transparent'
             }`}>
             <Folder size={11} /> Files
           </button>
         </div>
 
         {/* Custom Scope Picker Dropdown (visible in both Timeline and Files tabs) */}
-        <div className="px-2.5 py-2 bg-[#09090b]/40 border-b border-[#1B1B22] shrink-0 relative">
+        <div className="px-2.5 py-2 bg-black/20 border-b border-[var(--border-glass)] shrink-0 relative">
           <button
             onClick={() => setIsScopeDropdownOpen(!isScopeDropdownOpen)}
-            className="w-full flex items-center justify-between bg-[#121215] hover:bg-[#15151b] border border-[#252530] rounded px-2.5 py-1 text-[10px] text-zinc-300 transition-all cursor-pointer select-none text-left font-mono"
+            className="w-full flex items-center justify-between bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.07)] border border-[var(--border-glass)] rounded px-2.5 py-1 text-[10px] text-[var(--text-secondary)] transition-all cursor-pointer select-none text-left font-mono"
           >
             <span>{scanScope === 'all' ? 'All Projects' : activeProjects.find(p => p.path === scanScope)?.name || scanScope}</span>
-            <ChevronDown size={12} className={`text-zinc-500 transition-transform duration-200 ${isScopeDropdownOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={12} className="text-[var(--text-muted)] transition-transform duration-200" style={{ transform: isScopeDropdownOpen ? 'rotate(180deg)' : 'none' }} />
           </button>
           
           {isScopeDropdownOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setIsScopeDropdownOpen(false)} />
-              <div className="absolute left-2.5 right-2.5 mt-1 bg-[#0c0c0e]/95 border border-[#252530] rounded shadow-2xl z-50 py-1 overflow-hidden font-mono border-t-0 animate-in fade-in duration-100">
+              <div className="absolute left-2.5 right-2.5 mt-1 bg-[var(--bg-glass)] backdrop-blur-md border border-[var(--border-glass)] rounded shadow-2xl z-50 py-1 overflow-hidden font-mono border-t-0 animate-in fade-in duration-100">
                 <button
                   onClick={() => { setScanScope('all'); setIsScopeDropdownOpen(false); }}
-                  className={`w-full text-left text-[10px] px-3 py-1.5 transition-all hover:bg-[#7C5CFF]/10 hover:text-white cursor-pointer ${
-                    scanScope === 'all' ? 'text-[#7C5CFF] font-bold bg-[#7C5CFF]/5' : 'text-zinc-400'
+                  className={`w-full text-left text-[10px] px-3 py-1.5 transition-all hover:bg-[rgba(var(--accent-primary-rgb),0.1)] hover:text-white cursor-pointer ${
+                    scanScope === 'all' ? 'text-[var(--accent-primary)] font-bold bg-[rgba(var(--accent-primary-rgb),0.05)]' : 'text-[var(--text-muted)]'
                   }`}
                 >
                   All Projects
@@ -811,8 +811,8 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                   <button
                     key={p.id}
                     onClick={() => { setScanScope(p.path); setIsScopeDropdownOpen(false); }}
-                    className={`w-full text-left text-[10px] px-3 py-1.5 transition-all hover:bg-[#7C5CFF]/10 hover:text-white cursor-pointer ${
-                      scanScope === p.path ? 'text-[#7C5CFF] font-bold bg-[#7C5CFF]/5' : 'text-zinc-400'
+                    className={`w-full text-left text-[10px] px-3 py-1.5 transition-all hover:bg-[rgba(var(--accent-primary-rgb),0.1)] hover:text-white cursor-pointer ${
+                      scanScope === p.path ? 'text-[var(--accent-primary)] font-bold bg-[rgba(var(--accent-primary-rgb),0.05)]' : 'text-[var(--text-muted)]'
                     }`}
                   >
                     {p.name}
@@ -830,26 +830,26 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
       </div>
 
       {/* Viewport */}
-      <div className="flex-grow flex-1 flex flex-col min-w-0 overflow-hidden bg-[#08080a] relative">
+      <div className="flex-grow flex-1 flex flex-col min-w-0 overflow-hidden bg-black/10 relative">
         {renderViewport()}
       </div>
 
       {/* Custom Confirmation Popup Modal */}
       {confirmModal && confirmModal.isOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] animate-in fade-in duration-200">
-          <div className="bg-[#0c0c0e]/95 border border-[#252530] rounded-xl p-5 w-[380px] max-w-[90vw] shadow-2xl flex flex-col gap-4 font-sans select-none animate-in zoom-in duration-150">
-            <h3 className="text-zinc-200 text-xs font-bold uppercase tracking-wider">Confirm Action</h3>
-            <p className="text-zinc-400 text-[11px] leading-relaxed font-mono">{confirmModal.message}</p>
+          <div className="bg-[var(--bg-glass)] backdrop-blur-md border border-[var(--border-glass)] rounded-xl p-5 w-[380px] max-w-[90vw] shadow-2xl flex flex-col gap-4 font-sans select-none animate-in zoom-in duration-150">
+            <h3 className="text-[var(--text-primary)] text-xs font-bold uppercase tracking-wider">Confirm Action</h3>
+            <p className="text-[var(--text-secondary)] text-[11px] leading-relaxed font-mono">{confirmModal.message}</p>
             <div className="flex items-center justify-end gap-2 mt-2">
               <button
                 onClick={() => setConfirmModal(null)}
-                className="px-3.5 py-1.5 bg-[#1A1A22] hover:bg-[#252530] border border-[#252530] text-zinc-300 text-[10px] font-bold rounded-lg transition-all cursor-pointer select-none"
+                className="px-3.5 py-1.5 bg-[var(--bg-glass-light,rgba(255,255,255,0.03))] hover:bg-[var(--bg-glass-hover,rgba(255,255,255,0.07))] border border-[var(--border-glass)] text-[var(--text-secondary)] text-[10px] font-bold rounded-lg transition-all cursor-pointer select-none"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmModal.onConfirm}
-                className="px-3.5 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-[10px] font-bold rounded-lg transition-all cursor-pointer select-none"
+                className="px-3.5 py-1.5 bg-[var(--accent-primary)] hover:bg-[rgba(var(--accent-primary-rgb),0.8)] text-white text-[10px] font-bold rounded-lg transition-all cursor-pointer select-none"
               >
                 OK
               </button>
@@ -888,10 +888,10 @@ export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFi
           return (
             <div key={node.path} className="flex flex-col">
               <button onClick={() => toggleDir(node.path)}
-                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm outline-none">
+                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-[var(--border-glass)] flex items-center transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer rounded-sm outline-none">
                 <span className="flex items-center gap-1.5" style={{ paddingLeft: `${depth * 16}px` }}>
-                  <ChevronDown size={14} className={`text-zinc-500 shrink-0 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`} />
-                  {isExpanded ? <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" /> : <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />}
+                  <ChevronDown size={14} className="text-[var(--text-muted)] shrink-0 transition-transform duration-200" style={{ transform: !isExpanded ? 'rotate(-90deg)' : 'none' }} />
+                  {isExpanded ? <FolderOpen size={14} className="text-[var(--accent-primary)] fill-[rgba(var(--accent-primary-rgb),0.1)] shrink-0" /> : <Folder size={14} className="text-[var(--accent-primary)] fill-[rgba(var(--accent-primary-rgb),0.1)] shrink-0" />}
                   <span className="truncate">{node.name}</span>
                 </span>
               </button>
@@ -902,10 +902,10 @@ export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFi
           return (
             <button key={node.path} onClick={() => onFileSelect(relPath, node.path)}
               className={`w-full text-left text-xs font-mono py-1.5 px-2 flex items-center transition-colors cursor-pointer rounded-sm outline-none ${
-                isSelected ? 'bg-blue-500/10 text-blue-400 font-semibold border-l-2 border-blue-500' : 'text-zinc-400 hover:bg-zinc-900/40 hover:text-zinc-200'
+                isSelected ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] font-semibold border-l-2 border-[var(--accent-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border-l-2 border-transparent'
               }`}>
               <span className="flex items-center gap-1.5" style={{ paddingLeft: `${depth * 16 + 20}px` }}>
-                <File size={14} className="text-zinc-500 shrink-0" />
+                <File size={14} className="text-[var(--text-muted)] shrink-0" />
                 <span className="truncate">{node.name}</span>
               </span>
             </button>
