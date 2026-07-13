@@ -1,721 +1,712 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║  Nexora Memory Core                                        ║
-// ║  Content-addressable offline file history & review engine   ║
-// ║  No Git dependency. Works with any project.                 ║
+// ║  Nexora Memory Core — Git-backed Version Control Layer     ║
+// ║  Completely offline. No system Git dependencies.           ║
+// ║  Uses isolated private Git repo under `.nexora/repo`.      ║
 // ╚══════════════════════════════════════════════════════════════╝
-//
-// Storage:
-//   .nexora/objects/<hash[0..2]>/<hash[2..]>   — blob store
-//   .nexora/memory.db                          — SQLite timeline
-//
-// Tables:
-//   memory_history      — immutable record of every file state change
-//   change_reviews      — mutable approval/rejection layer on top of history
-//   checkpoint_files    — complete project state per checkpoint
-//   memory_checkpoints  — named checkpoints (like commits without git)
 
 use rusqlite::{Connection, params};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tauri::command;
+use std::process::Command;
+use tauri::{command, AppHandle, Manager};
 
-// ── Constants ──
-
-static IGNORE_DIRS: &[&str] = &[
-    "node_modules", ".git", "target", "dist", "build", ".next",
-    ".nexora", ".nexora_baselines", "__pycache__", ".vscode", ".idea",
-    ".cache", "bin", ".svn", ".hg",
-];
-
-static IGNORE_EXTS: &[&str] = &[
-    "exe", "dll", "so", "dylib", "wasm",
-    "png", "jpg", "jpeg", "gif", "bmp", "ico", "svg", "webp",
-    "woff", "woff2", "ttf", "eot",
-    "mp3", "mp4", "avi", "mov", "mkv", "flac", "wav",
-    "zip", "tar", "gz", "rar", "7z",
-    "pdf", "lock",
-];
-
-// ── Data Types ──
+// ── Structs & Data Types ──
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct HistoryEntry {
+pub struct TimelineEntry {
+    pub id: String,
+    pub session_id: Option<String>,
+    pub git_commit_hash: String,
+    pub r#type: String,         // snapshot | checkpoint | ai | restore
+    pub source: String,       // user | agent | terminal | external
+    pub description: Option<String>,
+    pub timestamp: String,
+    pub status: String,        // pending | approved | rejected
+    pub files: Vec<FileOperation>,
+    pub session_source: Option<String>,
+    pub session_desc: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct FileOperation {
     pub id: String,
     pub file_path: String,
-    pub old_hash: Option<String>,
-    pub new_hash: String,
-    pub size: i64,
-    pub operation: String,     // created | modified | deleted | renamed
-    pub source: String,        // user | agent | terminal | external | system | restore
-    pub timestamp: String,
+    pub operation_type: String, // created | modified | deleted | renamed
     pub old_path: Option<String>,
-    // Joined review status (if exists)
-    pub review_status: Option<String>,  // pending | approved | rejected | null
-    pub review_id: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct ChangeReview {
+pub struct MemorySession {
     pub id: String,
-    pub history_id: String,
-    pub status: String,        // pending | approved | rejected
-    pub reviewed_by: String,   // user | auto
-    pub review_time: Option<String>,
+    pub source: String,
+    pub description: Option<String>,
+    pub started: String,
+    pub ended: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct MemoryCheckpoint {
-    pub id: String,
-    pub name: String,
-    pub timestamp: String,
-    pub file_count: i64,
+pub struct HunkSelection {
+    pub file_path: String,
+    pub approved: bool,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct CaptureResult {
-    pub total_scanned: u64,
-    pub changes_found: u64,
-    pub new_entries: Vec<HistoryEntry>,
-}
+// ── Git Resolution & Execution ──
 
-// ── Internal helpers ──
-
-fn nexora_dir(project_path: &str) -> PathBuf {
-    Path::new(project_path).join(".nexora")
-}
-
-fn objects_dir(project_path: &str) -> PathBuf {
-    nexora_dir(project_path).join("objects")
-}
-
-fn db_path(project_path: &str) -> PathBuf {
-    nexora_dir(project_path).join("memory.db")
-}
-
-fn hash_bytes(content: &[u8]) -> String {
-    blake3::hash(content).to_hex().to_string()
-}
-
-fn store_blob(project_path: &str, hash: &str, content: &[u8]) -> Result<(), String> {
-    if hash.len() < 4 { return Err("Hash too short".into()); }
-    let dir = objects_dir(project_path).join(&hash[..2]);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let blob = dir.join(&hash[2..]);
-    if !blob.exists() {
-        std::fs::write(&blob, content).map_err(|e| e.to_string())?;
+fn resolve_git_binary(app_handle: &AppHandle) -> Result<PathBuf, String> {
+    // 1. Production Mode check (Strictly bundled resources only)
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let prod_git = resource_dir.join("resources").join("git").join("bin").join("git.exe");
+        if prod_git.exists() {
+            return Ok(prod_git);
+        }
+        let up_git = resource_dir.join("_up_").join("resources").join("git").join("bin").join("git.exe");
+        if up_git.exists() {
+            return Ok(up_git);
+        }
     }
-    Ok(()) // deduplicated
+
+    // 2. Development Mode fallback
+    #[cfg(debug_assertions)]
+    {
+        // Try local workspace root /resources/git/bin/git.exe
+        let dev_git = std::env::current_dir()
+            .unwrap_or_default()
+            .join("resources")
+            .join("git")
+            .join("bin")
+            .join("git.exe");
+        if dev_git.exists() {
+            return Ok(dev_git);
+        }
+        // Fallback to system Git during local development only
+        return Ok(PathBuf::from("git"));
+    }
+
+    #[cfg(not(debug_assertions))]
+    Err("Portable Git binary not found in bundled resources".to_string())
 }
 
-fn read_blob(project_path: &str, hash: &str) -> Result<Vec<u8>, String> {
-    if hash.len() < 4 { return Err("Hash too short".into()); }
-    let blob = objects_dir(project_path).join(&hash[..2]).join(&hash[2..]);
-    if blob.exists() {
-        std::fs::read(&blob).map_err(|e| e.to_string())
+fn execute_git(git_path: &Path, git_dir: &Path, work_tree: &Path, args: &[&str]) -> Result<String, String> {
+    let mut cmd = Command::new(git_path);
+    cmd.arg(format!("--git-dir={}", git_dir.to_string_lossy()));
+    cmd.arg(format!("--work-tree={}", work_tree.to_string_lossy()));
+    cmd.args(args);
+
+    // Environment Isolation: strictly prevent loading system/user global configs
+    #[cfg(target_os = "windows")]
+    {
+        cmd.env("GIT_CONFIG_NOSYSTEM", "1");
+        cmd.env("GIT_CONFIG_GLOBAL", "NUL");
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        cmd.env("GIT_CONFIG_NOSYSTEM", "1");
+        cmd.env("GIT_CONFIG_GLOBAL", "/dev/null");
+    }
+
+    // Standard author variables for clean commits
+    cmd.env("GIT_AUTHOR_NAME", "Nexora Memory");
+    cmd.env("GIT_AUTHOR_EMAIL", "memory@nexora.ai");
+    cmd.env("GIT_COMMITTER_NAME", "Nexora Memory");
+    cmd.env("GIT_COMMITTER_EMAIL", "memory@nexora.ai");
+
+    let output = cmd.output().map_err(|e| format!("Failed to execute Git command: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(format!("Object {} not found", hash))
+        let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if err_msg.is_empty() {
+            "Unknown Git error".to_string()
+        } else {
+            err_msg
+        })
     }
 }
 
-fn should_skip_name(name: &str) -> bool {
-    name.starts_with('.') && name != ".env" && name != ".gitignore" && name != ".prettierrc"
-}
-
-fn should_skip_ext(path: &Path) -> bool {
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        IGNORE_EXTS.contains(&ext.to_lowercase().as_str())
-    } else {
-        false
+// Check Git version is >= 2.40.0
+fn validate_git_version(git_path: &Path) -> Result<(), String> {
+    let mut cmd = Command::new(git_path);
+    cmd.arg("--version");
+    let output = cmd.output().map_err(|e| format!("Failed to get Git version: {}", e))?;
+    let version_str = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse version e.g. "git version 2.45.0"
+    let parts: Vec<&str> = version_str.split_whitespace().collect();
+    let version_num = parts.iter().find(|&&p| p.chars().next().unwrap_or(' ').is_numeric());
+    
+    if let Some(ver) = version_num {
+        let clean_ver: String = ver.chars().take_while(|&c| c.is_numeric() || c == '.').collect();
+        let semver: Vec<&str> = clean_ver.split('.').collect();
+        if semver.len() >= 2 {
+            let major: u32 = semver[0].parse().unwrap_or(0);
+            let minor: u32 = semver[1].parse().unwrap_or(0);
+            if major > 2 || (major == 2 && minor >= 40) {
+                return Ok(());
+            }
+        }
     }
+    
+    // If fallback is successful for system git but we couldn't parse it, check if code succeeds
+    if output.status.success() {
+        return Ok(());
+    }
+    
+    Err(format!("Unsupported Git version: {}. Minimum required is 2.40.0", version_str.trim()))
 }
 
-fn open_db(project_path: &str) -> Result<Connection, String> {
-    let p = db_path(project_path);
-    let conn = Connection::open(&p).map_err(|e| format!("DB open failed: {}", e))?;
+// ── Database Setup ──
+
+fn open_memory_db(project_path: &str) -> Result<Connection, String> {
+    let db_dir = Path::new(project_path).join(".nexora");
+    std::fs::create_dir_all(&db_dir).map_err(|e| e.to_string())?;
+    let conn = Connection::open(db_dir.join("memory.db")).map_err(|e| e.to_string())?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;")
         .map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
-fn ensure_schema(conn: &Connection) -> Result<(), String> {
+fn initialize_db_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("
-        CREATE TABLE IF NOT EXISTS memory_history (
+        CREATE TABLE IF NOT EXISTS sessions (
             id          TEXT PRIMARY KEY,
-            file_path   TEXT NOT NULL,
-            old_hash    TEXT,
-            new_hash    TEXT NOT NULL,
-            size        INTEGER NOT NULL DEFAULT 0,
-            operation   TEXT NOT NULL DEFAULT 'modified',
-            source      TEXT NOT NULL DEFAULT 'user',
-            timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
-            old_path    TEXT
+            source      TEXT NOT NULL,
+            description TEXT,
+            started     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            ended       DATETIME
         );
 
-        CREATE TABLE IF NOT EXISTS change_reviews (
-            id          TEXT PRIMARY KEY,
-            history_id  TEXT NOT NULL UNIQUE,
-            status      TEXT NOT NULL DEFAULT 'pending',
-            reviewed_by TEXT NOT NULL DEFAULT 'user',
-            review_time DATETIME,
-            FOREIGN KEY(history_id) REFERENCES memory_history(id)
+        CREATE TABLE IF NOT EXISTS commits (
+            id              TEXT PRIMARY KEY,
+            session_id      TEXT,
+            git_commit_hash TEXT NOT NULL UNIQUE,
+            type            TEXT NOT NULL,
+            source          TEXT NOT NULL,
+            description     TEXT,
+            timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            status          TEXT DEFAULT 'pending',
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE SET NULL
         );
 
-        CREATE TABLE IF NOT EXISTS memory_checkpoints (
-            id          TEXT PRIMARY KEY,
-            name        TEXT NOT NULL,
-            timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
-            file_count  INTEGER DEFAULT 0
+        CREATE TABLE IF NOT EXISTS operations (
+            id             TEXT PRIMARY KEY,
+            commit_id      TEXT NOT NULL,
+            file_path      TEXT NOT NULL,
+            operation_type TEXT NOT NULL,
+            old_path       TEXT,
+            FOREIGN KEY(commit_id) REFERENCES commits(id) ON DELETE CASCADE
         );
 
-        CREATE TABLE IF NOT EXISTS checkpoint_files (
-            checkpoint_id TEXT NOT NULL,
-            file_path     TEXT NOT NULL,
-            content_hash  TEXT NOT NULL,
-            PRIMARY KEY(checkpoint_id, file_path),
-            FOREIGN KEY(checkpoint_id) REFERENCES memory_checkpoints(id)
+        CREATE TABLE IF NOT EXISTS refs (
+            name           TEXT PRIMARY KEY,
+            commit_hash    TEXT NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_hist_path ON memory_history(file_path);
-        CREATE INDEX IF NOT EXISTS idx_hist_time ON memory_history(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_rev_status ON change_reviews(status);
-    ").map_err(|e| format!("Schema init failed: {}", e))?;
+        CREATE TABLE IF NOT EXISTS reviews (
+            id             TEXT PRIMARY KEY,
+            commit_hash    TEXT NOT NULL UNIQUE,
+            status         TEXT NOT NULL,
+            reviewed_by    TEXT NOT NULL,
+            review_time    DATETIME
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_commits_sess ON commits(session_id);
+        CREATE INDEX IF NOT EXISTS idx_ops_commit ON operations(commit_id);
+    ").map_err(|e| format!("Failed to create Memory Core schema: {}", e))?;
     Ok(())
 }
 
-/// Scan all trackable files. Returns HashMap<relative_path, (bytes, hash)>.
-fn scan_all_files(project_path: &str) -> Result<HashMap<String, (Vec<u8>, String)>, String> {
-    let root = Path::new(project_path);
-    let mut result = HashMap::new();
+// ── Private Exclusions ──
 
-    fn walk(dir: &Path, root: &Path, out: &mut HashMap<String, (Vec<u8>, String)>) -> Result<(), String> {
+fn setup_private_exclude(git_dir: &Path) -> Result<(), String> {
+    let info_dir = git_dir.join("info");
+    std::fs::create_dir_all(&info_dir).map_err(|e| e.to_string())?;
+    let exclude_file = info_dir.join("exclude");
+    
+    // Add default ignore entries specifically for the isolated repo
+    let content = "\
+.nexora/
+node_modules/
+target/
+dist/
+build/
+.next/
+__pycache__/
+*.exe
+*.dll
+*.so
+*.dylib
+";
+    std::fs::write(exclude_file, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── Command Implementation ──
+
+#[command]
+pub fn memory_initialize(app: AppHandle, project_path: String) -> Result<String, String> {
+    let git_path = resolve_git_binary(&app)?;
+    validate_git_version(&git_path)?;
+
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(&project_path);
+
+    // 1. Initialize Git Repo under .nexora/repo
+    if !git_dir.exists() {
+        std::fs::create_dir_all(&git_dir).map_err(|e| e.to_string())?;
+        execute_git(&git_path, &git_dir, work_tree, &["init"])?;
+        setup_private_exclude(&git_dir)?;
+        
+        // Disable global attributes/config reads
+        execute_git(&git_path, &git_dir, work_tree, &["config", "core.autocrlf", "false"])?;
+        execute_git(&git_path, &git_dir, work_tree, &["config", "core.quotepath", "false"])?;
+    }
+
+    // 2. Setup SQLite DB
+    let conn = open_memory_db(&project_path)?;
+    initialize_db_schema(&conn)?;
+
+    // 3. Stage & commit baseline files (excluding large ones)
+    // Walk directory and check for >50MB files to ignore
+    let exclude_path = git_dir.join("info").join("exclude");
+    let mut exclude_content = std::fs::read_to_string(&exclude_path).unwrap_or_default();
+    
+    fn scan_large_files(dir: &Path, root: &Path, exclude_str: &mut String) {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
-            Err(_) => return Ok(()),
+            Err(_) => return,
         };
         for entry in entries {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-
-            if should_skip_name(&name) { continue; }
-
-            if path.is_dir() {
-                if IGNORE_DIRS.contains(&name.as_str()) { continue; }
-                walk(&path, root, out)?;
-            } else {
-                if should_skip_ext(&path) { continue; }
-                // Read file bytes — works for any file type
-                match std::fs::read(&path) {
-                    Ok(bytes) => {
-                        let rel = path.strip_prefix(root)
-                            .map_err(|e| e.to_string())?
-                            .to_string_lossy()
-                            .replace("\\", "/");
-                        let hash = hash_bytes(&bytes);
-                        out.insert(rel, (bytes, hash));
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') && name != ".env" { continue; }
+                if path.is_dir() {
+                    if name == "node_modules" || name == "target" || name == "dist" || name == "build" || name == ".nexora" {
+                        continue;
                     }
-                    Err(_) => continue, // permission denied / locked
+                    scan_large_files(&path, root, exclude_str);
+                } else {
+                    if let Ok(meta) = entry.metadata() {
+                        if meta.len() >= 50_000_000 { // >= 50MB
+                            let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace("\\", "/");
+                            exclude_str.push_str(&format!("{}\n", rel));
+                        }
+                    }
                 }
             }
         }
-        Ok(())
     }
+    
+    scan_large_files(work_tree, work_tree, &mut exclude_content);
+    let _ = std::fs::write(&exclude_path, exclude_content);
 
-    walk(root, root, &mut result)?;
-    Ok(result)
-}
-
-/// Build the "latest known state" of each file from history (last entry per path wins).
-fn get_known_state(conn: &Connection) -> Result<HashMap<String, String>, String> {
-    let mut stmt = conn.prepare(
-        "SELECT file_path, new_hash, operation FROM memory_history ORDER BY timestamp ASC"
-    ).map_err(|e| e.to_string())?;
-
-    let mut map: HashMap<String, String> = HashMap::new();
-    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        let path: String = row.get(0).map_err(|e| e.to_string())?;
-        let hash: String = row.get(1).map_err(|e| e.to_string())?;
-        let op: String = row.get(2).map_err(|e| e.to_string())?;
-        if op == "deleted" {
-            map.remove(&path);
-        } else {
-            map.insert(path, hash);
+    // Initial stage
+    execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
+    
+    // Commit if clean or dirty
+    let commit_hash = match execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", "Initial Baseline"]) {
+        Ok(_) => {
+            execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
         }
-    }
-    Ok(map)
-}
-
-/// Detect renames: if a file was deleted and a new file has the same hash, it's a rename.
-fn detect_renames(
-    deleted: &mut Vec<(String, String)>,   // (path, hash)
-    created: &mut Vec<(String, String)>,   // (path, hash)
-) -> Vec<(String, String, String)> {       // (old_path, new_path, hash)
-    let mut renames = Vec::new();
-    let mut used_created: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    let mut used_deleted: std::collections::HashSet<usize> = std::collections::HashSet::new();
-
-    for (di, (del_path, del_hash)) in deleted.iter().enumerate() {
-        for (ci, (cre_path, cre_hash)) in created.iter().enumerate() {
-            if used_created.contains(&ci) { continue; }
-            if del_hash == cre_hash {
-                renames.push((del_path.clone(), cre_path.clone(), del_hash.clone()));
-                used_created.insert(ci);
-                used_deleted.insert(di);
-                break;
-            }
+        Err(_) => {
+            // Already clean or empty
+            // Create an empty commit to initialize HEAD
+            execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", "Initial Baseline"])?;
+            execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
         }
-    }
+    };
 
-    // Remove matched entries from deleted/created in reverse order
-    let mut del_indices: Vec<usize> = used_deleted.into_iter().collect();
-    del_indices.sort_unstable_by(|a, b| b.cmp(a));
-    for i in del_indices { deleted.remove(i); }
-
-    let mut cre_indices: Vec<usize> = used_created.into_iter().collect();
-    cre_indices.sort_unstable_by(|a, b| b.cmp(a));
-    for i in cre_indices { created.remove(i); }
-
-    renames
-}
-
-fn new_id() -> String {
-    format!("mem-{}", uuid::Uuid::new_v4())
-}
-
-fn insert_history(conn: &Connection, id: &str, file_path: &str, old_hash: Option<&str>, new_hash: &str, size: i64, operation: &str, source: &str, old_path: Option<&str>) -> Result<(), String> {
+    // Save initial commit entry in SQLite
+    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
     conn.execute(
-        "INSERT INTO memory_history (id, file_path, old_hash, new_hash, size, operation, source, old_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-        params![id, file_path, old_hash, new_hash, size, operation, source, old_path],
+        "INSERT OR IGNORE INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'snapshot','system','Initial Baseline','approved')",
+        params![commit_id, commit_hash]
     ).map_err(|e| e.to_string())?;
-    Ok(())
+
+    // Create main ref
+    conn.execute(
+        "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES ('nexora/main', ?1)",
+        params![commit_hash]
+    ).map_err(|e| e.to_string())?;
+
+    Ok(commit_hash)
 }
 
-fn insert_review(conn: &Connection, history_id: &str, status: &str) -> Result<(), String> {
+#[command]
+pub fn memory_snapshot(
+    app: AppHandle,
+    project_path: String,
+    source: String,
+    description: Option<String>,
+    session_id: Option<String>,
+) -> Result<String, String> {
+    let git_path = resolve_git_binary(&app)?;
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(&project_path);
+
+    // 1. Git add
+    execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
+
+    // 2. Check if clean
+    let status_str = execute_git(&git_path, &git_dir, work_tree, &["status", "--porcelain"])?;
+    if status_str.is_empty() {
+        // Return current HEAD commit hash
+        let head = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
+        return Ok(head);
+    }
+
+    // 3. Commit
+    let commit_desc = description.clone().unwrap_or_else(|| format!("Automatic snapshot - {}", chrono::Local::now().format("%H:%M:%S")));
+    execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", &commit_desc])?;
+    let commit_hash = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
+
+    // 4. Save metadata in database
+    let conn = open_memory_db(&project_path)?;
+    
+    // Group commits under session if provided
+    let mut active_sess_id = session_id;
+    if active_sess_id.is_none() {
+        // Auto-create a session for this snapshot
+        let new_sess_id = format!("sess-{}", uuid::Uuid::new_v4());
+        conn.execute(
+            "INSERT INTO sessions (id, source, description) VALUES (?1, ?2, ?3)",
+            params![new_sess_id, source, commit_desc],
+        ).map_err(|e| e.to_string())?;
+        active_sess_id = Some(new_sess_id);
+    }
+
+    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
+    conn.execute(
+        "INSERT INTO commits (id, session_id, git_commit_hash, type, source, description, status) VALUES (?1,?2,?3,'snapshot',?4,?5,'pending')",
+        params![commit_id, active_sess_id, commit_hash, source, commit_desc]
+    ).map_err(|e| e.to_string())?;
+
+    // Add review entry
     let rev_id = format!("rev-{}", uuid::Uuid::new_v4());
     conn.execute(
-        "INSERT INTO change_reviews (id, history_id, status, reviewed_by) VALUES (?1,?2,?3,'auto')",
-        params![rev_id, history_id, status],
+        "INSERT INTO reviews (id, commit_hash, status, reviewed_by) VALUES (?1,?2,'pending','auto')",
+        params![rev_id, commit_hash]
     ).map_err(|e| e.to_string())?;
-    Ok(())
+
+    // 5. Parse commit diff changes using diff-tree
+    let diff_stdout = execute_git(&git_path, &git_dir, work_tree, &[
+        "diff-tree", "--no-commit-id", "--name-status", "-r", &commit_hash
+    ])?;
+
+    for line in diff_stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let status = parts[0];
+            let file_path = parts[1];
+            let mut operation_type = "modified";
+            let mut old_path: Option<&str> = None;
+
+            if status.starts_with('A') {
+                operation_type = "created";
+            } else if status.starts_with('D') {
+                operation_type = "deleted";
+            } else if status.starts_with('R') {
+                operation_type = "renamed";
+                if parts.len() >= 3 {
+                    old_path = Some(parts[1]);
+                }
+            }
+
+            let op_id = format!("op-{}", uuid::Uuid::new_v4());
+            conn.execute(
+                "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
+                params![op_id, commit_id, file_path, operation_type, old_path]
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Update main branch ref
+    conn.execute(
+        "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES ('nexora/main', ?1)",
+        params![commit_hash]
+    ).map_err(|e| e.to_string())?;
+
+    Ok(commit_hash)
 }
 
-// ╔════════════════════════╗
-// ║   Tauri Commands       ║
-// ╚════════════════════════╝
-
-/// Initialize .nexora/ for a project. Auto-captures initial baseline.
-/// Returns the number of files in the initial baseline.
 #[command]
-pub fn memory_init(project_path: String) -> Result<u64, String> {
-    std::fs::create_dir_all(objects_dir(&project_path)).map_err(|e| e.to_string())?;
+pub fn memory_create_checkpoint(
+    app: AppHandle,
+    project_path: String,
+    name: String,
+) -> Result<String, String> {
+    let git_path = resolve_git_binary(&app)?;
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(&project_path);
 
-    let conn = open_db(&project_path)?;
-    ensure_schema(&conn)?;
+    // 1. Stage and commit current state
+    execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
+    
+    // Check if dirty
+    let status = execute_git(&git_path, &git_dir, work_tree, &["status", "--porcelain"])?;
+    let commit_hash = if !status.is_empty() {
+        execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", &format!("Checkpoint: {}", name)])?;
+        execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
+    } else {
+        execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
+    };
 
-    // Check if already initialized
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM memory_history", [], |r| r.get(0))
-        .map_err(|e| e.to_string())?;
+    // 2. SQLite refs record
+    let conn = open_memory_db(&project_path)?;
+    let ref_name = format!("nexora/checkpoints/{}", name.replace(" ", "-"));
+    conn.execute(
+        "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES (?1, ?2)",
+        params![ref_name, commit_hash]
+    ).map_err(|e| e.to_string())?;
 
-    if count > 0 {
-        return Ok(count as u64);
-    }
-
-    // First time: capture everything as initial baseline
-    let files = scan_all_files(&project_path)?;
-    let mut stored: u64 = 0;
-
-    for (rel_path, (bytes, hash)) in &files {
-        store_blob(&project_path, hash, bytes)?;
-        let id = new_id();
-        insert_history(&conn, &id, rel_path, None, hash, bytes.len() as i64, "created", "system", None)?;
-        insert_review(&conn, &id, "approved")?;
-        stored += 1;
-    }
-
-    // Create initial checkpoint
+    // Create a checkpoint record
     let cp_id = format!("cp-{}", uuid::Uuid::new_v4());
     conn.execute(
-        "INSERT INTO memory_checkpoints (id, name, file_count) VALUES (?1, 'Initial Baseline', ?2)",
-        params![cp_id, stored as i64],
+        "INSERT INTO checkpoints (id, commit_id, name) VALUES (?1, ?2, ?3)",
+        params![cp_id, commit_hash, name]
     ).map_err(|e| e.to_string())?;
 
-    for (rel_path, (_bytes, hash)) in &files {
-        conn.execute(
-            "INSERT INTO checkpoint_files (checkpoint_id, file_path, content_hash) VALUES (?1,?2,?3)",
-            params![cp_id, rel_path, hash],
-        ).map_err(|e| e.to_string())?;
-    }
+    // Approve any outstanding commits prior to the checkpoint
+    conn.execute("UPDATE commits SET status = 'approved' WHERE status = 'pending'", []).map_err(|e| e.to_string())?;
+    conn.execute("UPDATE reviews SET status = 'approved', review_time = CURRENT_TIMESTAMP WHERE status = 'pending'", []).map_err(|e| e.to_string())?;
 
-    // Add .nexora/ to .gitignore if present
-    let gi = Path::new(&project_path).join(".gitignore");
-    if gi.exists() {
-        let content = std::fs::read_to_string(&gi).unwrap_or_default();
-        if !content.contains(".nexora") {
-            let mut new_c = content;
-            if !new_c.ends_with('\n') { new_c.push('\n'); }
-            new_c.push_str(".nexora/\n");
-            let _ = std::fs::write(&gi, new_c);
-        }
-    }
-
-    Ok(stored)
+    Ok(commit_hash)
 }
 
-/// Scan files, detect changes (with rename detection), store blobs, create history entries + pending reviews.
 #[command]
-pub fn memory_capture(project_path: String, source: Option<String>) -> Result<CaptureResult, String> {
-    let conn = open_db(&project_path)?;
-    ensure_schema(&conn)?;
-
-    let change_source = source.unwrap_or_else(|| "user".into());
-    let current_files = scan_all_files(&project_path)?;
-    let known_state = get_known_state(&conn)?;
-    let total_scanned = current_files.len() as u64;
-    let mut new_entries: Vec<HistoryEntry> = Vec::new();
-
-    let mut deleted_list: Vec<(String, String)> = Vec::new(); // (path, hash)
-    let mut created_list: Vec<(String, String)> = Vec::new(); // (path, hash)
-
-    // Pass 1: Detect modifications and collect created/deleted candidates
-    for (rel_path, (bytes, hash)) in &current_files {
-        match known_state.get(rel_path) {
-            Some(old_hash) if old_hash == hash => {} // unchanged
-            Some(old_hash) => {
-                // Modified
-                store_blob(&project_path, hash, bytes)?;
-                let id = new_id();
-                insert_history(&conn, &id, rel_path, Some(old_hash), hash, bytes.len() as i64, "modified", &change_source, None)?;
-                insert_review(&conn, &id, "pending")?;
-                new_entries.push(HistoryEntry {
-                    id, file_path: rel_path.clone(), old_hash: Some(old_hash.clone()),
-                    new_hash: hash.clone(), size: bytes.len() as i64,
-                    operation: "modified".into(), source: change_source.clone(),
-                    timestamp: String::new(), old_path: None,
-                    review_status: Some("pending".into()), review_id: None,
-                });
-            }
-            None => {
-                // Candidate for "created" (might be a rename)
-                store_blob(&project_path, hash, bytes)?;
-                created_list.push((rel_path.clone(), hash.clone()));
-            }
-        }
-    }
-
-    // Collect deleted candidates
-    for (known_path, known_hash) in &known_state {
-        if !current_files.contains_key(known_path) {
-            deleted_list.push((known_path.clone(), known_hash.clone()));
-        }
-    }
-
-    // Pass 2: Rename detection (same hash in deleted + created = rename)
-    let renames = detect_renames(&mut deleted_list, &mut created_list);
-
-    for (old_path, new_path, hash) in &renames {
-        let size = current_files.get(new_path).map(|(b, _)| b.len() as i64).unwrap_or(0);
-        let id = new_id();
-        insert_history(&conn, &id, new_path, Some(hash), hash, size, "renamed", &change_source, Some(old_path))?;
-        insert_review(&conn, &id, "pending")?;
-        new_entries.push(HistoryEntry {
-            id, file_path: new_path.clone(), old_hash: Some(hash.clone()),
-            new_hash: hash.clone(), size,
-            operation: "renamed".into(), source: change_source.clone(),
-            timestamp: String::new(), old_path: Some(old_path.clone()),
-            review_status: Some("pending".into()), review_id: None,
-        });
-    }
-
-    // Pass 3: Remaining created files
-    for (rel_path, hash) in &created_list {
-        let size = current_files.get(rel_path).map(|(b, _)| b.len() as i64).unwrap_or(0);
-        let id = new_id();
-        insert_history(&conn, &id, rel_path, None, hash, size, "created", &change_source, None)?;
-        insert_review(&conn, &id, "pending")?;
-        new_entries.push(HistoryEntry {
-            id, file_path: rel_path.clone(), old_hash: None,
-            new_hash: hash.clone(), size,
-            operation: "created".into(), source: change_source.clone(),
-            timestamp: String::new(), old_path: None,
-            review_status: Some("pending".into()), review_id: None,
-        });
-    }
-
-    // Pass 4: Remaining deleted files
-    for (del_path, del_hash) in &deleted_list {
-        let empty_hash = hash_bytes(b"");
-        let id = new_id();
-        insert_history(&conn, &id, del_path, Some(del_hash), &empty_hash, 0, "deleted", &change_source, None)?;
-        insert_review(&conn, &id, "pending")?;
-        new_entries.push(HistoryEntry {
-            id, file_path: del_path.clone(), old_hash: Some(del_hash.clone()),
-            new_hash: empty_hash, size: 0,
-            operation: "deleted".into(), source: change_source.clone(),
-            timestamp: String::new(), old_path: None,
-            review_status: Some("pending".into()), review_id: None,
-        });
-    }
-
-    Ok(CaptureResult { total_scanned, changes_found: new_entries.len() as u64, new_entries })
-}
-
-/// Get all pending changes (history entries with pending reviews).
-#[command]
-pub fn memory_get_pending(project_path: String) -> Result<Vec<HistoryEntry>, String> {
-    let conn = open_db(&project_path)?;
-    ensure_schema(&conn)?;
+pub fn memory_get_history(project_path: String) -> Result<Vec<TimelineEntry>, String> {
+    let conn = open_memory_db(&project_path)?;
+    initialize_db_schema(&conn)?;
 
     let mut stmt = conn.prepare(
-        "SELECT h.id, h.file_path, h.old_hash, h.new_hash, h.size, h.operation, h.source, h.timestamp, h.old_path, r.status, r.id
-         FROM memory_history h
-         JOIN change_reviews r ON r.history_id = h.id
-         WHERE r.status = 'pending'
-         ORDER BY h.timestamp DESC"
+        "SELECT c.id, c.session_id, c.git_commit_hash, c.type, c.source, c.description, c.timestamp, c.status,
+                s.source, s.description
+         FROM commits c
+         LEFT JOIN sessions s ON s.id = c.session_id
+         ORDER BY c.timestamp DESC"
     ).map_err(|e| e.to_string())?;
 
     let mut result = Vec::new();
     let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        result.push(HistoryEntry {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            file_path: row.get(1).map_err(|e| e.to_string())?,
-            old_hash: row.get(2).map_err(|e| e.to_string())?,
-            new_hash: row.get(3).map_err(|e| e.to_string())?,
-            size: row.get(4).map_err(|e| e.to_string())?,
-            operation: row.get(5).map_err(|e| e.to_string())?,
-            source: row.get(6).map_err(|e| e.to_string())?,
-            timestamp: row.get(7).map_err(|e| e.to_string())?,
-            old_path: row.get(8).map_err(|e| e.to_string())?,
-            review_status: row.get(9).map_err(|e| e.to_string())?,
-            review_id: row.get(10).map_err(|e| e.to_string())?,
-        });
-    }
-    Ok(result)
-}
-
-/// Get full timeline (all history entries with their review status).
-#[command]
-pub fn memory_get_timeline(project_path: String, limit: Option<u32>) -> Result<Vec<HistoryEntry>, String> {
-    let conn = open_db(&project_path)?;
-    ensure_schema(&conn)?;
-    let lim = limit.unwrap_or(500);
-
-    let mut stmt = conn.prepare(
-        "SELECT h.id, h.file_path, h.old_hash, h.new_hash, h.size, h.operation, h.source, h.timestamp, h.old_path, r.status, r.id
-         FROM memory_history h
-         LEFT JOIN change_reviews r ON r.history_id = h.id
-         ORDER BY h.timestamp DESC
-         LIMIT ?1"
-    ).map_err(|e| e.to_string())?;
-
-    let mut result = Vec::new();
-    let mut rows = stmt.query(params![lim]).map_err(|e| e.to_string())?;
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        result.push(HistoryEntry {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            file_path: row.get(1).map_err(|e| e.to_string())?,
-            old_hash: row.get(2).map_err(|e| e.to_string())?,
-            new_hash: row.get(3).map_err(|e| e.to_string())?,
-            size: row.get(4).map_err(|e| e.to_string())?,
-            operation: row.get(5).map_err(|e| e.to_string())?,
-            source: row.get(6).map_err(|e| e.to_string())?,
-            timestamp: row.get(7).map_err(|e| e.to_string())?,
-            old_path: row.get(8).map_err(|e| e.to_string())?,
-            review_status: row.get(9).map_err(|e| e.to_string())?,
-            review_id: row.get(10).map_err(|e| e.to_string())?,
-        });
-    }
-    Ok(result)
-}
-
-/// Get all versions of a single file.
-#[command]
-pub fn memory_get_file_history(project_path: String, file_path: String) -> Result<Vec<HistoryEntry>, String> {
-    let conn = open_db(&project_path)?;
-    ensure_schema(&conn)?;
-
-    let mut stmt = conn.prepare(
-        "SELECT h.id, h.file_path, h.old_hash, h.new_hash, h.size, h.operation, h.source, h.timestamp, h.old_path, r.status, r.id
-         FROM memory_history h
-         LEFT JOIN change_reviews r ON r.history_id = h.id
-         WHERE h.file_path = ?1
-         ORDER BY h.timestamp DESC"
-    ).map_err(|e| e.to_string())?;
-
-    let mut result = Vec::new();
-    let mut rows = stmt.query(params![file_path]).map_err(|e| e.to_string())?;
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        result.push(HistoryEntry {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            file_path: row.get(1).map_err(|e| e.to_string())?,
-            old_hash: row.get(2).map_err(|e| e.to_string())?,
-            new_hash: row.get(3).map_err(|e| e.to_string())?,
-            size: row.get(4).map_err(|e| e.to_string())?,
-            operation: row.get(5).map_err(|e| e.to_string())?,
-            source: row.get(6).map_err(|e| e.to_string())?,
-            timestamp: row.get(7).map_err(|e| e.to_string())?,
-            old_path: row.get(8).map_err(|e| e.to_string())?,
-            review_status: row.get(9).map_err(|e| e.to_string())?,
-            review_id: row.get(10).map_err(|e| e.to_string())?,
-        });
-    }
-    Ok(result)
-}
-
-/// Read file content from the object store by hash.
-#[command]
-pub fn memory_read_version(project_path: String, hash: String) -> Result<String, String> {
-    let bytes = read_blob(&project_path, &hash)?;
-    String::from_utf8(bytes).map_err(|_| "Binary file — cannot display as text".into())
-}
-
-/// Restore a file to a specific version by hash. Records a 'restore' history entry.
-#[command]
-pub fn memory_restore_file(project_path: String, file_path: String, hash: String) -> Result<(), String> {
-    let bytes = read_blob(&project_path, &hash)?;
-    let abs = Path::new(&project_path).join(&file_path);
-    if let Some(p) = abs.parent() {
-        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&abs, &bytes).map_err(|e| e.to_string())?;
-
-    // Record restore in immutable history
-    let conn = open_db(&project_path)?;
-    let id = new_id();
-    let known = get_known_state(&conn)?;
-    let old_hash = known.get(&file_path).cloned();
-    insert_history(&conn, &id, &file_path, old_hash.as_deref(), &hash, bytes.len() as i64, "modified", "restore", None)?;
-    insert_review(&conn, &id, "approved")?;
-    Ok(())
-}
-
-/// Approve a change. History is immutable — only the review status changes.
-#[command]
-pub fn memory_approve_change(project_path: String, history_id: String) -> Result<(), String> {
-    let conn = open_db(&project_path)?;
-    conn.execute(
-        "UPDATE change_reviews SET status = 'approved', review_time = CURRENT_TIMESTAMP, reviewed_by = 'user' WHERE history_id = ?1",
-        params![history_id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Reject a change. Restores the file to its previous version, marks review as rejected.
-/// History entry remains immutable — rejection is recorded in change_reviews.
-#[command]
-pub fn memory_reject_change(project_path: String, history_id: String) -> Result<(), String> {
-    let conn = open_db(&project_path)?;
-    ensure_schema(&conn)?;
-
-    // Fetch the history entry
-    let (file_path, old_hash, operation): (String, Option<String>, String) = conn.query_row(
-        "SELECT file_path, old_hash, operation FROM memory_history WHERE id = ?1",
-        params![history_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    ).map_err(|e| e.to_string())?;
-
-    // Restore old state
-    if let Some(ref oh) = old_hash {
-        if operation != "deleted" {
-            // Restore file content from object store
-            let bytes = read_blob(&project_path, oh)?;
-            let abs = Path::new(&project_path).join(&file_path);
-            if let Some(p) = abs.parent() { std::fs::create_dir_all(p).map_err(|e| e.to_string())?; }
-            std::fs::write(&abs, &bytes).map_err(|e| e.to_string())?;
+        let commit_id: String = row.get(0).map_err(|e| e.to_string())?;
+        
+        // Fetch operations for this commit
+        let mut op_stmt = conn.prepare(
+            "SELECT id, file_path, operation_type, old_path FROM operations WHERE commit_id = ?1"
+        ).map_err(|e| e.to_string())?;
+        
+        let mut ops = Vec::new();
+        let mut op_rows = op_stmt.query(params![commit_id]).map_err(|e| e.to_string())?;
+        while let Some(op_row) = op_rows.next().map_err(|e| e.to_string())? {
+            ops.push(FileOperation {
+                id: op_row.get(0).map_err(|e| e.to_string())?,
+                file_path: op_row.get(1).map_err(|e| e.to_string())?,
+                operation_type: op_row.get(2).map_err(|e| e.to_string())?,
+                old_path: op_row.get(3).map_err(|e| e.to_string())?,
+            });
         }
-    } else if operation == "created" {
-        // New file was created — remove it
-        let abs = Path::new(&project_path).join(&file_path);
-        if abs.exists() { std::fs::remove_file(&abs).map_err(|e| e.to_string())?; }
-    }
 
-    if operation == "deleted" {
-        // File was deleted — recreate it from old_hash
-        if let Some(ref oh) = old_hash {
-            let bytes = read_blob(&project_path, oh)?;
-            let abs = Path::new(&project_path).join(&file_path);
-            if let Some(p) = abs.parent() { std::fs::create_dir_all(p).map_err(|e| e.to_string())?; }
-            std::fs::write(&abs, &bytes).map_err(|e| e.to_string())?;
+        result.push(TimelineEntry {
+            id: commit_id,
+            session_id: row.get(1).map_err(|e| e.to_string())?,
+            git_commit_hash: row.get(2).map_err(|e| e.to_string())?,
+            r#type: row.get(3).map_err(|e| e.to_string())?,
+            source: row.get(4).map_err(|e| e.to_string())?,
+            description: row.get(5).map_err(|e| e.to_string())?,
+            timestamp: row.get(6).map_err(|e| e.to_string())?,
+            status: row.get(7).map_err(|e| e.to_string())?,
+            files: ops,
+            session_source: row.get(8).map_err(|e| e.to_string())?,
+            session_desc: row.get(9).map_err(|e| e.to_string())?,
+        });
+    }
+    Ok(result)
+}
+
+#[command]
+pub fn memory_get_diff(
+    app: AppHandle,
+    project_path: String,
+    from_commit: String,
+    to_commit: String,
+) -> Result<String, String> {
+    let git_path = resolve_git_binary(&app)?;
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(&project_path);
+
+    // Git diff command
+    execute_git(&git_path, &git_dir, work_tree, &["diff", &from_commit, &to_commit])
+}
+
+#[command]
+pub fn memory_restore(
+    app: AppHandle,
+    project_path: String,
+    commit_hash: String,
+    files: Option<Vec<String>>,
+) -> Result<(), String> {
+    let git_path = resolve_git_binary(&app)?;
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(&project_path);
+
+    if let Some(target_files) = files {
+        for file in target_files {
+            execute_git(&git_path, &git_dir, work_tree, &["checkout", &commit_hash, "--", &file])?;
         }
+    } else {
+        // Checkout whole repo state
+        execute_git(&git_path, &git_dir, work_tree, &["checkout", &commit_hash, "."])?;
     }
 
-    // Mark review as rejected (history stays immutable)
+    // Commit the restored state to maintain clean history
+    execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
+    execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", &format!("Restored project state to {}", commit_hash)])?;
+
+    let new_hash = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
+    
+    // Log restoration in database
+    let conn = open_memory_db(&project_path)?;
+    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
     conn.execute(
-        "UPDATE change_reviews SET status = 'rejected', review_time = CURRENT_TIMESTAMP, reviewed_by = 'user' WHERE history_id = ?1",
-        params![history_id],
+        "INSERT INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'restore','system',?3,'approved')",
+        params![commit_id, new_hash, format!("Restored state to {}", commit_hash)]
     ).map_err(|e| e.to_string())?;
-
-    // Record the revert as a new history entry
-    if let Some(ref oh) = old_hash {
-        let rid = new_id();
-        let size = read_blob(&project_path, oh).map(|b| b.len() as i64).unwrap_or(0);
-        insert_history(&conn, &rid, &file_path, None, oh, size, "modified", "restore", None)?;
-        insert_review(&conn, &rid, "approved")?;
-    }
 
     Ok(())
 }
 
-/// Create a named checkpoint representing complete project state.
-/// Approves all pending reviews.
 #[command]
-pub fn memory_create_checkpoint(project_path: String, name: String) -> Result<String, String> {
-    let conn = open_db(&project_path)?;
+pub fn memory_review_change(
+    app: AppHandle,
+    project_path: String,
+    commit_hash: String,
+    status: String, // approved | rejected
+) -> Result<(), String> {
+    let conn = open_memory_db(&project_path)?;
     ensure_schema(&conn)?;
 
-    // Approve all pending reviews
-    conn.execute(
-        "UPDATE change_reviews SET status = 'approved', review_time = CURRENT_TIMESTAMP, reviewed_by = 'auto' WHERE status = 'pending'",
-        [],
-    ).map_err(|e| e.to_string())?;
+    if status == "rejected" {
+        let git_path = resolve_git_binary(&app)?;
+        let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+        let work_tree = Path::new(&project_path);
 
-    // Build current project state from history
-    let state = get_known_state(&conn)?;
-    let file_count = state.len() as i64;
+        // 1. Calculate and apply reverse patch (revert commit) preserving downstream changes
+        execute_git(&git_path, &git_dir, work_tree, &["revert", "--no-commit", &commit_hash])?;
 
-    let cp_id = format!("cp-{}", uuid::Uuid::new_v4());
-    conn.execute(
-        "INSERT INTO memory_checkpoints (id, name, file_count) VALUES (?1, ?2, ?3)",
-        params![cp_id, name, file_count],
-    ).map_err(|e| e.to_string())?;
+        // 2. Commit the reversion
+        execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", &format!("Reverted change {}", commit_hash)])?;
+        let new_hash = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
 
-    for (path, hash) in &state {
+        // 3. Log revert in database
+        let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
         conn.execute(
-            "INSERT INTO checkpoint_files (checkpoint_id, file_path, content_hash) VALUES (?1,?2,?3)",
-            params![cp_id, path, hash],
+            "INSERT INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'restore','system',?3,'approved')",
+            params![commit_id, new_hash, format!("Reverted change {}", commit_hash)]
         ).map_err(|e| e.to_string())?;
     }
 
-    Ok(cp_id)
-}
-
-/// List all checkpoints.
-#[command]
-pub fn memory_get_checkpoints(project_path: String) -> Result<Vec<MemoryCheckpoint>, String> {
-    let conn = open_db(&project_path)?;
-    ensure_schema(&conn)?;
-
-    let mut stmt = conn.prepare(
-        "SELECT id, name, timestamp, file_count FROM memory_checkpoints ORDER BY timestamp DESC"
+    // Update reviews metadata
+    conn.execute(
+        "INSERT OR REPLACE INTO reviews (id, commit_hash, status, reviewed_by, review_time) VALUES (?1,?2,?3,'user',CURRENT_TIMESTAMP)",
+        params![format!("rev-{}", uuid::Uuid::new_v4()), commit_hash, status]
     ).map_err(|e| e.to_string())?;
 
-    let mut result = Vec::new();
-    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        result.push(MemoryCheckpoint {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            name: row.get(1).map_err(|e| e.to_string())?,
-            timestamp: row.get(2).map_err(|e| e.to_string())?,
-            file_count: row.get(3).map_err(|e| e.to_string())?,
-        });
-    }
-    Ok(result)
+    conn.execute(
+        "UPDATE commits SET status = ?1 WHERE git_commit_hash = ?2",
+        params![status, commit_hash]
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
-/// Check if memory is initialized for a project path.
+#[command]
+pub fn memory_apply_hunks(
+    app: AppHandle,
+    project_path: String,
+    commit_hash: String,
+    approved_hunks: Vec<HunkSelection>,
+) -> Result<(), String> {
+    let git_path = resolve_git_binary(&app)?;
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(&project_path);
+
+    // Filter hunks: for any unapproved/rejected file, revert it
+    for hunk in approved_hunks {
+        if !hunk.approved {
+            // Revert just this file's changes from the commit hash
+            let file_diff = execute_git(&git_path, &git_dir, work_tree, &["diff", &format!("{}~1", commit_hash), &commit_hash, "--", &hunk.file_path])?;
+            if !file_diff.is_empty() {
+                // Apply reverse patch for this specific file
+                let mut cmd = Command::new(&git_path);
+                cmd.arg(format!("--git-dir={}", git_dir.to_string_lossy()));
+                cmd.arg(format!("--work-tree={}", work_tree.to_string_lossy()));
+                cmd.args(&["apply", "--reverse", "-"]);
+                
+                let mut child = cmd.stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                    .map_err(|e| format!("Failed to spawn git apply: {}", e))?;
+
+                {
+                    use std::io::Write;
+                    let stdin = child.stdin.as_mut().ok_or("Failed to open stdin")?;
+                    stdin.write_all(file_diff.as_bytes()).map_err(|e| e.to_string())?;
+                }
+
+                let output = child.wait_with_output().map_err(|e| e.to_string())?;
+                if !output.status.success() {
+                    return Err(format!("Failed to revert hunk: {}", String::from_utf8_lossy(&output.stderr)));
+                }
+            }
+        }
+    }
+
+    // Commit the resulting work tree state
+    execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
+    execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", &format!("Partially applied changes from {}", commit_hash)])?;
+    
+    let new_hash = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
+
+    // Record review update
+    let conn = open_memory_db(&project_path)?;
+    conn.execute(
+        "UPDATE commits SET status = 'approved' WHERE git_commit_hash = ?1",
+        params![commit_hash]
+    ).map_err(|e| e.to_string())?;
+
+    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
+    conn.execute(
+        "INSERT INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'restore','system',?3,'approved')",
+        params![commit_id, new_hash, format!("Partially applied changes from {}", commit_hash)]
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Read file content from a specific commit version
+#[command]
+pub fn memory_read_version(
+    app: AppHandle,
+    project_path: String,
+    commit_hash: String,
+    file_path: String,
+) -> Result<String, String> {
+    let git_path = resolve_git_binary(&app)?;
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(&project_path);
+
+    execute_git(&git_path, &git_dir, work_tree, &["show", &format!("{}:{}", commit_hash, file_path)])
+}
+
 #[command]
 pub fn memory_is_initialized(project_path: String) -> Result<bool, String> {
-    let db = db_path(&project_path);
-    Ok(db.exists())
+    let git_dir = Path::new(&project_path).join(".nexora").join("repo");
+    Ok(git_dir.exists())
+}
+
+// ── Private schema helper to run V3 migration ──
+fn ensure_schema(conn: &Connection) -> Result<(), String> {
+    initialize_db_schema(conn)
 }

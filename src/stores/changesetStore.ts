@@ -2,33 +2,32 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { Changeset, ChangesetFile, ReviewComment, ChangesetStatus, FileChangeStatus, CommentSeverity, ChangeSource } from '../types/changeset';
 
-// ── Nexora Memory Core Types ──
+// ── Nexora Memory Core Git-backed Types ──
 
-export interface HistoryEntry {
+export interface FileOperation {
   id: string;
   file_path: string;
-  old_hash: string | null;
-  new_hash: string;
-  size: number;
-  operation: string;   // created | modified | deleted | renamed
-  source: string;      // user | agent | terminal | external | system | restore
-  timestamp: string;
+  operation_type: string; // created | modified | deleted | renamed
   old_path: string | null;
-  review_status: string | null;  // pending | approved | rejected
-  review_id: string | null;
 }
 
-export interface CaptureResult {
-  total_scanned: number;
-  changes_found: number;
-  new_entries: HistoryEntry[];
-}
-
-export interface MemoryCheckpoint {
+export interface TimelineEntry {
   id: string;
-  name: string;
+  session_id: string | null;
+  git_commit_hash: string;
+  type: string; // snapshot | checkpoint | ai | restore
+  source: string; // user | agent | terminal | external
+  description: string | null;
   timestamp: string;
-  file_count: number;
+  status: string; // pending | approved | rejected
+  files: FileOperation[];
+  session_source: string | null;
+  session_desc: string | null;
+}
+
+export interface HunkSelection {
+  file_path: string;
+  approved: boolean;
 }
 
 interface ChangesetState {
@@ -46,11 +45,9 @@ interface ChangesetState {
   // Memory Core state
   isMemoryInitialized: boolean;
   isInitializing: boolean;
-  pendingChanges: HistoryEntry[];
-  timeline: HistoryEntry[];
+  timeline: TimelineEntry[];
   isCapturing: boolean;
   isLoadingChanges: boolean;
-  checkpoints: MemoryCheckpoint[];
 
   // Actions — UI
   setReviewCenterOpen: (open: boolean) => void;
@@ -62,15 +59,14 @@ interface ChangesetState {
 
   // Actions — Memory Core
   initMemory: (projectPath: string) => Promise<void>;
-  captureChanges: (projectPath: string, source?: string) => Promise<CaptureResult | null>;
-  loadPendingChanges: (projectPath: string) => Promise<void>;
-  loadTimeline: (projectPath: string, limit?: number) => Promise<void>;
-  approveChange: (projectPath: string, historyId: string) => Promise<void>;
-  rejectChange: (projectPath: string, historyId: string) => Promise<void>;
-  restoreFile: (projectPath: string, filePath: string, hash: string) => Promise<void>;
-  createCheckpoint: (projectPath: string, name: string) => Promise<void>;
-  loadCheckpoints: (projectPath: string) => Promise<void>;
-  readVersion: (projectPath: string, hash: string) => Promise<string>;
+  captureSnapshot: (projectPath: string, source: string, description?: string, sessionId?: string) => Promise<string | null>;
+  loadHistory: (projectPath: string) => Promise<void>;
+  createCheckpoint: (projectPath: string, name: string) => Promise<string | null>;
+  restoreCommit: (projectPath: string, commitHash: string, files?: string[]) => Promise<void>;
+  reviewCommit: (projectPath: string, commitHash: string, status: 'approved' | 'rejected') => Promise<void>;
+  applyHunks: (projectPath: string, commitHash: string, approvedHunks: HunkSelection[]) => Promise<void>;
+  readCommitVersion: (projectPath: string, commitHash: string, filePath: string) => Promise<string>;
+  getDiff: (projectPath: string, fromCommit: string, toCommit: string) => Promise<string>;
 
   // Stub changeset API calls (kept for compatibility)
   loadChangesets: () => Promise<void>;
@@ -99,11 +95,9 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
   // Memory Core state
   isMemoryInitialized: false,
   isInitializing: false,
-  pendingChanges: [],
   timeline: [],
   isCapturing: false,
   isLoadingChanges: false,
-  checkpoints: [],
 
   // UI actions
   setReviewCenterOpen: (open: boolean) => set({ isReviewCenterOpen: open }),
@@ -113,108 +107,106 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
   setAgentInspectorOpen: (open: boolean) => set({ isAgentInspectorOpen: open }),
   setActiveReviewTab: (tab) => set({ activeReviewTab: tab }),
 
-  // ── Memory Core actions ──
+  // ── Memory Core Actions ──
 
   initMemory: async (projectPath: string) => {
     set({ isInitializing: true });
     try {
-      await invoke<number>('memory_init', { projectPath });
+      await invoke<string>('memory_initialize', { projectPath });
       set({ isMemoryInitialized: true, isInitializing: false });
     } catch (e) {
-      console.error('memory_init failed:', e);
+      console.error('memory_initialize failed:', e);
       set({ isInitializing: false });
     }
   },
 
-  captureChanges: async (projectPath: string, source?: string) => {
+  captureSnapshot: async (projectPath: string, source: string, description?: string, sessionId?: string) => {
     set({ isCapturing: true });
     try {
-      const result = await invoke<CaptureResult>('memory_capture', { projectPath, source: source || null });
-      // Reload pending changes after capture
-      const pending = await invoke<HistoryEntry[]>('memory_get_pending', { projectPath });
-      set({ pendingChanges: pending, isCapturing: false });
-      return result;
+      const commitHash = await invoke<string>('memory_snapshot', {
+        projectPath,
+        source,
+        description: description || null,
+        sessionId: sessionId || null
+      });
+      // Reload history timeline after snapshot
+      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
+      set({ timeline: history, isCapturing: false });
+      return commitHash;
     } catch (e) {
-      console.error('memory_capture failed:', e);
+      console.error('memory_snapshot failed:', e);
       set({ isCapturing: false });
       return null;
     }
   },
 
-  loadPendingChanges: async (projectPath: string) => {
+  loadHistory: async (projectPath: string) => {
     set({ isLoadingChanges: true });
     try {
-      const pending = await invoke<HistoryEntry[]>('memory_get_pending', { projectPath });
-      set({ pendingChanges: pending, isLoadingChanges: false });
+      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
+      set({ timeline: history, isLoadingChanges: false });
     } catch (e) {
-      console.error('memory_get_pending failed:', e);
-      set({ pendingChanges: [], isLoadingChanges: false });
-    }
-  },
-
-  loadTimeline: async (projectPath: string, limit?: number) => {
-    try {
-      const tl = await invoke<HistoryEntry[]>('memory_get_timeline', { projectPath, limit: limit || null });
-      set({ timeline: tl });
-    } catch (e) {
-      console.error('memory_get_timeline failed:', e);
-    }
-  },
-
-  approveChange: async (projectPath: string, historyId: string) => {
-    try {
-      await invoke('memory_approve_change', { projectPath, historyId });
-      // Remove from pending
-      set((s) => ({ pendingChanges: s.pendingChanges.filter(c => c.id !== historyId) }));
-    } catch (e) {
-      console.error('memory_approve_change failed:', e);
-    }
-  },
-
-  rejectChange: async (projectPath: string, historyId: string) => {
-    try {
-      await invoke('memory_reject_change', { projectPath, historyId });
-      // Remove from pending
-      set((s) => ({ pendingChanges: s.pendingChanges.filter(c => c.id !== historyId) }));
-    } catch (e) {
-      console.error('memory_reject_change failed:', e);
-    }
-  },
-
-  restoreFile: async (projectPath: string, filePath: string, hash: string) => {
-    try {
-      await invoke('memory_restore_file', { projectPath, filePath, hash });
-    } catch (e) {
-      console.error('memory_restore_file failed:', e);
+      console.error('memory_get_history failed:', e);
+      set({ timeline: [], isLoadingChanges: false });
     }
   },
 
   createCheckpoint: async (projectPath: string, name: string) => {
     try {
-      await invoke<string>('memory_create_checkpoint', { projectPath, name });
-      set({ pendingChanges: [] });
-      // Reload checkpoints
-      const cps = await invoke<MemoryCheckpoint[]>('memory_get_checkpoints', { projectPath });
-      set({ checkpoints: cps });
+      const hash = await invoke<string>('memory_create_checkpoint', { projectPath, name });
+      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
+      set({ timeline: history });
+      return hash;
     } catch (e) {
       console.error('memory_create_checkpoint failed:', e);
+      return null;
     }
   },
 
-  loadCheckpoints: async (projectPath: string) => {
+  restoreCommit: async (projectPath: string, commitHash: string, files?: string[]) => {
     try {
-      const cps = await invoke<MemoryCheckpoint[]>('memory_get_checkpoints', { projectPath });
-      set({ checkpoints: cps });
+      await invoke('memory_restore', { projectPath, commitHash, files: files || null });
+      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
+      set({ timeline: history });
     } catch (e) {
-      console.error('memory_get_checkpoints failed:', e);
+      console.error('memory_restore failed:', e);
     }
   },
 
-  readVersion: async (projectPath: string, hash: string) => {
+  reviewCommit: async (projectPath: string, commitHash: string, status: 'approved' | 'rejected') => {
     try {
-      return await invoke<string>('memory_read_version', { projectPath, hash });
+      await invoke('memory_review_change', { projectPath, commitHash, status });
+      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
+      set({ timeline: history });
+    } catch (e) {
+      console.error('memory_review_change failed:', e);
+    }
+  },
+
+  applyHunks: async (projectPath: string, commitHash: string, approvedHunks: HunkSelection[]) => {
+    try {
+      await invoke('memory_apply_hunks', { projectPath, commitHash, approvedHunks });
+      const history = await invoke<TimelineEntry[]>('memory_get_history', { projectPath });
+      set({ timeline: history });
+    } catch (e) {
+      console.error('memory_apply_hunks failed:', e);
+    }
+  },
+
+  readCommitVersion: async (projectPath: string, commitHash: string, filePath: string) => {
+    try {
+      return await invoke<string>('memory_read_version', { projectPath, commitHash, filePath });
     } catch (e) {
       console.error('memory_read_version failed:', e);
+      return '';
+    }
+  },
+
+  getDiff: async (projectPath: string, fromCommit: string, toCommit: string) => {
+    try {
+      return await invoke<string>('memory_get_diff', { projectPath, fromCommit, toCommit });
+    } catch (e) {
+      console.error('memory_get_diff failed:', e);
       return '';
     }
   },
