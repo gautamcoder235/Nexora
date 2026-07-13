@@ -10,7 +10,7 @@
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  background-color: #030307;
+  background-color: var(--bg-primary);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -18,7 +18,7 @@
   padding: 4rem 2rem;
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.05) transparent;
+  scrollbar-color: var(--border-glass) transparent;
 }
 
 .browser-home-container::-webkit-scrollbar {
@@ -221,22 +221,21 @@
   100% { background-position: 0% 50%; }
 }
 
-/* Typography styles */
 .browser-home-clock {
   font-size: 4.25rem;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: #d9d8ed;
+  color: var(--text-primary);
   margin-top: 1rem;
   line-height: 1;
-  text-shadow: 0 0 30px rgba(168, 85, 247, 0.1);
+  text-shadow: 0 0 30px rgba(var(--accent-primary-rgb), 0.1);
 }
 
 .browser-home-date {
   font-size: 13px;
   font-weight: 550;
   letter-spacing: 0.18em;
-  color: #716f94;
+  color: var(--text-muted);
   text-transform: uppercase;
   margin-top: 0.85rem;
 }
@@ -244,7 +243,7 @@
 .browser-home-greeting {
   font-size: 2.1rem;
   font-weight: 500;
-  color: #c7c6de;
+  color: var(--text-secondary);
   margin-top: 2.2rem;
   letter-spacing: -0.01em;
 }
@@ -257,7 +256,7 @@
   font-size: 11.5px;
   font-weight: 500;
   font-style: italic;
-  color: #716f94;
+  color: var(--text-muted);
   margin-top: 0.85rem;
   max-width: 480px;
   margin-left: auto;
@@ -284,13 +283,13 @@
   height: 52px;
   padding: 0 110px 0 46px;
   border-radius: 16px;
-  background: rgba(9, 9, 14, 0.75);
+  background: var(--bg-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-glass);
   font-size: 12px;
   font-weight: 500;
-  color: #f4f4f5;
+  color: var(--text-primary);
   transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 
     0 10px 30px rgba(0, 0, 0, 0.25),
@@ -298,12 +297,12 @@
 }
 
 .browser-search-input::placeholder {
-  color: #52525b;
+  color: var(--text-muted);
 }
 
 .browser-search-input:focus {
   outline: none;
-  background: rgba(8, 8, 12, 0.9);
+  background: var(--bg-glass-hover);
   border-color: rgba(var(--accent-primary-rgb, 56, 189, 248), 0.45);
   box-shadow: 
     0 0 0 3px rgba(var(--accent-primary-rgb, 56, 189, 248), 0.1),
@@ -319,7 +318,7 @@
   transform: translateY(-50%);
   display: flex;
   align-items: center;
-  color: #52525b;
+  color: var(--text-muted);
   pointer-events: none;
   transition: color 250ms ease;
   z-index: 5;
@@ -358,10 +357,10 @@
   font-family: inherit;
   font-size: 8.5px;
   font-weight: 700;
-  color: #52525b;
+  color: var(--text-muted);
   padding: 3px 6px;
   background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-glass);
   border-radius: 6px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.01);
   transition: all 250ms ease;
@@ -382,7 +381,7 @@
   padding: 0 16px;
   border-radius: 12px;
   background: linear-gradient(135deg, var(--accent-primary, #38bdf8) 0%, var(--accent-secondary, #2563eb) 100%);
-  color: #ffffff;
+  color: var(--text-inverse);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -425,7 +424,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #52525b;
+  color: var(--text-muted);
 }
 
 .customize-btn {
@@ -433,7 +432,7 @@
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #71717a;
+  color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
   padding: 2px 8px;
@@ -460,10 +459,10 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  background: rgba(15, 15, 22, 0.45);
+  background: var(--bg-glass-light);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
   border-radius: 16px;
   transition: 
     background 300ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -478,11 +477,11 @@
 }
 
 .quick-link-card:hover {
-  background: rgba(20, 20, 30, 0.6);
-  border-color: rgba(168, 85, 247, 0.35);
+  background: var(--bg-glass-hover);
+  border-color: rgba(var(--accent-primary-rgb), 0.35);
   box-shadow: 
     0 12px 30px rgba(0, 0, 0, 0.3),
-    0 0 20px rgba(168, 85, 247, 0.06),
+    0 0 20px rgba(var(--accent-primary-rgb), 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -503,7 +502,7 @@
   height: 32px;
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
   flex-shrink: 0;
   transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -523,7 +522,7 @@
 .quick-link-title {
   font-size: 11.5px;
   font-weight: 700;
-  color: #e4e4e7;
+  color: var(--text-primary);
   transition: color 250ms ease;
   white-space: nowrap;
   overflow: hidden;
@@ -537,7 +536,7 @@
 .quick-link-description {
   font-size: 9px;
   font-weight: 500;
-  color: #52525b;
+  color: var(--text-muted);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -558,7 +557,7 @@
   border-radius: 6px;
   background: transparent;
   border: none;
-  color: #52525b;
+  color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
   opacity: 0;
@@ -600,7 +599,7 @@
   height: 52px;
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.01);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
   border-radius: 12px;
   min-w: 0;
   text-align: left;
@@ -608,8 +607,8 @@
 }
 
 .recent-link-card:hover {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--bg-glass-light);
+  border-color: var(--border-glass-hover);
 }
 
 .recent-link-card-content {
@@ -624,7 +623,7 @@
 .recent-link-title {
   font-size: 10px;
   font-weight: 600;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -633,7 +632,7 @@
 }
 
 .recent-link-card:hover .recent-link-title {
-  color: #e4e4e7;
+  color: var(--text-primary);
 }
 
 .recent-link-time {
@@ -642,7 +641,7 @@
   gap: 4px;
   font-size: 8px;
   font-weight: 500;
-  color: #52525b;
+  color: var(--text-muted);
 }
 
 .recent-link-delete-btn {
@@ -657,7 +656,7 @@
   border-radius: 4px;
   background: transparent;
   border: none;
-  color: #3f3f46;
+  color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
   transition: all 200ms ease;
@@ -681,14 +680,14 @@
   left: 0;
   right: 0;
   margin-top: 8px;
-  background: rgba(9, 9, 14, 0.94);
+  background: var(--bg-glass);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
-  border: 1px solid rgba(168, 85, 247, 0.25);
+  border: 1px solid var(--border-glass-hover);
   border-radius: 16px;
   box-shadow: 
     0 20px 50px rgba(0, 0, 0, 0.6),
-    0 0 30px rgba(168, 85, 247, 0.12);
+    0 0 30px rgba(var(--accent-primary-rgb), 0.12);
   z-index: 50;
   max-height: 260px;
   overflow-y: auto;
@@ -740,7 +739,7 @@
   height: 24px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
   flex-shrink: 0;
   transition: all 200ms ease;
 }
@@ -757,7 +756,7 @@
 .suggestion-title-text {
   font-size: 11px;
   font-weight: 600;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -774,7 +773,7 @@
 .suggestion-url-badge {
   font-size: 8px;
   font-family: inherit;
-  color: #52525b;
+  color: var(--text-muted);
   max-w: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -801,15 +800,15 @@
 }
 
 .suggestion-type-badge.type-history {
-  background: rgba(245, 158, 11, 0.1);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: rgba(var(--accent-warning-rgb), 0.1);
+  color: var(--accent-warning);
+  border: 1px solid rgba(var(--accent-warning-rgb), 0.2);
 }
 
 .suggestion-type-badge.type-quicklink {
-  background: rgba(16, 185, 129, 0.1);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: rgba(var(--accent-success-rgb), 0.1);
+  color: var(--accent-success);
+  border: 1px solid rgba(var(--accent-success-rgb), 0.2);
 }
 
 /* Suggestion Interactive States */
@@ -831,7 +830,7 @@
 }
 
 .suggestion-item.active .suggestion-title-text {
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .suggestion-item:hover {
@@ -848,7 +847,7 @@
 .customize-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(3, 3, 5, 0.7);
+  background: var(--bg-overlay);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   z-index: 1000;
@@ -859,7 +858,7 @@
 }
 
 .customize-modal {
-  background: rgba(10, 10, 16, 0.85);
+  background: var(--bg-glass);
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
   border: 1px solid rgba(var(--accent-primary-rgb, 56, 189, 248), 0.25);
@@ -873,11 +872,11 @@
   height: 40px;
   padding: 0 14px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-glass);
   font-family: inherit;
   font-size: 11.5px;
-  color: #f4f4f5;
+  color: var(--text-primary);
   transition: all 250ms ease;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
@@ -894,9 +893,9 @@
 .icon-select-btn {
   padding: 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
   background: rgba(0, 0, 0, 0.4);
-  color: #71717a;
+  color: var(--text-muted);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -907,8 +906,8 @@
 }
 
 .icon-select-btn:hover {
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #e4e4e7;
+  border-color: var(--border-glass-hover);
+  color: var(--text-primary);
   transform: translateY(-1px);
 }
 
@@ -969,7 +968,7 @@
   bottom: 16px;
   left: 16px;
   right: 16px;
-  background: rgba(9, 9, 14, 0.94);
+  background: var(--bg-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(var(--accent-primary-rgb, 56, 189, 248), 0.25);
@@ -986,10 +985,10 @@
 }
 
 .picker-toast.toast-error {
-  border-color: rgba(239, 68, 68, 0.25);
+  border-color: rgba(var(--accent-error-rgb), 0.25);
   box-shadow: 
     0 15px 30px rgba(0, 0, 0, 0.5),
-    0 0 20px rgba(239, 68, 68, 0.08);
+    0 0 20px rgba(var(--accent-error-rgb), 0.08);
 }
 
 @keyframes slideInUp {

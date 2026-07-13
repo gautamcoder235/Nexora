@@ -1651,10 +1651,10 @@ export const SettingsModal: React.FC = () => {
                           : 'border border-transparent'
                       }`}
                     >
-                      <label className="text-xs text-zinc-400 font-semibold uppercase tracking-wider block">Sidebar Width Limit ({localSettings.appearance.layout.sidebarWidth || 260}px)</label>
+                      <label className="text-xs text-zinc-400 font-semibold uppercase tracking-wider block">Sidebar Width Limit ({localSettings.appearance.layout.sidebarWidth || 490}px)</label>
                       <input 
                         type="range" min="220" max="500" step="10"
-                        value={localSettings.appearance.layout.sidebarWidth || 260}
+                        value={localSettings.appearance.layout.sidebarWidth || 490}
                         onChange={(e) => updateLocalNested('appearance.layout.sidebarWidth', parseInt(e.target.value))}
                         className="w-full h-1 bg-[#1a1a24] rounded-lg appearance-none cursor-pointer accent-accent-primary"
                       />

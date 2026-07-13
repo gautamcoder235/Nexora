@@ -9,8 +9,11 @@ interface CreateTaskModalProps {
 }
 
 const PRIORITIES: Priority[] = ['low', 'medium', 'high', 'critical'];
-const PRIORITY_COLOR: Record<Priority, string> = {
-  low: '#38bdf8', medium: '#f59e0b', high: '#f97316', critical: '#ef4444',
+const PRIORITY_RGB: Record<Priority, string> = {
+  low: 'var(--accent-info-rgb)',
+  medium: 'var(--accent-warning-rgb)',
+  high: 'var(--accent-primary-rgb)',
+  critical: 'var(--accent-error-rgb)',
 };
 
 export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalProps) {
@@ -34,7 +37,7 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
   }
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-bg-primary/60 backdrop-blur-sm z-50 flex items-center justify-center fade-in" onClick={onClose}>
       <div
         className="bg-bg-secondary border border-border-glass rounded-xl w-full max-w-md shadow-2xl slide-up"
         onClick={e => e.stopPropagation()}
@@ -84,9 +87,9 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
                   onClick={() => setPriority(p)}
                   className="flex-1 py-1.5 rounded-lg border text-[10px] font-bold uppercase transition-all cursor-pointer"
                   style={{
-                    borderColor: priority === p ? `${PRIORITY_COLOR[p]}60` : 'var(--border-glass)',
-                    color: priority === p ? PRIORITY_COLOR[p] : 'var(--text-muted)',
-                    background: priority === p ? `${PRIORITY_COLOR[p]}15` : 'transparent',
+                    borderColor: priority === p ? `rgba(${PRIORITY_RGB[p]}, 0.38)` : 'var(--border-glass)',
+                    color: priority === p ? `rgb(${PRIORITY_RGB[p]})` : 'var(--text-muted)',
+                    background: priority === p ? `rgba(${PRIORITY_RGB[p]}, 0.1)` : 'transparent',
                   }}
                 >
                   {p}
@@ -138,7 +141,7 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
             <button
               type="submit"
               disabled={!title.trim()}
-              className="flex-1 py-2.5 rounded-lg bg-accent-primary hover:bg-accent-secondary disabled:opacity-40 disabled:cursor-not-allowed text-zinc-950 text-sm font-bold transition-colors cursor-pointer"
+              className="flex-1 py-2.5 rounded-lg bg-accent-primary hover:bg-accent-secondary disabled:opacity-40 disabled:cursor-not-allowed text-text-inverse text-sm font-bold transition-colors cursor-pointer"
             >
               Create Task
             </button>

@@ -1,6 +1,6 @@
-﻿import React, { useEffect, useState, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import React, { useEffect, useState, useRef } from "react";
 import "./PerformanceOverlay.css";
+import { SystemMetricsService } from "../services/SystemMetricsService";
 
 interface Metrics {
   fps: number;
@@ -123,41 +123,18 @@ export const PerformanceOverlay: React.FC = () => {
     };
   }, [visible]);
 
-  // Periodic polling for backend telemetry and system metrics
+  // Subscribe to shared SystemMetricsService — eliminates the duplicate
+  // get_system_metrics IPC call that was also polling in App.tsx
   useEffect(() => {
     if (!visible) return;
 
-    const queryBackendMetrics = async () => {
-      try {
-        // Query system RAM/CPU
-        const sysMetrics = await invoke<{ cpu: number; ram_gb: number }>("get_system_metrics");
-        
-        // Query average PTY communication latency from terminal metrics
-        const termMetrics = await invoke<Record<string, { emit_avg_ms: number }>>("get_terminal_metrics");
-        let totalPty = 0;
-        let ptyCount = 0;
-        if (termMetrics) {
-          for (const key in termMetrics) {
-            totalPty += termMetrics[key].emit_avg_ms || 0;
-            ptyCount++;
-          }
-        }
-        const avgPty = ptyCount > 0 ? totalPty / ptyCount : 0;
-
-        setMetrics((m) => ({
-          ...m,
-          systemCpu: Math.round(sysMetrics.cpu),
-          systemRam: parseFloat(sysMetrics.ram_gb.toFixed(1)),
-          ptyLatency: parseFloat(avgPty.toFixed(1)),
-        }));
-      } catch (e) {
-        console.warn("Telemetry query failed:", e);
-      }
-    };
-
-    queryBackendMetrics();
-    const interval = setInterval(queryBackendMetrics, 1500);
-    return () => clearInterval(interval);
+    return SystemMetricsService.subscribe((sysMetrics) => {
+      setMetrics((m) => ({
+        ...m,
+        systemCpu: Math.round(sysMetrics.cpu),
+        systemRam: parseFloat(sysMetrics.ram_gb.toFixed(1)),
+      }));
+    });
   }, [visible]);
 
   if (!visible) return null;

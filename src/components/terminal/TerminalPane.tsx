@@ -713,7 +713,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
   return (
     <div 
       data-pane-id={paneId}
-      className="terminal-pane terminal-pane-direct relative w-full h-full bg-[#000000] font-mono overflow-hidden"
+      className="terminal-pane terminal-pane-direct relative w-full h-full bg-[var(--terminal-bg)] font-mono overflow-hidden"
       onDragEnter={handleDomDragEnter}
       onDragOver={handleDomDragOver}
       onDragLeave={handleDomDragLeave}
@@ -721,14 +721,14 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     >
       {/* Connecting/Loading Overlay */}
       {termSession?.status === 'connecting' && (
-        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#000000]/70 backdrop-blur-[6px] transition-all duration-300 pointer-events-none select-none">
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-bg-primary/70 backdrop-blur-[6px] transition-all duration-300 pointer-events-none select-none">
           <div className="flex flex-col items-center justify-center p-6 text-center gap-3">
-            <div className="w-8 h-8 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-accent-primary/20 border-t-accent-primary rounded-full animate-spin" />
             <div>
-              <p className="text-zinc-200 text-[11px] font-mono tracking-wide">
+              <p className="text-text-primary text-[11px] font-mono tracking-wide">
                 Warming PTY Shell...
               </p>
-              <p className="text-zinc-500 text-[9px] font-mono mt-1">
+              <p className="text-text-muted text-[9px] font-mono mt-1">
                 Allocating process context
               </p>
             </div>
@@ -747,24 +747,24 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
       {/* Transparent Glassmorphic File Drop Overlay */}
       {dragFileType && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-bg-primary/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
           <div className={`m-2.5 inset-0 absolute border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3 ${
-            dragFileType === 'image' ? 'border-[#38bdf8]/40' : 'border-[#10b981]/40'
+            dragFileType === 'image' ? 'border-accent-primary/40' : 'border-success/40'
           }`}>
             <div className={`p-3 border rounded-full animate-bounce ${
-              dragFileType === 'image' ? 'bg-[#38bdf8]/10 border-[#38bdf8]/20' : 'bg-[#10b981]/10 border-[#10b981]/20'
+              dragFileType === 'image' ? 'bg-accent-primary/10 border-accent-primary/20' : 'bg-success/10 border-success/20'
             }`}>
               {dragFileType === 'image' ? (
-                <ImageIcon className="w-6 h-6 text-[#38bdf8]" />
+                <ImageIcon className="w-6 h-6 text-accent-primary" />
               ) : (
-                <FileText className="w-6 h-6 text-[#10b981]" />
+                <FileText className="w-6 h-6 text-success" />
               )}
             </div>
             <div>
-              <p className="text-zinc-100 text-[11px] font-bold tracking-wider uppercase font-sans">
+              <p className="text-text-primary text-[11px] font-bold tracking-wider uppercase font-sans">
                 {dragFileType === 'image' ? 'Drop to send image' : 'Drop to paste file path'}
               </p>
-              <p className="text-zinc-400 text-[9px] font-mono mt-1 max-w-[200px]">
+              <p className="text-text-secondary text-[9px] font-mono mt-1 max-w-[200px]">
                 {dragFileType === 'image' 
                   ? 'Inserts absolute image path into terminal input' 
                   : 'Inserts absolute file path into terminal input'
@@ -777,16 +777,16 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
       {/* Transparent Glassmorphic DOM Text Drop Overlay */}
       {isDomDragOver && domDragType === 'text' && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#09090b]/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
-          <div className="m-2.5 inset-0 absolute border-2 border-dashed border-[#a855f7]/40 rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3">
-            <div className="p-3 bg-[#a855f7]/10 border border-[#a855f7]/20 rounded-full animate-bounce">
-              <FileText className="w-6 h-6 text-[#a855f7]" />
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-bg-primary/85 backdrop-blur-[3px] transition-all duration-300 pointer-events-none select-none">
+          <div className="m-2.5 inset-0 absolute border-2 border-dashed border-accent-primary/40 rounded-lg flex flex-col items-center justify-center p-6 text-center gap-3">
+            <div className="p-3 bg-accent-primary/10 border border-accent-primary/20 rounded-full animate-bounce">
+              <FileText className="w-6 h-6 text-accent-primary" />
             </div>
             <div>
-              <p className="text-zinc-100 text-[11px] font-bold tracking-wider uppercase font-sans">
+              <p className="text-text-primary text-[11px] font-bold tracking-wider uppercase font-sans">
                 Drop to paste text
               </p>
-              <p className="text-zinc-400 text-[9px] font-mono mt-1 max-w-[200px]">
+              <p className="text-text-secondary text-[9px] font-mono mt-1 max-w-[200px]">
                 Inserts the dragged text content directly into the terminal
               </p>
             </div>

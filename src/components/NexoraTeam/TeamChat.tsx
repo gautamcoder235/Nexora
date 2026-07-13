@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTeamStore } from '../../stores/teamStore';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { AgentMessage } from '../../types/agent';
 import { Send, User, Bot, AlertTriangle, ShieldCheck, Sparkles, MessageSquare, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -49,9 +50,13 @@ export const TeamChat: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              if (window.confirm('Are you sure you want to clear the team communication log?')) {
-                clearAllMessages();
-              }
+              useOrchestratorStore.getState().showConfirmDialog(
+                "Clear Log",
+                "Are you sure you want to clear the team communication log?",
+                () => {
+                  clearAllMessages();
+                }
+              );
             }}
             className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-[#1B1B22] bg-[#1A1A24]/30 text-[10px] font-mono text-zinc-400 hover:text-red-400 hover:border-red-950/50 hover:bg-red-950/20 transition-all active:scale-95"
             title="Clear Communication Log"

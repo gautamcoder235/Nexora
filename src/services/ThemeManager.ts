@@ -136,7 +136,7 @@ export class ThemeManager {
     }
   }
 
-  public static applyAppearance(settings: AppearanceSettings) {
+  public static applyAppearance(settings: AppearanceSettings, activeSidebarWidth?: number, activeTopPanelHeight?: number) {
     if (!settings) return;
 
     // 1. Resolve Theme Definition
@@ -166,7 +166,7 @@ export class ThemeManager {
     this.applyAccessibilityAndMotion(settings.accessibility, settings.theme?.animationLevel || 'normal', settings.theme?.cornerRadius || 'medium');
 
     // 7. Layout layer
-    this.applyLayout(settings.layout);
+    this.applyLayout(settings.layout, activeSidebarWidth, activeTopPanelHeight);
 
     // 8. Custom css injection
     this.applyAdvancedOverrides(settings.advanced);
@@ -202,6 +202,7 @@ export class ThemeManager {
     root.style.setProperty('--bg-glass-hover', `rgba(${r + 8}, ${g + 8}, ${b + 8}, ${Math.min(1, alpha + 0.05)})`);
     root.style.setProperty('--bg-glass-light', `rgba(${r + 15}, ${g + 15}, ${b + 15}, 0.5)`);
     root.style.setProperty('--bg-overlay', `rgba(${r}, ${g}, ${b}, 0.85)`);
+    root.style.setProperty('--bg-primary-rgb', `${r}, ${g}, ${b}`);
 
     root.style.setProperty('--border-glass', colors.borderGlass);
     root.style.setProperty('--border-glass-hover', colors.borderGlassHover);
@@ -211,6 +212,8 @@ export class ThemeManager {
     root.style.setProperty('--text-secondary', colors.secondary);
     root.style.setProperty('--text-muted', colors.mutedForeground);
     root.style.setProperty('--text-inverse', theme.isDark ? '#050507' : '#ffffff');
+    root.style.setProperty('--text-primary-rgb', this.hexToRgb(colors.foreground));
+    root.style.setProperty('--text-secondary-rgb', this.hexToRgb(colors.secondary));
 
     // Semantic Status Colors
     root.style.setProperty('--agent-status-idle', colors.agentStatusIdle);
@@ -218,6 +221,10 @@ export class ThemeManager {
     root.style.setProperty('--agent-status-paused', colors.agentStatusPaused);
     root.style.setProperty('--agent-status-error', colors.agentStatusError);
     root.style.setProperty('--agent-status-success', colors.agentStatusSuccess);
+
+    // Terminal backgrounds & foregrounds
+    root.style.setProperty('--terminal-bg', theme.terminal.background);
+    root.style.setProperty('--terminal-fg', theme.terminal.foreground);
 
     // Blur levels
     root.style.setProperty('--glass-blur', blurPx);
@@ -333,12 +340,17 @@ export class ThemeManager {
     root.style.setProperty('--transition-bounce', anim.smooth); // fallback
   }
 
-  private static applyLayout(layout?: WorkspaceLayoutSettings) {
+  private static applyLayout(layout?: WorkspaceLayoutSettings, activeSidebarWidth?: number, activeTopPanelHeight?: number) {
     if (!layout) return;
     const root = document.documentElement;
 
-    const sidebarWidth = layout.sidebarWidth ? Math.max(220, Math.min(500, layout.sidebarWidth)) : 260;
-    const panelHeight = layout.topPanelHeight ? Math.max(180, Math.min(800, layout.topPanelHeight)) : 320;
+    const sidebarWidth = activeSidebarWidth !== undefined 
+      ? activeSidebarWidth 
+      : (layout.sidebarWidth ? Math.max(220, Math.min(500, layout.sidebarWidth)) : 490);
+
+    const panelHeight = activeTopPanelHeight !== undefined 
+      ? activeTopPanelHeight 
+      : (layout.topPanelHeight ? Math.max(180, Math.min(800, layout.topPanelHeight)) : 320);
 
     root.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
     root.style.setProperty('--top-panel-height', `${panelHeight}px`);

@@ -212,13 +212,13 @@ export const ContextMenu: React.FC = () => {
   return (
     <div
       ref={menuRef}
-      className="fixed z-[9999] w-56 bg-[#0e0e11]/95 backdrop-blur-md border border-[#232329] rounded-lg shadow-2xl py-1.5 text-zinc-300 text-xs font-sans select-none animate-in fade-in zoom-in-95 duration-100 ease-out"
+      className="fixed z-[999] w-56 bg-bg-glass backdrop-blur-md border border-border-glass rounded-lg shadow-2xl py-1.5 text-text-secondary text-xs font-sans select-none animate-in fade-in zoom-in-95 duration-100 ease-out"
       style={{ top: `${position.y}px`, left: `${position.x}px` }}
     >
       {terminalSessionId && (
         <>
-          <div className="px-3 py-1.5 text-[10px] text-zinc-500 font-mono tracking-wider uppercase border-b border-[#232329]/40 pb-1.5 mb-1 truncate flex items-center gap-1.5">
-            <Terminal size={10} className="text-zinc-500" />
+          <div className="px-3 py-1.5 text-[10px] text-text-muted font-mono tracking-wider uppercase border-b border-border-glass/40 pb-1.5 mb-1 truncate flex items-center gap-1.5">
+            <Terminal size={10} className="text-text-muted" />
             <span>Terminal: {terminalSessionId}</span>
           </div>
           
@@ -227,10 +227,10 @@ export const ContextMenu: React.FC = () => {
             className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
-              <Copy size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+              <Copy size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
               <span>Copy Selection</span>
             </div>
-            <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">Ctrl+C</span>
+            <span className="text-[9px] text-text-muted group-hover:text-accent-primary/70 font-mono">Ctrl+C</span>
           </button>
 
           <button
@@ -238,13 +238,13 @@ export const ContextMenu: React.FC = () => {
             className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
-              <Clipboard size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+              <Clipboard size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
               <span>Paste to Shell</span>
             </div>
-            <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">Ctrl+V</span>
+            <span className="text-[9px] text-text-muted group-hover:text-accent-primary/70 font-mono">Ctrl+V</span>
           </button>
 
-          <div className="h-[1px] bg-[#232329]/60 my-1 mx-1.5" />
+          <div className="h-[1px] bg-border-glass my-1 mx-1.5" />
 
           <button
             onClick={handleToggleTerminalFocus}
@@ -252,9 +252,9 @@ export const ContextMenu: React.FC = () => {
           >
             <div className="flex items-center gap-2">
               {terminalIsFocused ? (
-                <Minimize2 size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+                <Minimize2 size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
               ) : (
-                <Maximize2 size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+                <Maximize2 size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
               )}
               <span>{terminalIsFocused ? "Exit Focus Mode" : "Focus Session"}</span>
             </div>
@@ -271,7 +271,7 @@ export const ContextMenu: React.FC = () => {
             </div>
           </button>
 
-          <div className="h-[1px] bg-[#232329]/60 my-1 mx-1.5" />
+          <div className="h-[1px] bg-border-glass my-1 mx-1.5" />
         </>
       )}
 
@@ -281,10 +281,10 @@ export const ContextMenu: React.FC = () => {
         className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <Bot size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+          <Bot size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
           <span>{isSidebarVisible ? "Collapse Sidebar" : "Expand Sidebar"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{sidebarShortcut}</span>
+        <span className="text-[9px] text-text-muted group-hover:text-accent-primary/70 font-mono">{sidebarShortcut}</span>
       </button>
 
       <button
@@ -292,10 +292,10 @@ export const ContextMenu: React.FC = () => {
         className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <ClipboardList size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+          <ClipboardList size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
           <span>{isTaskCenterVisible ? "Hide Task Center" : "Show Task Center"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{taskCenterShortcut}</span>
+        <span className="text-[9px] text-text-muted group-hover:text-accent-primary/70 font-mono">{taskCenterShortcut}</span>
       </button>
 
       <button
@@ -303,10 +303,10 @@ export const ContextMenu: React.FC = () => {
         className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <Globe size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+          <Globe size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
           <span>{isBrowserPanelVisible ? "Hide Web Browser" : "Show Web Browser"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{browserShortcut}</span>
+        <span className="text-[9px] text-text-muted group-hover:text-accent-primary/70 font-mono">{browserShortcut}</span>
       </button>
 
       <button
@@ -314,10 +314,10 @@ export const ContextMenu: React.FC = () => {
         className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
       >
         <div className="flex items-center gap-2">
-          <GitPullRequest size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
-          <span>{isReviewCenterOpen ? "Hide Review Center" : "Show Review Center"}</span>
+          <GitPullRequest size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
+          <span>{isReviewCenterOpen ? "Hide File Explorer" : "Show File Explorer"}</span>
         </div>
-        <span className="text-[9px] text-zinc-500 group-hover:text-accent-primary/70 font-mono">{reviewCenterShortcut}</span>
+        <span className="text-[9px] text-text-muted group-hover:text-accent-primary/70 font-mono">{reviewCenterShortcut}</span>
       </button>
 
       {/* Change Layout with submenus */}
@@ -330,16 +330,16 @@ export const ContextMenu: React.FC = () => {
           className="w-[calc(100%-12px)] mx-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent-primary/10 hover:text-accent-primary text-left transition-all duration-100 cursor-pointer flex items-center justify-between group"
         >
           <div className="flex items-center gap-2">
-            <LayoutGrid size={13} className="text-zinc-400 group-hover:text-accent-primary transition-colors" />
+            <LayoutGrid size={13} className="text-text-muted group-hover:text-accent-primary transition-colors" />
             <span>Multiplexer Layout</span>
           </div>
-          <ChevronRight size={12} className="text-zinc-500 group-hover:text-accent-primary transition-colors" />
+          <ChevronRight size={12} className="text-text-muted group-hover:text-accent-primary transition-colors" />
         </button>
 
         {showSubmenu && (
           <div 
             ref={submenuRef}
-            className="absolute top-0 left-full ml-1 w-44 bg-[#0e0e11]/95 backdrop-blur-md border border-[#232329] rounded-lg shadow-2xl py-1 text-zinc-300 text-xs select-none animate-in fade-in zoom-in-95 duration-100 ease-out"
+            className="absolute top-0 left-full ml-1 w-44 bg-bg-glass backdrop-blur-md border border-border-glass rounded-lg shadow-2xl py-1 text-text-secondary text-xs select-none animate-in fade-in zoom-in-95 duration-100 ease-out"
           >
             <button
               onClick={() => handleLayoutChange("grid")}
@@ -349,7 +349,7 @@ export const ContextMenu: React.FC = () => {
                   : "hover:bg-accent-primary/10 hover:text-accent-primary"
               }`}
             >
-              <LayoutGrid size={12} className={layout.type === "grid" ? "text-accent-primary" : "text-zinc-400 group-hover:text-accent-primary"} />
+              <LayoutGrid size={12} className={layout.type === "grid" ? "text-accent-primary" : "text-text-muted group-hover:text-accent-primary"} />
               <span>Grid Layout</span>
             </button>
             <button
@@ -360,7 +360,7 @@ export const ContextMenu: React.FC = () => {
                   : "hover:bg-accent-primary/10 hover:text-accent-primary"
               }`}
             >
-              <Columns2 size={12} className={layout.type === "vertical" ? "text-accent-primary" : "text-zinc-400 group-hover:text-accent-primary"} />
+              <Columns2 size={12} className={layout.type === "vertical" ? "text-accent-primary" : "text-text-muted group-hover:text-accent-primary"} />
               <span>Vertical Splits</span>
             </button>
             <button
@@ -371,26 +371,26 @@ export const ContextMenu: React.FC = () => {
                   : "hover:bg-accent-primary/10 hover:text-accent-primary"
               }`}
             >
-              <Rows2 size={12} className={layout.type === "horizontal" ? "text-accent-primary" : "text-zinc-400 group-hover:text-accent-primary"} />
+              <Rows2 size={12} className={layout.type === "horizontal" ? "text-accent-primary" : "text-text-muted group-hover:text-accent-primary"} />
               <span>Horizontal Splits</span>
             </button>
           </div>
         )}
       </div>
 
-      <div className="h-[1px] bg-[#232329]/60 my-1.5 mx-1.5" />
+      <div className="h-[1px] bg-border-glass my-1.5 mx-1.5" />
 
       {/* Simulated Stats Section (Advanced Telemetry UI visual element) */}
-      <div className="bg-black/30 border border-[#232329]/30 rounded-md p-2 mx-1.5 mb-1.5 font-mono text-[9px] text-zinc-550 space-y-1.5">
+      <div className="bg-bg-tertiary/40 border border-border-glass/30 rounded-md p-2 mx-1.5 mb-1.5 font-mono text-[9px] text-text-muted space-y-1.5">
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-zinc-500">
+          <div className="flex items-center justify-between text-text-muted">
             <span className="flex items-center gap-1.5">
               <Cpu size={10} className="text-accent-primary/80 animate-pulse" />
               CPU LOAD
             </span>
             <span className="text-accent-primary font-semibold">{mockCpu}%</span>
           </div>
-          <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
+          <div className="w-full bg-bg-secondary h-1 rounded overflow-hidden">
             <div 
               className="bg-gradient-to-r from-accent-primary to-accent-secondary h-full transition-all duration-500 ease-out" 
               style={{ width: `${mockCpu}%` }}
@@ -399,14 +399,14 @@ export const ContextMenu: React.FC = () => {
         </div>
         
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-zinc-500">
+          <div className="flex items-center justify-between text-text-muted">
             <span className="flex items-center gap-1.5">
               <HardDrive size={10} className="text-accent-primary/80" />
               RAM USAGE
             </span>
             <span className="text-accent-primary font-semibold">{mockRam} GB</span>
           </div>
-          <div className="w-full bg-[#1b1b22] h-1 rounded overflow-hidden">
+          <div className="w-full bg-bg-secondary h-1 rounded overflow-hidden">
             <div 
               className="bg-gradient-to-r from-accent-primary to-accent-secondary h-full transition-all duration-500 ease-out" 
               style={{ width: `${(mockRam / 8) * 100}%` }}

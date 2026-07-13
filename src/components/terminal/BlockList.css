@@ -20,7 +20,7 @@
   max-width: 480px;
   padding: var(--space-6) !important;
   text-align: center;
-  background-color: rgba(14, 14, 24, 0.7) !important;
+  background-color: var(--bg-glass-light) !important;
 }
 
 .block-list__welcome-title {

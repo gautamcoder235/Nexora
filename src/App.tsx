@@ -6,6 +6,7 @@ import { AgentGrid } from "./components/AgentGrid";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { TaskCenter } from "./components/TaskCenter";
 import { ProjectMemory } from "./components/ProjectMemory";
+import { StatusBar } from "./components/StatusBar";
 const TerminalWorkspace = React.lazy(() => import("./components/TerminalWorkspace").then(m => ({ default: m.TerminalWorkspace })));
 
 const TeamDashboard = React.lazy(() => import("./components/NexoraTeam/TeamDashboard").then(m => ({ default: m.TeamDashboard })));
@@ -26,6 +27,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { EventBus } from "./core/events";
 import { DEFAULT_APP_SETTINGS } from "./types";
 import { useShallow } from 'zustand/react/shallow';
+import { useDragPanel } from "./hooks/useDragPanel";
 
 // Localized error boundary for settings modal — prevents settings crash from killing entire UI
 class SettingsModalBoundary extends React.Component<
@@ -253,44 +255,54 @@ function App() {
     }
   };
   const [isActivityFeedExpanded, setIsActivityFeedExpanded] = useState(false);
-  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
-  const [isHeightDragging, setIsHeightDragging] = useState(false);
-  const [isTeamDragging, setIsTeamDragging] = useState(false);
-  const [isBrowserDragging, setIsBrowserDragging] = useState(false);
-  const [isReviewDragging, setIsReviewDragging] = useState(false);
 
   const { isTeamPanelVisible, teamPanelHeight, setTeamPanelHeight } = useTeamStore();
   const { isBrowserPanelVisible, isBrowserPanelPinned, browserPanelWidth, setBrowserPanelWidth, toggleBrowserPanel, toggleBrowserPanelPinned } = useBrowserStore();
 
+  const { isDragging: isSidebarDragging, startDrag: startSidebarResize } = useDragPanel({
+    direction: settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'horizontal-reverse' : 'horizontal',
+    minSize: 420,
+    maxSize: (w) => w - 300,
+    getStartSize: () => sidebarWidth,
+    onSizeChange: setSidebarWidth,
+  });
+
+  const { isDragging: isHeightDragging, startDrag: startHeightResize } = useDragPanel({
+    direction: 'vertical',
+    minSize: 150,
+    maxSize: (h) => h - 150,
+    getStartSize: () => topPanelHeight,
+    onSizeChange: setTopPanelHeight,
+  });
+
+  const { isDragging: isBrowserDragging, startDrag: startBrowserResize } = useDragPanel({
+    direction: 'horizontal-reverse',
+    minSize: 320,
+    getStartSize: () => browserPanelWidth,
+    onSizeChange: setBrowserPanelWidth,
+  });
+
+  const { isDragging: isReviewDragging, startDrag: startReviewResize } = useDragPanel({
+    direction: 'horizontal-reverse',
+    minSize: 320,
+    getStartSize: () => reviewPanelWidth,
+    onSizeChange: setReviewPanelWidth,
+  });
+
+  const { isDragging: isTeamDragging, startDrag: startTeamResize } = useDragPanel({
+    direction: 'vertical',
+    minSize: 200,
+    maxSize: (h) => h - 100,
+    getStartSize: () => teamPanelHeight,
+    onSizeChange: setTeamPanelHeight,
+  });
+
+  const isDraggingPanel = isSidebarDragging || isHeightDragging || isBrowserDragging || isReviewDragging || isTeamDragging;
+  const appRef = useRef<HTMLDivElement>(null);
+
   // Power User Top Right Panel (Tasks/Memory) state
   const [activeRightTab, setActiveRightTab] = useState<"tasks" | "memory">("tasks");
 
-  // Performance Meter State
-  const [cpuLoad, setCpuLoad] = useState(0);
-  const [ramLoad, setRamLoad] = useState(0);
-
-  useEffect(() => {
-    let isMounted = true;
-    
-    const fetchMetrics = async () => {
-      try {
-        const metrics: { cpu: number; ram_gb: number } = await invoke("get_system_metrics");
-        if (isMounted) {
-          setCpuLoad(Number(metrics.cpu.toFixed(1)));
-          setRamLoad(Number(metrics.ram_gb.toFixed(2)));
-        }
-      } catch (e) {
-        console.error("Failed to fetch system metrics", e);
-      }
-    };
-
-    fetchMetrics();
-    const interval = setInterval(fetchMetrics, 2000);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, []);
 
   // Electron browser connection status poller
   useEffect(() => {
@@ -370,223 +382,7 @@ function App() {
     return () => window.removeEventListener('keydown', handleLandingKeyDown);
   }, [activeWorkspaceId, workspaces]);
 
-  const startSidebarResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsSidebarDragging(true);
-  };
 
-  const resizeRef = useRef({ startY: 0, startHeight: 0, lastHeight: 0, lastWidth: 0 });
-  const reviewResizeRef = useRef({ lastWidth: 0 });
-  const appRef = useRef<HTMLDivElement>(null);
-
-  const startHeightResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    resizeRef.current = { startY: e.clientY, startHeight: topPanelHeight, lastHeight: 0, lastWidth: 0 };
-    setIsHeightDragging(true);
-  };
-
-  useEffect(() => {
-    if (!isSidebarDragging) return;
-
-    let frameId: number;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (frameId) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        const maxWidth = window.innerWidth - 300; // Leave at least 300px for main content
-        const isLeftSidebar = settings?.appearance?.workspace?.sidebarPosition !== 'right';
-        const newWidth = isLeftSidebar 
-          ? Math.max(420, Math.min(e.clientX - activityBarWidth, maxWidth))
-          : Math.max(420, Math.min(window.innerWidth - e.clientX, maxWidth));
-        document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
-        resizeRef.current.lastWidth = newWidth;
-      });
-    };
-
-    const handleMouseUp = () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      if (resizeRef.current.lastWidth) setSidebarWidth(resizeRef.current.lastWidth);
-      setIsSidebarDragging(false);
-      useOrchestratorStore.getState().saveSnapshot();
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isSidebarDragging, setSidebarWidth]);
-
-  useEffect(() => {
-    if (!isHeightDragging) return;
-
-    let frameId: number;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (frameId) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        const delta = e.clientY - resizeRef.current.startY;
-        const maxHeight = window.innerHeight - 150; // Leave at least 150px for the terminal pane
-        const newHeight = Math.max(150, Math.min(resizeRef.current.startHeight + delta, maxHeight));
-        document.documentElement.style.setProperty('--top-panel-height', `${newHeight}px`);
-        resizeRef.current.lastHeight = newHeight;
-      });
-    };
-
-    const handleMouseUp = () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      if (resizeRef.current.lastHeight) setTopPanelHeight(resizeRef.current.lastHeight);
-      setIsHeightDragging(false);
-      useOrchestratorStore.getState().saveSnapshot();
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isHeightDragging, setTopPanelHeight]);
-
-  // Constrain panels to window size on mount and on window resize
-  // This repairs any persisted state that might be out of bounds.
-  useEffect(() => {
-    const handleWindowResize = () => {
-      const maxHeight = window.innerHeight - 150;
-      const maxWidth = window.innerWidth - 300;
-      
-      if (topPanelHeight > maxHeight) {
-        setTopPanelHeight(maxHeight);
-      }
-      if (sidebarWidth > maxWidth) {
-        setSidebarWidth(maxWidth);
-      }
-    };
-
-    handleWindowResize(); // Run once on mount
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, [topPanelHeight, sidebarWidth, setTopPanelHeight, setSidebarWidth]);
-
-
-
-  useEffect(() => {
-    if (!isTeamDragging) return;
-
-    let frameId: number;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (frameId) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        setTeamPanelHeight(Math.max(200, Math.min(window.innerHeight - e.clientY - 48, window.innerHeight - 100)));
-      });
-    };
-    
-    const handleMouseUp = () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      setIsTeamDragging(false);
-      useOrchestratorStore.getState().saveSnapshot();
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isTeamDragging, setTeamPanelHeight]);
-
-  const startBrowserResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsBrowserDragging(true);
-  };
-
-  useEffect(() => {
-    if (!isBrowserDragging) return;
-
-    let frameId: number;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (frameId) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        const isLeftSidebar = settings?.appearance?.workspace?.sidebarPosition !== 'right';
-        const leftBoundary = activityBarWidth + (isSidebarVisible && isAgentPanelPinned && isLeftSidebar ? sidebarWidth : 0) + 300;
-        const rightEdge = window.innerWidth - (isSidebarVisible && isAgentPanelPinned && !isLeftSidebar ? sidebarWidth : 0);
-        const rightBoundary = Math.min(
-          rightEdge - 300,
-          rightEdge - 320 - 8
-        );
-        const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
-        const newWidth = Math.max(320, rightEdge - currentX - 8);
-        document.documentElement.style.setProperty('--browser-panel-width', `${newWidth}px`);
-        resizeRef.current.lastWidth = newWidth;
-      });
-    };
-
-    const handleMouseUp = () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      if (resizeRef.current.lastWidth) setBrowserPanelWidth(resizeRef.current.lastWidth);
-      setIsBrowserDragging(false);
-      useOrchestratorStore.getState().saveSnapshot();
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isBrowserDragging, isSidebarVisible, sidebarWidth, setBrowserPanelWidth, isReviewCenterOpen]);
-
-  const startReviewResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsReviewDragging(true);
-  };
-
-  useEffect(() => {
-    if (!isReviewDragging) return;
-
-    let frameId: number;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (frameId) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        // Left boundary respects the Activity Bar, dynamic sidebar, and browser width (if pinned)
-        const isLeftSidebar = settings?.appearance?.workspace?.sidebarPosition !== 'right';
-        const leftBoundary = 
-          activityBarWidth + 
-          (isSidebarVisible && isAgentPanelPinned && isLeftSidebar ? sidebarWidth : 0) + 
-          (isBrowserPanelVisible && isBrowserPanelPinned ? browserPanelWidth : 0) + 
-          300;
-        
-        const rightEdge = window.innerWidth - (isSidebarVisible && isAgentPanelPinned && !isLeftSidebar ? sidebarWidth : 0);
-        const rightBoundary = rightEdge - 300;
-        const currentX = Math.max(leftBoundary, Math.min(e.clientX, rightBoundary));
-        const newWidth = rightEdge - currentX - 8;
-        document.documentElement.style.setProperty('--review-panel-width', `${newWidth}px`);
-        reviewResizeRef.current.lastWidth = newWidth;
-      });
-    };
-
-    const handleMouseUp = () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      if (reviewResizeRef.current.lastWidth) setReviewPanelWidth(reviewResizeRef.current.lastWidth);
-      setIsReviewDragging(false);
-      useOrchestratorStore.getState().saveSnapshot();
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isReviewDragging, isSidebarVisible, sidebarWidth, isBrowserPanelVisible, isBrowserPanelPinned, browserPanelWidth, setReviewPanelWidth]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -785,13 +581,6 @@ function App() {
     };
   }, [initStore]);
 
-  React.useLayoutEffect(() => {
-    if (!isSidebarDragging) document.documentElement.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
-    if (!isHeightDragging) document.documentElement.style.setProperty('--top-panel-height', `${topPanelHeight}px`);
-    if (!isBrowserDragging) document.documentElement.style.setProperty('--browser-panel-width', `${browserPanelWidth}px`);
-    if (!isReviewDragging) document.documentElement.style.setProperty('--review-panel-width', `${reviewPanelWidth}px`);
-    document.documentElement.style.setProperty('--pane-spacing', `${paneSpacing}px`);
-  }, [activeWorkspaceId, sidebarWidth, topPanelHeight, browserPanelWidth, reviewPanelWidth, paneSpacing, isSidebarDragging, isHeightDragging, isBrowserDragging, isReviewDragging, isTaskCenterVisible, isTaskPanelPinned]);
 
   const handleInitWorkspace = async () => {
     if (!initName.trim()) return;
@@ -911,8 +700,8 @@ function App() {
               <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 opacity-45 blur-xl" />
               
               <img 
-                src="/logo.png" 
-                className="splash-logo-card w-full h-full absolute inset-0 z-10 object-contain" 
+                src="/logo_refined.png" 
+                className="splash-logo-card w-full h-full absolute inset-0 z-10 object-contain rounded-2xl" 
                 alt="Nexora Logo" 
               />
             </div>
@@ -1020,34 +809,29 @@ function App() {
                 }}
               ></div>
               <div 
-                className="relative w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-300"
+                className="relative w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-300 overflow-hidden"
                 style={{
                   background: 'linear-gradient(135deg, var(--bg-secondary, #080a10), var(--bg-tertiary, #040406))',
                   border: '1px solid rgba(var(--accent-primary-rgb, 56, 189, 248), 0.25)',
                 }}
               >
-                <svg viewBox="0 0 100 100" className="w-9 h-9 relative z-10">
-                  <defs>
-                    <linearGradient id="headerBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="var(--accent-primary, #38bdf8)" />
-                      <stop offset="100%" stopColor="var(--accent-secondary, #2563eb)" />
-                    </linearGradient>
-                  </defs>
-                  <path d="M49,23 L44,23 C38.5,23 34,27.5 34,33 L34,42 C34,46.4 26,46.4 26,50 C26,53.6 34,53.6 34,58 L34,67 C34,72.5 38.5,77 44,77 L49,77" fill="none" stroke="url(#headerBlueGrad)" strokeWidth="12" strokeLinecap="butt" strokeLinejoin="round" />
-                  <path d="M80,29 L50,39 L56,45 L42,59 L50,67 L64,53 L70,59 Z" fill="url(#headerBlueGrad)" />
-                </svg>
+                <img 
+                  src="/logo_refined.png" 
+                  className="w-full h-full object-contain rounded-2xl relative z-10" 
+                  alt="Nexora Logo" 
+                />
               </div>
             </div>
 
             <div className="space-y-3">
               <h1 
-                className="text-5xl md:text-6xl font-black tracking-tight text-white select-none filter"
+                className="text-5xl md:text-6xl font-black tracking-tight text-text-primary select-none filter"
                 style={{
-                  backgroundImage: 'linear-gradient(to right, #ffffff, #e4e4e7, var(--accent-primary, #38bdf8))',
+                  backgroundImage: 'linear-gradient(to right, var(--text-primary), var(--text-secondary), var(--accent-primary))',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text',
-                  filter: 'drop-shadow(0 0 30px rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.35))'
+                  filter: 'drop-shadow(0 0 30px rgba(var(--accent-secondary-rgb), 0.35))'
                 }}
               >
                 Nexora
@@ -1056,10 +840,10 @@ function App() {
                 <span 
                   className="px-3.5 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase font-mono select-none"
                   style={{
-                    backgroundColor: 'rgba(var(--accent-primary-rgb, 56, 189, 248), 0.1)',
-                    color: 'var(--accent-primary, #38bdf8)',
-                    border: '1px solid rgba(var(--accent-primary-rgb, 56, 189, 248), 0.25)',
-                    boxShadow: '0 0 15px rgba(var(--accent-secondary-rgb, 37, 99, 235), 0.12)'
+                    backgroundColor: 'rgba(var(--accent-primary-rgb), 0.1)',
+                    color: 'var(--accent-primary)',
+                    border: '1px solid rgba(var(--accent-primary-rgb), 0.25)',
+                    boxShadow: '0 0 15px rgba(var(--accent-secondary-rgb), 0.12)'
                   }}
                 >
                   Nexora Team
@@ -1072,12 +856,12 @@ function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10 w-full max-w-4xl relative items-stretch">
               
               {/* Vertical line with OR badge */}
-              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/[0.04] -translate-x-1/2 hidden md:block"></div>
+              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[var(--border-glass)] -translate-x-1/2 hidden md:block"></div>
               <div 
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border flex items-center justify-center text-[10px] text-zinc-500 font-bold uppercase font-mono hidden md:flex select-none"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border flex items-center justify-center text-[10px] text-text-muted font-bold uppercase font-mono hidden md:flex select-none"
                 style={{
-                  backgroundColor: 'var(--bg-primary, #000000)',
-                  borderColor: 'rgba(255, 255, 255, 0.08)'
+                  backgroundColor: 'var(--bg-primary)',
+                  borderColor: 'var(--border-glass)'
                 }}
               >
                 OR
@@ -1085,7 +869,7 @@ function App() {
 
               {/* Left Column: Resume Workspace */}
               <div className="flex flex-col text-left">
-                <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest mb-3 pl-1">
+                <div className="text-[10px] uppercase font-bold text-text-muted font-mono tracking-widest mb-3 pl-1">
                   Resume Workspace
                 </div>
                 <div 
@@ -1094,12 +878,12 @@ function App() {
                 >
                   <div className="flex items-center gap-4 min-w-0">
                     <div className="workspace-icon-wrapper w-12 h-12 rounded-xl flex items-center justify-center text-blue-500 flex-shrink-0">
-                      <FolderOpen size={20} style={{ color: 'var(--accent-primary, #38bdf8)' }} />
+                      <FolderOpen size={20} style={{ color: 'var(--accent-primary)' }} />
                     </div>
                     <div className="flex flex-col min-w-0 text-left">
                       <span className="workspace-title text-sm font-bold truncate">{latestWorkspace.name}</span>
-                      <span className="text-[10.5px] font-mono text-zinc-400 truncate mt-1" title={latestWorkspace.rootPath}>{latestWorkspace.rootPath}</span>
-                      <span className="text-[10px] text-zinc-500 mt-2">{formatLastOpenedTime(latestWorkspace.lastOpened)}</span>
+                      <span className="text-[10.5px] font-mono text-text-secondary truncate mt-1" title={latestWorkspace.rootPath}>{latestWorkspace.rootPath}</span>
+                      <span className="text-[10px] text-text-muted mt-2">{formatLastOpenedTime(latestWorkspace.lastOpened)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0 ml-4">
@@ -1111,12 +895,12 @@ function App() {
 
               {/* Right Column: Create New Session */}
               <div className="flex flex-col text-left">
-                <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest mb-3 pl-1">
+                <div className="text-[10px] uppercase font-bold text-text-muted font-mono tracking-widest mb-3 pl-1">
                   Create New Session
                 </div>
                 <div className="workspace-setup-card flex flex-col justify-between p-6 h-[130px] space-y-3">
                   <div className="relative group/input">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-[var(--accent-primary)] transition-colors duration-300">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted group-focus-within/input:text-[var(--accent-primary)] transition-colors duration-300">
                       <Folder size={14} />
                     </div>
                     <input
@@ -1146,8 +930,8 @@ function App() {
                     Choose Workspace Directory
                   </button>
                 </div>
-                <p className="text-[10px] text-zinc-500 text-left pl-1 mt-1.5 flex items-center gap-1.5 select-none">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-primary, #38bdf8)', boxShadow: '0 0 8px rgba(var(--accent-primary-rgb, 56, 189, 248), 0.8)' }}></span>
+                <p className="text-[10px] text-text-muted text-left pl-1 mt-1.5 flex items-center gap-1.5 select-none">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 0 8px rgba(var(--accent-primary-rgb), 0.8)' }}></span>
                   Enter workspace name, then choose a directory to initialize
                 </p>
               </div>
@@ -1156,11 +940,11 @@ function App() {
           ) : (
             /* Empty state - only show Create Session card centered */
             <div className="workspace-setup-card w-full max-w-md p-6 space-y-4">
-              <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest text-center select-none">
+              <div className="text-[10px] uppercase font-bold text-text-muted font-mono tracking-widest text-center select-none">
                 Create New Session
               </div>
               <div className="relative group/input">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 group-focus-within/input:text-[var(--accent-primary)] transition-colors duration-300">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted group-focus-within/input:text-[var(--accent-primary)] transition-colors duration-300">
                   <Folder size={14} />
                 </div>
                 <input
@@ -1184,8 +968,8 @@ function App() {
                 <FolderOpen size={14} />
                 Choose Workspace Directory
               </button>
-              <p className="text-[10px] text-zinc-500 text-center pl-1 mt-1.5 flex items-center justify-center gap-1.5 select-none">
-                <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-primary, #38bdf8)', boxShadow: '0 0 8px rgba(var(--accent-primary-rgb, 56, 189, 248), 0.8)' }}></span>
+              <p className="text-[10px] text-text-muted text-center pl-1 mt-1.5 flex items-center justify-center gap-1.5 select-none">
+                <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-primary)', boxShadow: '0 0 8px rgba(var(--accent-primary-rgb), 0.8)' }}></span>
                 Enter workspace name, then choose a directory to initialize
               </p>
             </div>
@@ -1194,7 +978,7 @@ function App() {
           {/* Recent Workspaces Section */}
           {workspaces.length > 1 && (
             <div className="w-full max-w-4xl mt-16 text-left">
-              <div className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-widest mb-3 pl-1">
+              <div className="text-[10px] uppercase font-bold text-text-muted font-mono tracking-widest mb-3 pl-1">
                 Recent Workspaces
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
@@ -1206,12 +990,12 @@ function App() {
                     className="workspace-setup-card-interactive group/card flex items-center gap-3 p-3.5 cursor-pointer min-w-0 min-h-[72px] active:scale-[0.985]"
                   >
                     <div className="workspace-icon-wrapper w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Folder size={14} style={{ color: 'var(--accent-primary, #38bdf8)' }} />
+                      <Folder size={14} style={{ color: 'var(--accent-primary)' }} />
                     </div>
                     <div className="flex flex-col min-w-0 text-left">
                       <span className="workspace-title text-xs font-bold transition-colors truncate">{ws.name}</span>
-                      <span className="text-[9.5px] font-mono text-zinc-500 truncate mt-0.5" title={ws.rootPath}>{ws.rootPath}</span>
-                      <span className="text-[9px] text-zinc-500 mt-1">{formatWorkspaceTime(ws.lastOpened)}</span>
+                      <span className="text-[9.5px] font-mono text-text-secondary truncate mt-0.5" title={ws.rootPath}>{ws.rootPath}</span>
+                      <span className="text-[9px] text-text-muted mt-1">{formatWorkspaceTime(ws.lastOpened)}</span>
                     </div>
                   </div>
                 ))}
@@ -1223,11 +1007,11 @@ function App() {
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="workspace-icon-wrapper w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FolderOpen size={14} style={{ color: 'var(--accent-primary, #38bdf8)' }} />
+                      <FolderOpen size={14} style={{ color: 'var(--accent-primary)' }} />
                     </div>
                     <div className="flex flex-col min-w-0 text-left">
                       <span className="workspace-title text-xs font-bold transition-colors">Browse All</span>
-                      <span className="text-[9.5px] text-zinc-500 mt-0.5">View all workspaces</span>
+                      <span className="text-[9.5px] text-text-muted mt-0.5">View all workspaces</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
@@ -1243,7 +1027,7 @@ function App() {
         </div>
 
         {/* Footer Status Bar */}
-        <div className="w-full max-w-4xl flex justify-between items-center py-4 border-t border-white/[0.04] text-xs text-zinc-500 z-10 mt-6 select-none">
+        <div className="w-full max-w-4xl flex justify-between items-center py-4 border-t border-[var(--border-glass)] text-xs text-text-muted z-10 mt-6 select-none">
           <div className="flex items-center gap-6">
             <button
               onClick={() => { if (workspaceInputRef.current) { workspaceInputRef.current.focus(); workspaceInputRef.current.select(); } }}
@@ -1360,21 +1144,22 @@ function App() {
 
         {/* Import Settings Profile Modal */}
         {showImportModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[99999] flex items-center justify-center animate-in fade-in duration-200">
+          <div className="fixed inset-0 bg-[var(--bg-primary)]/70 backdrop-blur-md z-[99999] flex items-center justify-center animate-in fade-in duration-200">
             <div className="glass-modal glass-noise-base w-[460px] p-6 flex flex-col relative animate-in zoom-in-95 duration-200">
               {/* Close Button */}
               <button
                 onClick={() => setShowImportModal(false)}
-                className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200 p-1 rounded-full hover:bg-zinc-800/30 transition-all cursor-pointer"
+                className="absolute top-4 right-4 text-text-muted hover:text-text-primary p-1 rounded-full hover:bg-[var(--border-glass)] transition-all cursor-pointer"
               >
                 <X size={16} />
               </button>
-                         <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-200 border-b border-white/10 pb-3 mb-3 flex items-center gap-2 select-none">
-                <Import size={16} className="text-blue-500" />
+              
+              <h2 className="text-sm font-bold uppercase tracking-wider text-text-primary border-b border-border-glass pb-3 mb-3 flex items-center gap-2 select-none">
+                <Import size={16} className="text-accent-primary" />
                 Import Settings Profile
               </h2>
               
-              <p className="text-[10px] text-zinc-400 mb-4 select-none leading-relaxed">
+              <p className="text-[10px] text-text-secondary mb-4 select-none leading-relaxed">
                 Paste a settings profile JSON configuration below. This will overwrite appearance, typography, layout, terminal, or hotkey preferences with the imported values.
               </p>
 
@@ -1382,13 +1167,13 @@ function App() {
                 value={importJsonText}
                 onChange={(e) => setImportJsonText(e.target.value)}
                 placeholder={`{\n  "appearance": {\n    "theme": "dark-glass",\n    "accentColor": "blue"\n  }\n}`}
-                className="w-full h-40 bg-black/40 border border-white/[0.08] focus:border-blue-500/50 rounded-xl p-3 text-[11px] font-mono text-zinc-200 placeholder-zinc-650 outline-none resize-none"
+                className="w-full h-40 bg-[var(--bg-tertiary)]/40 border border-border-glass focus:border-accent-primary/50 rounded-xl p-3 text-[11px] font-mono text-text-primary placeholder-text-muted outline-none resize-none"
               />
 
               <div className="flex gap-2 justify-end mt-4">
                 <button
                   onClick={() => setShowImportModal(false)}
-                  className="bg-transparent hover:bg-[#07070b] text-zinc-400 hover:text-zinc-200 border border-border-glass hover:border-border-glass-hover font-bold text-[10px] uppercase py-2 px-4 rounded-lg transition-all cursor-pointer"
+                  className="bg-transparent hover:bg-[var(--bg-secondary)] text-text-secondary hover:text-text-primary border border-border-glass hover:border-border-glass-hover font-bold text-[10px] uppercase py-2 px-4 rounded-lg transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1409,7 +1194,7 @@ function App() {
                       useOrchestratorStore.getState().showAlertDialog("Import Error", "Import error: " + err.message);
                     }
                   }}
-                  className="bg-accent-primary hover:bg-accent-secondary text-black font-bold text-[10px] uppercase py-2 px-4 rounded-lg shadow transition-all cursor-pointer"
+                  className="bg-accent-primary hover:bg-accent-secondary text-text-inverse font-bold text-[10px] uppercase py-2 px-4 rounded-lg shadow transition-all cursor-pointer"
                 >
                   Apply Profile
                 </button>
@@ -1434,16 +1219,22 @@ function App() {
       <TitleBar />
       <div 
         ref={appRef}
-        style={{} as React.CSSProperties}
-        className={`h-full w-full pt-[34px] text-zinc-200 overflow-hidden flex flex-row font-sans relative bg-bg-primary ${(isSidebarDragging || isHeightDragging || isTeamDragging || isBrowserDragging || isReviewDragging) ? "is-dragging" : ""}`}
+        style={{ 
+          '--sidebar-width': `${sidebarWidth}px`, 
+          '--top-panel-height': `${topPanelHeight}px`,
+          '--browser-panel-width': `${browserPanelWidth}px`,
+          '--review-panel-width': `${reviewPanelWidth}px`,
+          '--pane-spacing': `${paneSpacing}px`
+        } as React.CSSProperties}
+        className={`h-full w-full pt-[34px] text-text-primary overflow-hidden flex flex-row font-sans relative bg-bg-primary ${isDraggingPanel ? "is-dragging" : ""}`}
       >
       {settings?.appearance?.workspace?.showActivityBar !== false && <ActivityBar />}
 
         {/* Main content column */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0 h-full">
           {/* 2. Main Dashboard Layout splits */}
           <div 
-            className="flex-1 flex overflow-hidden p-0 relative"
+            className="flex-1 flex overflow-hidden p-0 relative h-full"
           style={{ 
             gap: 'var(--pane-spacing)',
             flexDirection: settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'row-reverse' : 'row'
@@ -1461,7 +1252,7 @@ function App() {
           className={`flex flex-col gap-1 overflow-hidden ${
             isAgentPanelPinned 
               ? 'flex-shrink-0 relative' 
-              : `absolute top-0 bottom-0 z-30 shadow-2xl bg-black backdrop-blur-xl border border-border-glass rounded-lg ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'right-2' : 'left-2'}`
+              : `absolute top-0 bottom-0 z-30 shadow-2xl bg-[var(--bg-glass)] backdrop-blur-xl border border-border-glass rounded-lg ${settings?.appearance?.workspace?.sidebarPosition === 'right' ? 'right-2' : 'left-2'}`
           } ${
             isSidebarDragging ? '' : 'transition-[width,opacity,margin,transform] duration-300 ease-out'
           } ${
@@ -1512,7 +1303,7 @@ function App() {
             )}
             
             {/* Drag handle button */}
-            <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
               <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
@@ -1697,9 +1488,11 @@ function App() {
             <div
               onMouseDown={startHeightResize}
               onDoubleClick={() => setTaskCenterVisible(false)}
-              className={`${isTaskPanelPinned ? 'relative w-full z-20' : 'absolute left-0 right-0 z-30'} h-3 bg-transparent ${isHeightDragging ? '' : 'hover:bg-accent-primary/10 transition-all duration-200'} cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
-              style={isTaskPanelPinned ? {} : { 
-                top: 'var(--top-panel-height)',
+              className={`absolute left-0 right-0 z-40 h-3 bg-transparent ${isHeightDragging ? '' : 'hover:bg-accent-primary/10 transition-all duration-200'} cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
+              style={{
+                top: isTaskPanelPinned 
+                  ? 'calc(var(--top-panel-height) + (var(--pane-spacing) / 2) - 6px)' 
+                  : 'calc(var(--top-panel-height) - 6px)',
                 left: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition !== 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px',
                 right: (isSidebarVisible && !isAgentPanelPinned && settings?.appearance?.workspace?.sidebarPosition === 'right') ? 'calc(var(--sidebar-width) + 8px)' : '0px'
               }}
@@ -1763,7 +1556,7 @@ function App() {
                   title="Drag to resize browser panel, Double-click to collapse"
                 >
                   <div className="w-[1px] h-full bg-border-glass group-hover:bg-accent-primary/50 group-active:bg-accent-primary transition-colors duration-150" />
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
@@ -1788,9 +1581,9 @@ function App() {
                 <div
                   onMouseDown={startBrowserResize}
                   className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
-                  style={{ right: 'min(var(--browser-panel-width), 100%)' }}
+                  style={{ right: 'calc(min(var(--browser-panel-width), 100%) - 4px)' }}
                 >
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
@@ -1816,9 +1609,9 @@ function App() {
                 <div
                   onMouseDown={startReviewResize}
                   className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-45"
-                  style={{ right: 'min(var(--review-panel-width), 100%)' }}
+                  style={{ right: 'calc(min(var(--review-panel-width), 100%) - 4px)' }}
                 >
-                  <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
                     <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
@@ -1831,7 +1624,7 @@ function App() {
                   }`}
                   style={{ width: 'var(--review-panel-width)', maxWidth: '100%' }}
                 >
-                  <React.Suspense fallback={<div className="h-full flex items-center justify-center text-zinc-500 font-mono text-xs">Loading review center...</div>}>
+                  <React.Suspense fallback={<div className="h-full flex items-center justify-center text-zinc-500 font-mono text-xs">Loading File Explorer...</div>}>
                     <AgentReviewCenter
                       repoPath={projects.find(p => p.id === selectedProjectId)?.path || activeWs.rootPath}
                       onClose={() => setReviewCenterOpen(false)}
@@ -1844,78 +1637,8 @@ function App() {
         </div>
       </div>
 
-      {/* Visual Status bar at the bottom */}
-      {settings?.appearance?.workspace?.showStatusBar !== false && (
-        <div className="h-6 glass-bottombar px-4 flex items-center justify-between text-[10px] text-zinc-400 font-mono select-none flex-shrink-0 border-t border-white/[0.04] bg-black/95 z-40">
-          {/* Left section: Connection & Workspace info */}
-          <div className="flex-center gap-3 flex">
-            {/* Connection status badge */}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-bold">
-              <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
-              PTY SERVER
-            </div>
-
-            {activeWs && (
-              <div className="flex items-center gap-1.5 text-zinc-300">
-                <span className="text-zinc-650">|</span>
-                <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
-                  Workspace:
-                </span>
-                <span className="text-zinc-200 font-semibold">{activeWs.name}</span>
-              </div>
-            )}
-
-            {settings?.appearance?.workspace?.showGitBranch && gitBranch && (
-              <div className="flex items-center gap-1.5 text-zinc-300">
-                <span className="text-zinc-650">|</span>
-                <span className="flex items-center gap-1 text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
-                  <GitBranch size={10} className="text-zinc-500" />
-                  Branch:
-                </span>
-                <span className="text-zinc-200 font-semibold">{gitBranch}</span>
-              </div>
-            )}
-
-            {activeWs && (
-              <div className="flex items-center gap-1.5 text-zinc-400 max-w-sm truncate" title={activeWs.rootPath}>
-                <span className="text-zinc-750">/</span>
-                <span className="text-[9px] font-mono text-zinc-500 truncate">{activeWs.rootPath}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Right section: Session state & Metrics */}
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-zinc-500">
-              <BarChart2 size={10} className="text-zinc-500" />
-              Snapshot Synced
-            </span>
-
-            <div className="h-3 w-[1px] bg-zinc-800" />
-
-            {/* Metrics Gauges */}
-            <div className="flex items-center gap-1.5">
-              {/* CPU */}
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global CPU Load">
-                <Cpu size={10} className="text-[#38bdf8]" />
-                <span>CPU <span className="text-zinc-200 font-bold">{cpuLoad}%</span></span>
-              </div>
-              
-              {/* RAM */}
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Global Memory Used">
-                <HardDrive size={10} className="text-[#38bdf8]" />
-                <span>RAM <span className="text-zinc-200 font-bold">{ramLoad} GB</span></span>
-              </div>
-
-              {/* PTYs */}
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.02] border border-white/[0.04] text-zinc-400" title="Active PTY Processes">
-                <Layers size={10} className="text-[#38bdf8]" />
-                <span>PTYs <span className="text-zinc-200 font-bold">{terminals.length}</span></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Visual Status bar at the bottom — isolated component; metrics polling stays here */}
+      {settings?.appearance?.workspace?.showStatusBar !== false && <StatusBar />}
       </div>
       <ContextMenu />
       <CustomDialog />

@@ -4,31 +4,31 @@
  * ============================================================ */
 
 :root {
-  /* ── Background Colors ─────────────────────────────────── */
-  --bg-primary: #060609;
-  --bg-secondary: #0b0c10;
-  --bg-tertiary: #040406;
-  --bg-glass: rgba(6, 6, 9, 0.94);
-  --bg-glass-hover: rgba(11, 12, 16, 0.96);
-  --bg-glass-light: rgba(20, 20, 25, 0.6);
-  --bg-overlay: rgba(3, 3, 5, 0.85);
+  /* ── Background Colors (Chromatic Dark Navy-Black) ──────── */
+  --bg-primary: #07080f;
+  --bg-secondary: #0c0d16;
+  --bg-tertiary: #040407;
+  --bg-glass: rgba(7, 8, 15, 0.85);
+  --bg-glass-hover: rgba(12, 13, 22, 0.90);
+  --bg-glass-light: rgba(25, 27, 44, 0.45);
+  --bg-overlay: rgba(3, 4, 8, 0.90);
 
   /* ── Glass Levels Opacity ───────────────────────────────── */
-  --glass-opacity-subtle: 0.75;
-  --glass-opacity-panel: 0.82;
-  --glass-opacity-elevated: 0.88;
-  --glass-opacity-modal: 0.93;
+  --glass-opacity-subtle: 0.65;
+  --glass-opacity-panel: 0.75;
+  --glass-opacity-elevated: 0.82;
+  --glass-opacity-modal: 0.88;
 
-  /* ── Glass Border Colors ───────────────────────────────── */
-  --border-glass: rgba(255, 255, 255, 0.06);
-  --border-glass-hover: rgba(255, 255, 255, 0.12);
-  --border-glass-active: rgba(255, 255, 255, 0.18);
+  /* ── Glass Border Colors (More refined borders) ────────── */
+  --border-glass: rgba(255, 255, 255, 0.05);
+  --border-glass-hover: rgba(255, 255, 255, 0.09);
+  --border-glass-active: rgba(255, 255, 255, 0.14);
 
-  /* ── Accent Colors (Warm Amber Accent, Neutral Defaults) ── */
-  --accent-primary: #f59e0b;        /* Amber */
-  --accent-primary-rgb: 245, 158, 11;
-  --accent-secondary: #fbbf24;      /* Light Amber */
-  --accent-secondary-rgb: 251, 191, 36;
+  /* ── Accent Colors (Indigo & Violet Premium Branding) ───── */
+  --accent-primary: #6366f1;        /* Indigo */
+  --accent-primary-rgb: 99, 102, 241;
+  --accent-secondary: #8b5cf6;      /* Violet */
+  --accent-secondary-rgb: 139, 92, 246;
   --accent-success: #10b981;        /* Emerald */
   --accent-success-rgb: 16, 185, 129;
   --accent-warning: #f59e0b;        /* Amber */
@@ -38,11 +38,19 @@
   --accent-info: #3b82f6;           /* Blue */
   --accent-info-rgb: 59, 130, 246;
 
+  /* ── Premium Ambient Gradients & Glows ───────────────────── */
+  --accent-gradient: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  --glow-indigo: 0 0 20px rgba(99, 102, 241, 0.15);
+  --glow-violet: 0 0 20px rgba(139, 92, 246, 0.15);
+  --glow-running: 0 0 12px rgba(16, 185, 129, 0.25);
+  --glow-error: 0 0 12px rgba(239, 68, 68, 0.25);
+  --glow-paused: 0 0 12px rgba(245, 158, 11, 0.25);
+
   /* ── Text Colors ───────────────────────────────────────── */
-  --text-primary: #f4f4f5;          /* High-contrast soft white */
-  --text-secondary: #a1a1aa;        /* Muted gray */
-  --text-muted: #71717a;            /* Muted darker gray */
-  --text-inverse: #050507;
+  --text-primary: #f4f4f6;          /* Clean white */
+  --text-secondary: #a1a1b2;        /* Soft gray-blue */
+  --text-muted: #62627a;            /* Muted gray-blue */
+  --text-inverse: #050508;
   --text-accent: var(--accent-primary);
 
   /* ── Typography ────────────────────────────────────────── */

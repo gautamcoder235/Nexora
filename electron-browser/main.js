@@ -105,9 +105,19 @@ function startControlServer() {
     }
   });
 
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn('Electron control server port 30120 already in use. Exiting redundant instance gracefully.');
+      app.quit();
+    } else {
+      console.error('Electron control server error:', err);
+    }
+  });
+
   server.listen(30120, '127.0.0.1', () => {
     console.log('Electron control server listening on http://localhost:30120');
   });
+
 
   app.on('will-quit', () => {
     try {

@@ -1,15 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useTeamStore } from '../../stores/teamStore';
-import { TeamToolbar } from './TeamToolbar';
 import { TeamGraph } from './TeamGraph';
-import { TeamCommandCenter } from './TeamCommandCenter';
 import { TeamChat } from './TeamChat';
 import { AgentInspector } from './AgentInspector';
-import { ExecutionsTab } from './ExecutionsTab';
-import { ReviewTab } from './ReviewTab';
-import { ValidationPanel } from './ValidationPanel';
-import { SecurityPanel } from './SecurityPanel';
-import { UserPlus, X, Network, Zap, FileCode, ShieldCheck, Shield } from 'lucide-react';
+import { UserPlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const TeamDashboard: React.FC = () => {
@@ -40,89 +34,28 @@ export const TeamDashboard: React.FC = () => {
     setAddAgentOpen(false);
   };
 
-  // Search & Filter state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterOption, setFilterOption] = useState('all');
-  const [activeTab, setActiveTab] = useState<'command' | 'executions' | 'review' | 'validation' | 'security'>('command');
-
   // Load state on mount
   useEffect(() => {
     fetchState();
   }, [fetchState]);
 
-  // Keyboard shortcut listener for Command Center (Ctrl+K)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        const { isCommandOpen, setCommandOpen } = useTeamStore.getState();
-        setCommandOpen(!isCommandOpen);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  const tabs = [
-    { id: 'command' as const, label: 'Command Center', icon: <Network className="w-3.5 h-3.5" /> },
-    { id: 'executions' as const, label: 'Executions', icon: <Zap className="w-3.5 h-3.5" /> },
-    { id: 'review' as const, label: 'Review', icon: <FileCode className="w-3.5 h-3.5" /> },
-    { id: 'validation' as const, label: 'Validation', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
-    { id: 'security' as const, label: 'Security', icon: <Shield className="w-3.5 h-3.5" /> },
-  ];
-
   return (
-    <div className="h-full w-full flex flex-col bg-[#0D0D10] text-zinc-150 select-none overflow-hidden nexora-team-theme font-sans">
-      {/* 1. Header Toolbar */}
-      <TeamToolbar onSearchChange={setSearchQuery} onFilterChange={setFilterOption} />
-
-      {/* 2. Tab Navigation */}
-      <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-[#1B1B22] bg-[#0D0D10] flex-shrink-0 select-none overflow-x-auto">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === tab.id
-                ? 'bg-[#7C5CFF]/10 text-[#7C5CFF] border border-[#7C5CFF]/25'
-                : 'text-zinc-500 border border-transparent hover:text-zinc-300 hover:bg-white/5'
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+    <div className="h-full w-full flex bg-[#0D0D10] text-zinc-150 select-none overflow-hidden nexora-team-theme font-sans p-4 gap-4">
+      {/* Left Column: Graph Workspace */}
+      <div className="flex-[6] min-w-0 relative h-full">
+        <TeamGraph />
+        {/* Floating Agent Inspector Overlay */}
+        <AnimatePresence>
+          {activeInspectId && <AgentInspector />}
+        </AnimatePresence>
       </div>
 
-      {/* 3. Tab Content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {activeTab === 'command' && (
-          <div className="h-full p-4 flex flex-col lg:flex-row gap-4 w-full">
-            {/* Graph Workspace (left) */}
-            <div className="flex-[6] min-w-0 relative h-full">
-              <TeamGraph />
-              {/* Floating Agent Inspector Overlay */}
-              <AnimatePresence>
-                {activeInspectId && <AgentInspector />}
-              </AnimatePresence>
-            </div>
-            {/* Team Chat (right) */}
-            <div className="flex-[4] min-w-[320px] h-full">
-              <TeamChat />
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'executions' && <ExecutionsTab />}
-        {activeTab === 'review' && <ReviewTab />}
-        {activeTab === 'validation' && <ValidationPanel />}
-        {activeTab === 'security' && <SecurityPanel />}
+      {/* Right Column: Team Chat */}
+      <div className="flex-[4] min-w-[320px] h-full">
+        <TeamChat />
       </div>
 
-      {/* 4. Floating Command Center Palette Modal */}
-      <TeamCommandCenter />
-
-      {/* 4. Add Custom Agent Modal */}
+      {/* Add Custom Agent Modal */}
       <AnimatePresence>
         {isAddAgentOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#060609]/60 backdrop-blur-sm select-none">

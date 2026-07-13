@@ -183,13 +183,15 @@ export const ActivityBar: React.FC = () => {
           ref={wsButtonRef}
           onClick={() => {
             if (!showWsMenu && wsButtonRef.current) {
-              const rect = wsButtonRef.current.getBoundingClientRect();
-              setWsMenuPos({ top: rect.top, left: rect.right + 8 });
+              const borderRect = wsButtonRef.current.getBoundingClientRect();
+              setWsMenuPos({ top: borderRect.top, left: borderRect.right + 8 });
             }
             setShowWsMenu(!showWsMenu);
           }}
           className={`w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all group relative ${
-            showWsMenu ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+            showWsMenu 
+              ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]' 
+              : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)]'
           }`}
           title="Workspaces"
         >
@@ -197,7 +199,7 @@ export const ActivityBar: React.FC = () => {
           
           {/* Active indicator dot */}
           {activeWorkspaceId && (
-            <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent-primary border-2 border-bg-secondary" />
+            <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[var(--accent-primary)] border-2 border-[var(--bg-secondary)]" />
           )}
         </button>
 
@@ -208,18 +210,20 @@ export const ActivityBar: React.FC = () => {
             className="w-64 glass-panel-elevated shadow-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-200"
             style={{ position: 'fixed', top: wsMenuPos.top, left: wsMenuPos.left, zIndex: 200 }}
           >
-            <div className="px-3 py-2 border-b border-border-glass bg-bg-secondary/40">
-              <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-wider">Switch Workspace</span>
+            <div className="px-3 py-2 border-b border-[var(--border-glass)] bg-[var(--bg-glass-light)]">
+              <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase font-bold tracking-wider">Switch Workspace</span>
             </div>
             <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
               {workspaces.length === 0 ? (
-                <div className="text-xs text-zinc-500 p-2 text-center">No workspaces found</div>
+                <div className="text-xs text-[var(--text-muted)] p-2 text-center">No workspaces found</div>
               ) : (
                 workspaces.map(ws => (
                   <div
                     key={ws.id}
                     className={`flex items-center justify-between group px-2 py-2 rounded-md cursor-pointer transition-colors ${
-                      ws.id === activeWorkspaceId ? 'bg-accent-primary/10 text-accent-primary' : 'hover:bg-white/5 text-zinc-300'
+                      ws.id === activeWorkspaceId 
+                        ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)]' 
+                        : 'hover:bg-[var(--border-glass)] text-[var(--text-secondary)]'
                     }`}
                     onClick={() => {
                       selectWorkspace(ws.id);
@@ -236,7 +240,7 @@ export const ActivityBar: React.FC = () => {
                           setShowRenameWsModal(true);
                           setShowWsMenu(false);
                         }}
-                        className="p-1 text-zinc-400 hover:text-blue-500 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                        className="p-1 text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:bg-[var(--border-glass)] rounded transition-colors cursor-pointer"
                         title="Rename Workspace"
                       >
                         <Edit2 size={11} />
@@ -253,7 +257,7 @@ export const ActivityBar: React.FC = () => {
                             }
                           );
                         }}
-                        className="p-1 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                        className="p-1 text-[var(--text-secondary)] hover:text-[var(--accent-error)] hover:bg-[rgba(var(--accent-error-rgb),0.1)] rounded transition-colors cursor-pointer"
                         title="Delete Workspace"
                       >
                         <Trash2 size={11} />
@@ -263,13 +267,13 @@ export const ActivityBar: React.FC = () => {
                 ))
               )}
             </div>
-            <div className="p-1.5 border-t border-border-glass bg-bg-secondary/30 space-y-1">
+            <div className="p-1.5 border-t border-[var(--border-glass)] bg-[var(--bg-glass-light)] space-y-1">
               <button
                 onClick={() => {
                   setShowNewWsModal(true);
                   setShowWsMenu(false);
                 }}
-                className="w-full flex items-center justify-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 py-1.5 rounded-md transition-colors"
+                className="w-full flex items-center justify-center gap-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass)] py-1.5 rounded-md transition-colors"
               >
                 <Plus size={14} /> Create Workspace
               </button>
@@ -279,7 +283,7 @@ export const ActivityBar: React.FC = () => {
                   useOrchestratorStore.getState().saveSnapshot();
                   setShowWsMenu(false);
                 }}
-                className="w-full flex items-center justify-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 py-1.5 rounded-md transition-colors"
+                className="w-full flex items-center justify-center gap-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass)] py-1.5 rounded-md transition-colors"
               >
                 <LogOut size={14} /> Exit Workspace
               </button>
@@ -291,7 +295,7 @@ export const ActivityBar: React.FC = () => {
 
       {/* Middle Zone: Tools & Toggles */}
       <div className="flex-1 w-full flex flex-col items-center gap-2 mt-4">
-        <div className="w-5 h-px bg-border-glass mb-2" />
+        <div className="w-5 h-px bg-[var(--border-glass)] mb-2" />
         
         {activeWorkspaceId && (
           <>
@@ -299,18 +303,20 @@ export const ActivityBar: React.FC = () => {
               ref={projButtonRef}
               onClick={() => {
                 if (!showProjMenu && projButtonRef.current) {
-                  const rect = projButtonRef.current.getBoundingClientRect();
-                  setProjMenuPos({ top: rect.top, left: rect.right + 8 });
+                  const borderRect = projButtonRef.current.getBoundingClientRect();
+                  setProjMenuPos({ top: borderRect.top, left: borderRect.right + 8 });
                 }
                 setShowProjMenu(!showProjMenu);
               }}
               className={`w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all group relative hover:scale-105 ${
-                showProjMenu ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                showProjMenu 
+                  ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]' 
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)]'
               }`}
               title="Project Repositories"
             >
               <FolderPlus size={20} />
-              <div className="absolute -top-1 -right-1 px-1 min-w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-[8px] font-bold text-blue-300">
+              <div className="absolute -top-1 -right-1 px-1 min-w-4 h-4 rounded-full bg-[rgba(var(--accent-primary-rgb),0.2)] border border-[rgba(var(--accent-primary-rgb),0.3)] flex items-center justify-center text-[8px] font-bold text-[var(--accent-primary)]">
                 {activeProjects.length}
               </div>
             </button>
@@ -319,14 +325,11 @@ export const ActivityBar: React.FC = () => {
               onClick={() => setSidebarVisible(!isSidebarVisible)}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 isSidebarVisible
-                  ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
+                  ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
               title={isSidebarVisible ? "Hide Agent Sidebar" : "Show Agent Sidebar"}
             >
-              {isSidebarVisible && (
-                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
-              )}
               <Bot size={20} />
             </button>
 
@@ -334,14 +337,11 @@ export const ActivityBar: React.FC = () => {
               onClick={() => setTaskCenterVisible(!isTaskCenterVisible)}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 isTaskCenterVisible
-                  ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
+                  ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
               title={isTaskCenterVisible ? "Hide Task Board" : "Show Task Board"}
             >
-              {isTaskCenterVisible && (
-                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
-              )}
               <ClipboardList size={20} />
             </button>
 
@@ -352,17 +352,14 @@ export const ActivityBar: React.FC = () => {
               onClick={() => setTeamPanelVisible(!isTeamPanelVisible)}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 isTeamPanelVisible
-                  ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
+                  ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
               title={isTeamPanelVisible ? "Hide Nexora Team" : "Show Nexora Team Panel"}
             >
-              {isTeamPanelVisible && (
-                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
-              )}
               <Users size={20} />
               {teamRunningCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent-primary text-[8px] font-bold text-black flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--accent-primary)] text-[8px] font-bold text-[var(--text-inverse)] flex items-center justify-center animate-pulse">
                   {teamRunningCount}
                 </span>
               )}
@@ -380,32 +377,27 @@ export const ActivityBar: React.FC = () => {
               }}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 useBrowserStore((s) => s.isElectronConnected)
-                  ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
+                  ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
               title={useBrowserStore((s) => s.isElectronConnected) ? "Close Web Browser" : "Open Web Browser"}
             >
-              {useBrowserStore((s) => s.isElectronConnected) && (
-                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
-              )}
               <Globe size={20} />
             </button>
 
-            {/* Agent Review Center Toggle */}
+            {/* File Explorer Toggle */}
             <button
               onClick={() => useChangesetStore.getState().setReviewCenterOpen(!useChangesetStore.getState().isReviewCenterOpen)}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
                 useChangesetStore((s) => s.isReviewCenterOpen)
-                  ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent'
+                  ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
-              title={useChangesetStore((s) => s.isReviewCenterOpen) ? "Hide Review Center" : "Show Agent Review Center"}
+              title={useChangesetStore((s) => s.isReviewCenterOpen) ? "Hide File Explorer" : "Show File Explorer"}
             >
-              {useChangesetStore((s) => s.isReviewCenterOpen) && (
-                <div className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-accent-primary" />
-              )}
               <GitPullRequest size={20} />
             </button>
+
           </>
         )}
       </div>
@@ -418,7 +410,7 @@ export const ActivityBar: React.FC = () => {
             onMouseEnter={() => {
               console.log("[Predictive] Preloading settings component configurations...");
             }}
-            className="w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-all"
+            className="w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] transition-all"
             title="Settings"
           >
             <Settings size={20} />
@@ -428,14 +420,14 @@ export const ActivityBar: React.FC = () => {
 
       {/* Workspace Modal — rendered via portal to escape sidebar stacking context */}
       {showNewWsModal && createPortal(
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
+        <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <FolderPlus size={16} className="text-accent-primary" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+              <FolderPlus size={16} className="text-[var(--accent-primary)]" />
               Create Workspace Session
             </h3>
             <div className="space-y-1.5">
-              <label className="text-[11px] font-mono text-zinc-500 uppercase">Workspace Name</label>
+              <label className="text-[11px] font-mono text-[var(--text-muted)] uppercase">Workspace Name</label>
               <input
                 type="text"
                 value={wsName}
@@ -447,7 +439,7 @@ export const ActivityBar: React.FC = () => {
             <div className="flex gap-2.5 justify-end pt-2">
               <button
                 onClick={() => setShowNewWsModal(false)}
-                className="glass-button glass-button--ghost text-zinc-400 text-xs py-1.5 px-4 rounded transition-colors"
+                className="glass-button glass-button--ghost text-[var(--text-secondary)] text-xs py-1.5 px-4 rounded transition-colors"
               >
                 Cancel
               </button>
@@ -466,14 +458,14 @@ export const ActivityBar: React.FC = () => {
 
       {/* Project Modal — rendered via portal to escape sidebar stacking context */}
       {showNewProjModal && createPortal(
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
+        <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <FolderPlus size={16} className="text-accent-primary" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+              <FolderPlus size={16} className="text-[var(--accent-primary)]" />
               Add Project Repository
             </h3>
             <div className="space-y-1.5">
-              <label className="text-[11px] font-mono text-zinc-500 uppercase">Project Name</label>
+              <label className="text-[11px] font-mono text-[var(--text-muted)] uppercase">Project Name</label>
               <input
                 type="text"
                 value={projName}
@@ -485,7 +477,7 @@ export const ActivityBar: React.FC = () => {
             <div className="flex gap-2.5 justify-end pt-2">
               <button
                 onClick={() => setShowNewProjModal(false)}
-                className="glass-button glass-button--ghost text-zinc-400 text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
+                className="glass-button glass-button--ghost text-[var(--text-secondary)] text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -509,21 +501,21 @@ export const ActivityBar: React.FC = () => {
           className="w-72 glass-panel-elevated shadow-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-200"
           style={{ position: 'fixed', top: projMenuPos.top, left: projMenuPos.left, zIndex: 200 }}
         >
-          <div className="px-3 py-2 border-b border-border-glass bg-bg-secondary/40">
-            <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-wider">Manage Projects</span>
+          <div className="px-3 py-2 border-b border-[var(--border-glass)] bg-[var(--bg-glass-light)]">
+            <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase font-bold tracking-wider">Manage Projects</span>
           </div>
           
           <div className="max-h-60 overflow-y-auto p-1.5 space-y-1 scrollbar-none">
             {activeProjects.length === 0 ? (
-              <div className="text-xs text-zinc-500 p-3 text-center italic">No projects found. Add one below!</div>
+              <div className="text-xs text-[var(--text-muted)] p-3 text-center italic">No projects found. Add one below!</div>
             ) : (
               activeProjects.map(proj => (
                 <div
                   key={proj.id}
-                  className="flex flex-col group p-2 rounded-md hover:bg-white/5 text-zinc-300 transition-colors border border-transparent hover:border-border-glass/30 relative"
+                  className="flex flex-col group p-2 rounded-md hover:bg-[var(--border-glass)] text-[var(--text-secondary)] transition-colors border border-transparent hover:border-[var(--border-glass-hover)] relative"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs truncate font-semibold text-zinc-200" title={proj.name}>{proj.name}</span>
+                    <span className="text-xs truncate font-semibold text-[var(--text-primary)]" title={proj.name}>{proj.name}</span>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => {
@@ -533,7 +525,7 @@ export const ActivityBar: React.FC = () => {
                           setShowRenameProjModal(true);
                           setShowProjMenu(false);
                         }}
-                        className="p-1 text-zinc-400 hover:text-blue-500 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                        className="p-1 text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:bg-[var(--border-glass)] rounded transition-colors cursor-pointer"
                         title="Rename Project"
                       >
                         <Edit2 size={11} />
@@ -550,14 +542,14 @@ export const ActivityBar: React.FC = () => {
                             }
                           );
                         }}
-                        className="p-1 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                        className="p-1 text-[var(--text-secondary)] hover:text-[var(--accent-error)] hover:bg-[rgba(var(--accent-error-rgb),0.1)] rounded transition-colors cursor-pointer"
                         title="Delete Project"
                       >
                         <Trash2 size={11} />
                       </button>
                     </div>
                   </div>
-                  <span className="text-[9px] font-mono text-zinc-500 truncate mt-0.5" title={proj.path}>
+                  <span className="text-[9px] font-mono text-[var(--text-muted)] truncate mt-0.5" title={proj.path}>
                     {proj.path}
                   </span>
                 </div>
@@ -565,13 +557,13 @@ export const ActivityBar: React.FC = () => {
             )}
           </div>
 
-          <div className="p-1.5 border-t border-border-glass bg-bg-secondary/30">
+          <div className="p-1.5 border-t border-[var(--border-glass)] bg-[var(--bg-glass-light)]">
             <button
               onClick={() => {
                 setShowNewProjModal(true);
                 setShowProjMenu(false);
               }}
-              className="w-full flex items-center justify-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 py-1.5 rounded-md transition-colors cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass)] py-1.5 rounded-md transition-colors cursor-pointer"
             >
               <Plus size={14} /> Add Project Repository
             </button>
@@ -582,14 +574,14 @@ export const ActivityBar: React.FC = () => {
 
       {/* Rename Project Modal */}
       {showRenameProjModal && createPortal(
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
+        <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <Edit2 size={16} className="text-blue-500" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+              <Edit2 size={16} className="text-[var(--accent-primary)]" />
               Rename Project Repository
             </h3>
             <div className="space-y-1.5">
-              <label className="text-[11px] font-mono text-zinc-500 uppercase">New Project Name</label>
+              <label className="text-[11px] font-mono text-[var(--text-muted)] uppercase">New Project Name</label>
               <input
                 type="text"
                 value={renameProjName}
@@ -605,7 +597,7 @@ export const ActivityBar: React.FC = () => {
                   setRenameProjId(null);
                   setRenameProjName("");
                 }}
-                className="glass-button glass-button--ghost text-zinc-400 text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
+                className="glass-button glass-button--ghost text-[var(--text-secondary)] text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -624,14 +616,14 @@ export const ActivityBar: React.FC = () => {
 
       {/* Rename Workspace Modal */}
       {showRenameWsModal && createPortal(
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center">
+        <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-md z-[200] flex items-center justify-center">
           <div className="glass-modal p-6 w-96 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <Edit2 size={16} className="text-blue-500" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+              <Edit2 size={16} className="text-[var(--accent-primary)]" />
               Rename Workspace Session
             </h3>
             <div className="space-y-1.5">
-              <label className="text-[11px] font-mono text-zinc-500 uppercase">New Workspace Name</label>
+              <label className="text-[11px] font-mono text-[var(--text-muted)] uppercase">New Workspace Name</label>
               <input
                 type="text"
                 value={renameWsName}
@@ -647,7 +639,7 @@ export const ActivityBar: React.FC = () => {
                   setRenameWsId(null);
                   setRenameWsName("");
                 }}
-                className="glass-button glass-button--ghost text-zinc-400 text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
+                className="glass-button glass-button--ghost text-[var(--text-secondary)] text-xs py-1.5 px-4 rounded transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -666,22 +658,22 @@ export const ActivityBar: React.FC = () => {
 
       {/* Drag & Drop Import Modal */}
       {showImportModal && createPortal(
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[200] flex items-center justify-center font-mono animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-md z-[200] flex items-center justify-center font-mono animate-in fade-in duration-200">
           <div className="glass-modal glass-noise-base p-6 w-[420px] shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <FolderPlus size={16} className="text-accent-primary" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+              <FolderPlus size={16} className="text-[var(--accent-primary)]" />
               Import Dropped Folder
             </h3>
             
-            <div className="text-[10px] text-zinc-550 space-y-1">
+            <div className="text-[10px] text-[var(--text-muted)] space-y-1">
               <div>
-                <span className="font-bold uppercase tracking-wider text-zinc-500">Path:</span>{' '}
-                <span className="font-mono bg-white/5 px-1 py-0.5 rounded break-all select-all text-zinc-400">{droppedPath}</span>
+                <span className="font-bold uppercase tracking-wider text-[var(--text-muted)]">Path:</span>{' '}
+                <span className="font-mono bg-[var(--border-glass)] px-1 py-0.5 rounded break-all select-all text-[var(--text-secondary)]">{droppedPath}</span>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-wider">Import Name</label>
+              <label className="text-[10px] font-mono text-[var(--text-muted)] uppercase font-bold tracking-wider">Import Name</label>
               <input
                 type="text"
                 value={droppedName}
@@ -691,10 +683,10 @@ export const ActivityBar: React.FC = () => {
               />
             </div>
 
-            <div className="flex gap-2 justify-end pt-3 border-t border-border-glass select-none">
+            <div className="flex gap-2 justify-end pt-3 border-t border-[var(--border-glass)] select-none">
               <button
                 onClick={() => setShowImportModal(false)}
-                className="bg-transparent hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 border border-border-glass hover:border-border-glass-hover font-bold text-[10px] uppercase py-1.5 px-4 rounded transition-all cursor-pointer"
+                className="bg-transparent hover:bg-[var(--border-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-glass)] hover:border-[var(--border-glass-hover)] font-bold text-[10px] uppercase py-1.5 px-4 rounded transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -710,7 +702,7 @@ export const ActivityBar: React.FC = () => {
                   }
                 }}
                 disabled={!droppedName.trim()}
-                className="bg-accent-primary hover:bg-accent-secondary text-black font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow transition-all cursor-pointer disabled:opacity-50"
+                className="bg-[var(--accent-primary)] hover:bg-[var(--accent-secondary)] text-[var(--text-inverse)] font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow transition-all cursor-pointer disabled:opacity-50"
               >
                 Import Workspace
               </button>
@@ -727,7 +719,7 @@ export const ActivityBar: React.FC = () => {
                     }
                   }}
                   disabled={!droppedName.trim()}
-                  className="bg-purple-650 hover:bg-purple-600 text-white font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow transition-all cursor-pointer border border-purple-500/20 disabled:opacity-50"
+                  className="bg-[rgba(139,92,246,0.8)] hover:bg-[rgba(139,92,246,1)] text-[var(--text-primary)] font-bold text-[10px] uppercase py-1.5 px-4 rounded shadow transition-all cursor-pointer border border-[rgba(139,92,246,0.2)] disabled:opacity-50"
                 >
                   Add as Project
                 </button>

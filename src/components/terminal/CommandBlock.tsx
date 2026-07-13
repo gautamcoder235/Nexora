@@ -9,6 +9,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { TerminalBlock } from '../../types/terminal';
 import { useTerminalStore } from '../../stores/terminalStore';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { ThemeManager } from '../../services/ThemeManager';
 import './CommandBlock.css';
 
 interface CommandBlockProps {
@@ -23,6 +25,7 @@ export const CommandBlock: React.FC<CommandBlockProps> = ({ sessionId, block }) 
 
   const toggleCollapse = useTerminalStore((s) => s.toggleBlockCollapse);
   const toggleBookmark = useTerminalStore((s) => s.toggleBlockBookmark);
+  const settings = useOrchestratorStore((s) => s.settings);
 
   // Initialize block-specific xterm.js instance
   useEffect(() => {
@@ -34,6 +37,9 @@ export const CommandBlock: React.FC<CommandBlockProps> = ({ sessionId, block }) 
       return;
     }
 
+    const activeTheme = ThemeManager.getTheme(settings.appearance?.theme?.theme || 'Midnight');
+    const termTheme = activeTheme.terminal;
+
     const term = new Terminal({
       cursorBlink: false,
       cursorInactiveStyle: 'none',
@@ -41,23 +47,23 @@ export const CommandBlock: React.FC<CommandBlockProps> = ({ sessionId, block }) 
       fontSize: 12,
       theme: {
         background: 'transparent',
-        foreground: '#e2e8f0',
-        black: '#0f0f15',
-        red: '#ef4444',
-        green: '#10b981',
-        yellow: '#f59e0b',
-        blue: '#3b82f6',
-        magenta: '#8b5cf6',
-        cyan: '#06b6d4',
-        white: '#cbd5e1',
-        brightBlack: '#475569',
-        brightRed: '#f87171',
-        brightGreen: '#34d399',
-        brightYellow: '#fbbf24',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#a78bfa',
-        brightCyan: '#22d3ee',
-        brightWhite: '#f1f5f9',
+        foreground: termTheme.foreground,
+        black: termTheme.black,
+        red: termTheme.red,
+        green: termTheme.green,
+        yellow: termTheme.yellow,
+        blue: termTheme.blue,
+        magenta: termTheme.magenta,
+        cyan: termTheme.cyan,
+        white: termTheme.white,
+        brightBlack: termTheme.brightBlack,
+        brightRed: termTheme.brightRed,
+        brightGreen: termTheme.brightGreen,
+        brightYellow: termTheme.brightYellow,
+        brightBlue: termTheme.brightBlue,
+        brightMagenta: termTheme.brightMagenta,
+        brightCyan: termTheme.brightCyan,
+        brightWhite: termTheme.brightWhite,
       },
       rows: Math.min(40, Math.max(3, block.output.split('\n').length)),
       allowProposedApi: true,
@@ -101,6 +107,33 @@ export const CommandBlock: React.FC<CommandBlockProps> = ({ sessionId, block }) 
       term.dispose();
     };
   }, [block.isCollapsed]);
+
+  // Dynamic terminal theme updates on theme switch for blocks
+  useEffect(() => {
+    if (!termRef.current) return;
+    const activeTheme = ThemeManager.getTheme(settings.appearance?.theme?.theme || 'Midnight');
+    const termTheme = activeTheme.terminal;
+    termRef.current.options.theme = {
+      background: 'transparent',
+      foreground: termTheme.foreground,
+      black: termTheme.black,
+      red: termTheme.red,
+      green: termTheme.green,
+      yellow: termTheme.yellow,
+      blue: termTheme.blue,
+      magenta: termTheme.magenta,
+      cyan: termTheme.cyan,
+      white: termTheme.white,
+      brightBlack: termTheme.brightBlack,
+      brightRed: termTheme.brightRed,
+      brightGreen: termTheme.brightGreen,
+      brightYellow: termTheme.brightYellow,
+      brightBlue: termTheme.brightBlue,
+      brightMagenta: termTheme.brightMagenta,
+      brightCyan: termTheme.brightCyan,
+      brightWhite: termTheme.brightWhite,
+    };
+  }, [settings.appearance?.theme]);
 
   // Update output if it changes (when command is running)
   useEffect(() => {

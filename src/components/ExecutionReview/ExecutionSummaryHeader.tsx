@@ -78,22 +78,22 @@ export function ExecutionSummaryHeader({ metadata, artifacts, onPause, onResume,
   const { filesChanged, linesAdded, linesRemoved } = stats;
 
   const statusColor = metadata.status === 'completed' || metadata.status === 'passed' 
-    ? 'text-green-400 bg-green-400/10 border-green-400/20' 
+    ? 'text-success bg-success/10 border-success/20' 
     : metadata.status === 'failed' 
-    ? 'text-red-400 bg-red-400/10 border-red-400/20'
+    ? 'text-error bg-error/10 border-error/20'
     : metadata.status === 'paused'
-    ? 'text-purple-400 bg-purple-400/10 border-purple-400/20'
-    : 'text-blue-400 bg-blue-400/10 border-blue-400/20';
+    ? 'text-accent-secondary bg-accent-secondary/10 border-accent-secondary/20'
+    : 'text-accent-primary bg-accent-primary/10 border-accent-primary/20';
 
   return (
-    <div className="bg-[#161b22] border border-gray-800 rounded-lg p-6 shadow-sm">
+    <div className="bg-bg-secondary border border-border-glass rounded-lg p-6 shadow-sm">
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-2">Execution #{metadata.execution_id.split('-').pop()}</h1>
-          <div className="flex gap-4 text-sm text-gray-400">
-            <div><span className="font-semibold text-gray-300">Agent:</span> {metadata.agent_id}</div>
-            <div><span className="font-semibold text-gray-300">Branch:</span> {metadata.branch || 'unknown'}</div>
-            <div><span className="font-semibold text-gray-300">Duration:</span> {durationStr}</div>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">Execution #{metadata.execution_id.split('-').pop()}</h1>
+          <div className="flex gap-4 text-sm text-text-secondary">
+            <div><span className="font-semibold text-text-secondary">Agent:</span> {metadata.agent_id}</div>
+            <div><span className="font-semibold text-text-secondary">Branch:</span> {metadata.branch || 'unknown'}</div>
+            <div><span className="font-semibold text-text-secondary">Duration:</span> {durationStr}</div>
           </div>
         </div>
         
@@ -115,7 +115,7 @@ export function ExecutionSummaryHeader({ metadata, artifacts, onPause, onResume,
           {metadata.status === 'paused' && onResume && (
             <button 
               onClick={onResume}
-              className="bg-emerald-500/10 border border-emerald-500/30 hover:border-emerald-500 hover:bg-emerald-500/20 text-emerald-450 px-3 h-9 rounded text-xs font-semibold transition-all cursor-pointer outline-none"
+              className="bg-success/10 border border-success/30 hover:border-success hover:bg-success/20 text-success px-3 h-9 rounded text-xs font-semibold transition-all cursor-pointer outline-none"
             >
               Resume
             </button>
@@ -124,7 +124,7 @@ export function ExecutionSummaryHeader({ metadata, artifacts, onPause, onResume,
           {!['completed', 'passed', 'terminated', 'failed'].includes(metadata.status) && onTerminate && (
             <button 
               onClick={onTerminate}
-              className="bg-rose-500/10 border border-rose-500/30 hover:border-rose-500 hover:bg-rose-500/20 text-rose-400 px-3 h-9 rounded text-xs font-semibold transition-all cursor-pointer outline-none"
+              className="bg-error/10 border border-error/30 hover:border-error hover:bg-error/20 text-error px-3 h-9 rounded text-xs font-semibold transition-all cursor-pointer outline-none"
             >
               Terminate
             </button>
@@ -132,18 +132,18 @@ export function ExecutionSummaryHeader({ metadata, artifacts, onPause, onResume,
         </div>
       </div>
 
-      <div className="mt-6 pt-6 border-t border-gray-800 flex gap-12">
+      <div className="mt-6 pt-6 border-t border-border-glass flex gap-12">
         <div>
-          <div className="text-sm text-gray-500 mb-1">Files Changed</div>
-          <div className="text-xl font-bold text-gray-200">{filesChanged}</div>
+          <div className="text-sm text-text-muted mb-1">Files Changed</div>
+          <div className="text-xl font-bold text-text-primary">{filesChanged}</div>
         </div>
         <div>
-          <div className="text-sm text-gray-500 mb-1">Additions</div>
-          <div className="text-xl font-bold text-green-400">+{linesAdded}</div>
+          <div className="text-sm text-text-muted mb-1">Additions</div>
+          <div className="text-xl font-bold text-success">+{linesAdded}</div>
         </div>
         <div>
-          <div className="text-sm text-gray-500 mb-1">Deletions</div>
-          <div className="text-xl font-bold text-red-400">-{linesRemoved}</div>
+          <div className="text-sm text-text-muted mb-1">Deletions</div>
+          <div className="text-xl font-bold text-error">-{linesRemoved}</div>
         </div>
       </div>
     </div>

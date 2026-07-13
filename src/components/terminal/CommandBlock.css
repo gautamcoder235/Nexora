@@ -4,7 +4,7 @@
 
 .command-block {
   padding: 0 !important;
-  background-color: rgba(13, 13, 23, 0.65) !important;
+  background-color: var(--bg-glass-light) !important;
   border: 1px solid var(--border-glass) !important;
   display: flex;
   flex-direction: column;
@@ -14,7 +14,7 @@
 }
 
 .command-block:hover {
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: var(--border-glass-hover) !important;
 }
 
 .command-block--running {
@@ -32,7 +32,7 @@
 
 .command-block__header {
   height: 30px;
-  background-color: rgba(0, 0, 0, 0.25);
+  background-color: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-glass);
   display: flex;
   justify-content: space-between;
@@ -97,7 +97,7 @@
 .command-block__output-container {
   display: flex;
   flex-direction: column;
-  background-color: rgba(0, 0, 0, 0.15);
+  background-color: var(--bg-primary);
   border-top: 1px solid var(--border-glass);
 }
 
@@ -115,8 +115,8 @@
   display: flex;
   justify-content: flex-end;
   padding: var(--space-2) var(--space-4);
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
-  background-color: rgba(0, 0, 0, 0.1);
+  border-top: 1px solid var(--border-glass);
+  background-color: var(--bg-secondary);
 }
 
 .command-block__action {

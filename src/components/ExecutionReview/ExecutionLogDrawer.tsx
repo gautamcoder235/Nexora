@@ -25,8 +25,8 @@ export function ExecutionLogDrawer({ logs }: Props) {
               onClick={() => setFilter(level as any)}
               className={`px-3 py-1 text-xs rounded border transition-colors cursor-pointer ${
                 filter === level 
-                  ? 'bg-bg-primary text-white border-border-glass font-medium' 
-                  : 'bg-transparent text-zinc-500 border-transparent hover:text-zinc-300'
+                  ? 'bg-bg-primary text-text-primary border-border-glass font-medium' 
+                  : 'bg-transparent text-text-muted border-transparent hover:text-text-primary'
               }`}
             >
               {level}
@@ -44,20 +44,20 @@ export function ExecutionLogDrawer({ logs }: Props) {
           />
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs bg-[#050507]">
+      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs bg-bg-tertiary">
         {filteredLogs.length === 0 ? (
-          <div className="text-zinc-600 italic">// No logs found.</div>
+          <div className="text-text-muted italic">// No logs found.</div>
         ) : (
           filteredLogs.map(log => (
-            <div key={log.id} className="flex gap-4 mb-1 hover:bg-white/5 px-2 py-0.5 rounded transition-all">
-              <span className="text-zinc-650 shrink-0">{new Date(log.timestamp).toISOString().split('T')[1].slice(0, -1)}</span>
+            <div key={log.id} className="flex gap-4 mb-1 hover:bg-bg-secondary/40 px-2 py-0.5 rounded transition-all">
+              <span className="text-text-muted shrink-0">{new Date(log.timestamp).toISOString().split('T')[1].slice(0, -1)}</span>
               <span className={`w-12 shrink-0 font-bold ${
                 log.level === 'error' ? 'text-accent-error' :
                 log.level === 'warning' ? 'text-accent-warning' : 'text-accent-info'
               }`}>
                 {log.level.toUpperCase()}
               </span>
-              <span className="text-zinc-350 break-all select-text">{log.message}</span>
+              <span className="text-text-secondary break-all select-text">{log.message}</span>
             </div>
           ))
         )}

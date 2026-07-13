@@ -297,7 +297,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       // Apply appearance settings dynamically on update
       if (sanitized.appearance) {
         import('../services/ThemeManager').then(({ ThemeManager }) => {
-          ThemeManager.applyAppearance(sanitized.appearance);
+          ThemeManager.applyAppearance(sanitized.appearance, get().sidebarWidth, get().topPanelHeight);
         });
       }
 
@@ -333,7 +333,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       };
     });
     import('../services/ThemeManager').then(({ ThemeManager }) => {
-      ThemeManager.applyAppearance(sanitizedDefault.appearance);
+      ThemeManager.applyAppearance(sanitizedDefault.appearance, get().sidebarWidth, get().topPanelHeight);
     });
     get().saveSnapshot();
   },
@@ -505,7 +505,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
       // Apply theme styles on startup
       import('../services/ThemeManager').then(({ ThemeManager }) => {
-        ThemeManager.applyAppearance(sanitized.appearance);
+        ThemeManager.applyAppearance(sanitized.appearance, get().sidebarWidth, get().topPanelHeight);
       });
 
       // Initialize runtime ticker for active running agents

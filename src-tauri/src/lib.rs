@@ -10,21 +10,9 @@ use serde::Serialize;
 use std::time::{Duration, Instant};
 use sysinfo::System;
 
-pub mod swarm_agents;
-pub mod swarm_changeset;
-pub mod swarm_db;
-pub mod swarm_events;
-pub mod swarm_isolation;
-pub mod swarm_lifecycle;
-pub mod swarm_merge;
-pub mod swarm_ownership;
-pub mod swarm_queries;
-pub mod swarm_validation;
-pub mod swarm_worktrees;
-pub mod team;
-pub mod comms_watcher;
+pub mod database;
 pub mod drivers;
-pub mod ipc_server;
+pub mod ucte;
 
 #[derive(Serialize, Clone, Default)]
 pub struct BackendMetrics {
@@ -1581,70 +1569,51 @@ fn get_system_metrics() -> SystemMetrics {
 }
 
 #[tauri::command]
+fn read_original_file(path: String) -> Result<String, String> {
+    let path = std::path::Path::new(&path);
+    let parent = path.parent().ok_or("No parent directory")?;
+    
+    let root_output = std::process::Command::new("git")
+        .args(&["rev-parse", "--show-toplevel"])
+        .current_dir(parent)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !root_output.status.success() {
+        return Err("Not a git repository".to_string());
+    }
+
+    let git_root = String::from_utf8_lossy(&root_output.stdout).trim().to_string();
+    let git_root_path = std::path::Path::new(&git_root);
+
+    let relative_path = path.strip_prefix(git_root_path)
+        .map_err(|_| "File not under git root".to_string())?
+        .to_str()
+        .ok_or("Invalid relative path")?
+        .replace("\\", "/");
+
+    let show_output = std::process::Command::new("git")
+        .args(&["show", &format!("HEAD:{}", relative_path)])
+        .current_dir(&git_root)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if show_output.status.success() {
+        Ok(String::from_utf8_lossy(&show_output.stdout).into_owned())
+    } else {
+        Ok(String::new())
+    }
+}
+
+#[tauri::command]
 fn exit_app(app_handle: AppHandle) {
     app_handle.exit(0);
 }
 
 
-pub fn start_heartbeat_watchdog(app_handle: AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(Duration::from_secs(15));
-            let mut stalled_sessions = Vec::new();
-            {
-                if let Ok(map) = PTY_LAST_OUTPUT.lock() {
-                    let now = Instant::now();
-                    for (session_id, (last_time, project_path, task_id)) in map.iter() {
-                        if now.duration_since(*last_time).as_secs() >= 600 {
-                            stalled_sessions.push((session_id.clone(), project_path.clone(), task_id.clone()));
-                        }
-                    }
-                }
-            }
 
-            for (session_id, project_path, task_id) in stalled_sessions {
-                println!("[Watchdog] Suspected stall detected in PTY session: {}", session_id);
-                if let (Some(p_path), Some(t_id)) = (project_path, task_id) {
-                    let _ = crate::team::task_types::update_task_state(&p_path, &t_id, crate::team::task_types::TaskState::Staled);
-                    let _ = app_handle.emit("swarm-event", serde_json::json!({
-                        "type": "TaskStatusChanged",
-                        "payload": {
-                            "task_id": t_id.clone(),
-                            "status": "STALED"
-                        }
-                    }));
-                }
-            }
-        }
-    });
-}
 
-pub fn start_scheduler_watchdog(app_handle: AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(Duration::from_secs(10));
-            let mut project_dir = String::new();
-            if let Some(db_state) = app_handle.try_state::<crate::swarm_db::DbState>() {
-                if let Ok(guard) = db_state.0.lock() {
-                    if let Some(ref conn) = *guard {
-                        let stmt = conn.prepare("SELECT root_path FROM repositories ORDER BY last_opened_at DESC LIMIT 1").ok();
-                        if let Some(mut s) = stmt {
-                            if let Some(path) = s.query_row([], |row| row.get::<_, String>(0)).ok() {
-                                project_dir = path;
-                            }
-                        }
-                    }
-                }
-            }
 
-            if !project_dir.is_empty() {
-                if let Err(e) = crate::team::scheduler::run_scheduler_tick(&app_handle, &project_dir) {
-                    eprintln!("[Scheduler] Tick error: {}", e);
-                }
-            }
-        }
-    });
-}
 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1655,16 +1624,15 @@ pub fn run() {
     );
     let app = tauri::Builder::default()
         .manage(BrowserStateWrapper(Mutex::new(BrowserState::default())))
-        .manage(team::bus::CommandBus::new())
-        .manage(team::bus::EventBus::new())
+        
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
             
             // Manage DbState with None connection synchronously to prevent Tauri command panics on missing state
-            app_handle.manage(swarm_db::DbState(std::sync::Mutex::new(None)));
+            app_handle.manage(database::DbState(std::sync::Mutex::new(None)));
             
-            // Asynchronously initialize database and recovery using tauri::async_runtime::spawn
+            // Asynchronously initialize database using tauri::async_runtime::spawn
             tauri::async_runtime::spawn(async move {
                 // Phase 1: Database Initialization
                 let start_db = Instant::now();
@@ -1700,44 +1668,32 @@ pub fn run() {
                             eprintln!("[Startup] Pragma setup failed: {}", e);
                         }
 
-                        // Run migrations & seeding
-                        if let Err(e) = swarm_db::run_migrations(&conn) {
-                            eprintln!("[Startup] Migration failed: {}", e);
-                        } else if let Err(e) = swarm_db::seed_default_agents(&conn) {
-                            eprintln!("[Startup] Seeding failed: {}", e);
-                        } else {
-                            // Clean up mock changeset data
-                            let _ = conn.execute("DELETE FROM review_comments WHERE changeset_id = 'cset-mock-auth'", []);
-                            let _ = conn.execute("DELETE FROM changeset_files WHERE changeset_id = 'cset-mock-auth'", []);
-                            let _ = conn.execute("DELETE FROM changesets WHERE id = 'cset-mock-auth'", []);
-
-                            // Initialize Team DB
-                            if let Err(e) = team::init_team_db(&conn) {
-                                eprintln!("[Startup] Failed to initialize team db: {}", e);
-                            }
-
-                            connection = Some(conn);
+                        // Create repository table if not exists
+                        let create_table_res = conn.execute(
+                            "CREATE TABLE IF NOT EXISTS repositories (
+                                id TEXT PRIMARY KEY,
+                                name TEXT NOT NULL,
+                                root_path TEXT NOT NULL,
+                                git_branch TEXT,
+                                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                last_opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                deleted_at DATETIME
+                            );",
+                            [],
+                        );
+                        if let Err(e) = create_table_res {
+                            eprintln!("[Startup] Failed to create repositories table: {}", e);
                         }
+
+                        connection = Some(conn);
                     }
                     Err(e) => {
                         eprintln!("[Startup] Failed to open SQLite DB: {}", e);
                     }
                 }
 
-                let mut project_dir = String::new();
-
                 if let Some(conn) = connection {
-                    // Query the last opened project directory before store
-                    {
-                        let stmt = conn.prepare("SELECT root_path FROM repositories ORDER BY last_opened_at DESC LIMIT 1").ok();
-                        if let Some(mut s) = stmt {
-                            if let Some(path) = s.query_row([], |row| row.get::<_, String>(0)).ok() {
-                                project_dir = path;
-                            }
-                        }
-                    }
-
-                    if let Some(db_state) = app_handle.try_state::<swarm_db::DbState>() {
+                    if let Some(db_state) = app_handle.try_state::<database::DbState>() {
                         if let Ok(mut guard) = db_state.0.lock() {
                             *guard = Some(conn);
                         }
@@ -1746,28 +1702,6 @@ pub fn run() {
 
                 let db_dur = start_db.elapsed().as_millis() as u64;
                 record_perf_timing("Database Initialization", db_dur);
-
-
-
-                // Phase 3: Monitors & Recovery
-                let start_recovery = Instant::now();
-                if !project_dir.is_empty() {
-                    if let Err(e) = team::recovery_engine::run_startup_recovery(&app_handle, &project_dir) {
-                        eprintln!("[Startup] Failed to run startup recovery: {}", e);
-                    }
-                }
-                let recovery_dur = start_recovery.elapsed().as_millis() as u64;
-                record_perf_timing("Startup Recovery", recovery_dur);
-
-                // Start all watchdog tasks
-                swarm_lifecycle::start_agent_watchdog(app_handle.clone());
-                start_heartbeat_watchdog(app_handle.clone());
-                start_scheduler_watchdog(app_handle.clone());
-                swarm_lifecycle::start_lock_watchdog(app_handle.clone());
-                team::watcher::start_team_lock_watchdog(app_handle.clone());
-
-                // Start native IPC Server for CLI communication
-                tauri::async_runtime::spawn(crate::ipc_server::start_ipc_server(app_handle.clone()));
             });
 
             Ok(())
@@ -1808,97 +1742,10 @@ pub fn run() {
             get_terminal_metrics,
             get_system_metrics,
             get_git_branch,
-            swarm_worktrees::validate_git_repository,
-            swarm_worktrees::create_worktree,
-            swarm_worktrees::remove_worktree,
-            swarm_worktrees::cleanup_worktrees,
-            swarm_ownership::validate_ownership,
-            swarm_ownership::acquire_lock,
-            swarm_ownership::release_lock,
-            swarm_ownership::heartbeat_lock,
-            swarm_ownership::get_resource_locks,
-            swarm_lifecycle::start_task_execution,
-            swarm_lifecycle::finish_task_execution,
-            swarm_lifecycle::recover_swarm_state,
-            swarm_lifecycle::spawn_agent_session,
-            swarm_lifecycle::debug_simulate_agent_completion,
-            swarm_lifecycle::pause_execution,
-            swarm_lifecycle::resume_execution,
-            swarm_validation::run_validation_async,
-            swarm_agents::get_all_agents,
-            swarm_agents::register_agent,
-            swarm_agents::update_agent_status,
-            swarm_queries::get_validation_run,
-            swarm_queries::get_artifacts,
-            swarm_queries::get_execution_logs,
-            swarm_queries::get_execution_metadata,
-            swarm_queries::get_merge_candidate,
-            swarm_queries::review_merge_candidate,
-            swarm_queries::read_artifact,
-            // Phase 5: Swarm Control Center
-            swarm_queries::list_executions,
-            swarm_queries::terminate_execution,
-            swarm_queries::get_execution_events,
-            swarm_queries::save_execution_draft,
-            swarm_queries::list_execution_drafts,
-            swarm_queries::discard_execution_draft,
-            swarm_queries::list_execution_snapshots,
-            swarm_worktrees::revert_execution_snapshot,
-            swarm_validation::save_validation_profile,
-            swarm_validation::get_validation_profile,
-            swarm_merge::apply_merge_candidate,
-            swarm_changeset::create_changeset_draft,
-            swarm_changeset::add_file_to_changeset,
-            swarm_changeset::add_review_comment,
-            swarm_changeset::update_file_status,
-            swarm_changeset::get_changeset_details,
-            swarm_changeset::get_all_changesets,
-            swarm_changeset::apply_changeset_transaction,
-            swarm_changeset::rollback_changeset,
-            swarm_changeset::validate_changeset_shadow,
-            team::commands::get_team_nodes,
-            team::commands::get_team_edges,
-            team::commands::get_team_tasks,
-            team::commands::get_team_messages,
-            team::commands::get_agent_metrics,
-            team::commands::pause_agent,
-            team::commands::resume_agent,
-            team::commands::kill_agent,
-            team::commands::reassign_task,
-            team::commands::force_validation,
-            team::commands::force_review,
-            team::commands::rollback_task,
-            team::commands::release_team_lock,
-            team::commands::spawn_agent,
-            team::commands::send_directive,
-            comms_watcher::init_agent_comms,
-            comms_watcher::start_agent_comms_watcher,
-            comms_watcher::stop_agent_comms_watcher,
-            comms_watcher::write_agent_inbox,
-            comms_watcher::clear_agent_comms,
-            comms_watcher::read_agent_comms,
-            swarm_isolation::detect_project_type,
-            team::resource_manager::get_resource_snapshot,
-            team::resource_manager::verify_resource_availability,
-            team::budget_engine::get_budget,
-            team::budget_engine::update_budget_limit,
-            team::locks::acquire_resource_lock,
-            team::locks::release_resource_lock,
-            team::locks::get_active_resource_locks,
-            team::locks::release_all_locks_for_owner,
-            team::project_manager::get_project_state,
-            team::project_manager::initialize_project,
-            team::bus::send_swarm_command,
-            team::dag::initialize_default_templates,
-            team::dag::get_templates,
-            team::dag::expand_template,
-            team::dag::sort_and_validate_tasks,
-            team::artifacts::get_swarm_artifacts,
-            team::artifacts::promote_swarm_artifact,
-            team::artifacts::add_swarm_artifact,
-            team::indexer::index_workspace,
-            team::indexer::get_symbols,
-            team::indexer::get_repo_map,
+            read_original_file,
+            ucte::ucte_create_snapshot,
+            ucte::ucte_get_snapshot_diff,
+            ucte::ucte_get_changes,
             drivers::resolve_driver_launch,
             drivers::resolve_driver_resume,
             drivers::get_registered_drivers,
