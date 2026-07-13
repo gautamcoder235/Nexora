@@ -371,15 +371,8 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="px-2.5 py-2 border-b border-[#1B1B22] bg-[#09090b]/60 space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <select
-            value={scanScope}
-            onChange={(e) => setScanScope(e.target.value)}
-            className="flex-1 bg-[#121215] border border-[#252530] rounded px-2 py-1 text-[10px] text-zinc-300 focus:outline-none focus:border-[#7C5CFF]/40 appearance-none cursor-pointer"
-          >
-            <option value="all">All Projects</option>
-            {activeProjects.map(p => (<option key={p.id} value={p.path}>{p.name}</option>))}
-          </select>
+        <div className="flex items-center justify-between gap-1.5">
+          <span className="text-[10px] text-zinc-500 font-mono">Operations</span>
           <button
             onClick={handleCapture}
             disabled={isCapturing || isInitializing}
@@ -518,11 +511,13 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   );
 
   // ─── Project Files Sidebar ───
-  const renderProjectFilesSidebar = () => (
-    <div className="flex-grow overflow-y-auto p-3 space-y-1">
-      {activeProjects.length > 0 ? (
-        activeProjects.map((project) => {
-          const isExpanded = expandedDirs.has(project.path);
+  const renderProjectFilesSidebar = () => {
+    const filteredProjects = activeProjects.filter(p => scanScope === 'all' || p.path === scanScope);
+    return (
+      <div className="flex-grow overflow-y-auto p-3 space-y-1">
+        {filteredProjects.length > 0 ? (
+          filteredProjects.map((project) => {
+            const isExpanded = expandedDirs.has(project.path);
           return (
             <div key={project.id} className="flex flex-col">
               <button onClick={() => toggleDir(project.path)}
@@ -550,8 +545,9 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
       ) : (
         <div className="flex items-center justify-center p-4 text-center text-zinc-500 text-xs font-mono">No project directory.</div>
       )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   // ─── Viewport ───
   const renderViewport = () => {
@@ -750,6 +746,18 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
             }`}>
             <Folder size={11} /> Files
           </button>
+        </div>
+
+        {/* Scope Picker Dropdown (visible in both Timeline and Files tabs) */}
+        <div className="px-2.5 py-2 bg-[#09090b]/40 border-b border-[#1B1B22] shrink-0">
+          <select
+            value={scanScope}
+            onChange={(e) => setScanScope(e.target.value)}
+            className="w-full bg-[#121215] border border-[#252530] rounded px-2.5 py-1 text-[10px] text-zinc-300 focus:outline-none focus:border-[#7C5CFF]/40 appearance-none cursor-pointer"
+          >
+            <option value="all">All Projects</option>
+            {activeProjects.map(p => (<option key={p.id} value={p.path}>{p.name}</option>))}
+          </select>
         </div>
 
         {/* Content */}
