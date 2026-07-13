@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useChangesetStore } from '../../stores/changesetStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { X, ChevronRight, ChevronDown, Folder, FolderOpen, File, RefreshCw, Camera, ChevronUp } from 'lucide-react';
+import { X, ChevronDown, Folder, FolderOpen, File, RefreshCw, Undo2, Columns2, AlignJustify } from 'lucide-react';
 import { getLanguageFromPath } from '../../utils/language';
 import { invoke } from '@tauri-apps/api/core';
 import Editor, { DiffEditor } from '@monaco-editor/react';
@@ -16,6 +16,51 @@ interface FileNode {
 interface Props {
   repoPath: string;
   onClose: () => void;
+}
+
+// ── Shared Monaco Theme ──
+const VSCODE_DARK_THEME = {
+  base: 'vs-dark' as const,
+  inherit: true,
+  rules: [
+    { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+    { token: 'keyword', foreground: 'C586C0' },
+    { token: 'string', foreground: 'CE9178' },
+    { token: 'number', foreground: 'B5CEA8' },
+    { token: 'regexp', foreground: 'D16969' },
+    { token: 'type', foreground: '4EC9B0' },
+    { token: 'class', foreground: '4EC9B0' },
+    { token: 'function', foreground: 'DCDCAA' },
+    { token: 'variable', foreground: '9CDCFE' },
+    { token: 'tag', foreground: '569CD6' },
+    { token: 'attribute.name', foreground: '9CDCFE' },
+    { token: 'attribute.value', foreground: 'CE9178' },
+  ],
+  colors: {
+    'editor.background': '#08080a',
+    'editor.foreground': '#D4D4D4',
+    'editorCursor.foreground': '#AEAFAD',
+    'editor.lineHighlightBackground': '#141416',
+    'editorLineNumber.foreground': '#858585',
+    'editorLineNumber.activeForeground': '#C6C6C6',
+    'editor.selectionBackground': '#264F78',
+    'minimap.background': '#08080a',
+    'editorIndentGuide.background': '#2c2c2e',
+    'editorIndentGuide.background1': '#2c2c2e',
+    'editorIndentGuide.activeBackground': '#4e4e50',
+    'editorIndentGuide.activeBackground1': '#4e4e50',
+    'diffEditor.insertedTextBackground': '#2ea44f18',
+    'diffEditor.removedTextBackground': '#f8514918',
+    'diffEditor.insertedLineBackground': '#2ea44f12',
+    'diffEditor.removedLineBackground': '#f8514912',
+  },
+};
+
+function defineMonacoTheme(monaco: any) {
+  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true });
+  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true });
+  monaco.languages.typescript.typescriptDefaults.setCompilerOptions({ jsx: 1, allowNonTsExtensions: true });
+  monaco.editor.defineTheme('nexora-dark', VSCODE_DARK_THEME);
 }
 
 const MARKDOWN_STYLES = `
@@ -37,26 +82,14 @@ const MARKDOWN_STYLES = `
   .markdown-preview .md-check.done { color: #22c55e; }
   .markdown-preview .md-check.done .md-checkbox.checked { color: #22c55e; }
   .markdown-preview .md-check:not(.done) { color: #888899; }
-
-  .git-gutter-added {
-    background: #2ea44f !important;
-    width: 3px !important;
-    margin-left: 4px;
-  }
-  .git-gutter-modified {
-    background: #005cc5 !important;
-    width: 3px !important;
-    margin-left: 4px;
-  }
+  .git-gutter-added { background: #2ea44f !important; width: 3px !important; margin-left: 4px; }
+  .git-gutter-modified { background: #005cc5 !important; width: 3px !important; margin-left: 4px; }
 `;
 
 function renderMarkdown(text: string): string {
   if (!text) return '';
   let html = text.replace(/<!--[\s\S]*?-->/g, '');
-  html = html
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
     const l = lang ? `<span class="md-lang">${lang}</span>` : '';
     return `<div class="md-codeblock">${l}<pre>${code.trimEnd()}</pre></div>`;
@@ -69,10 +102,10 @@ function renderMarkdown(text: string): string {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong class="md-bold">$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em class="md-em">$1</em>');
   html = html.replace(/`([^`]+)`/g, '<code class="md-code">$1</code>');
-  html = html.replace(/^(\s*)- \[x\] (.+)$/gm, (_m, spaces, text) => `<div class="md-check done" style="margin-left: ${spaces.length * 8}px"><span class="md-checkbox checked">✓</span> ${text}</div>`);
-  html = html.replace(/^(\s*)- \[\/\] (.+)$/gm, (_m, spaces, text) => `<div class="md-check in-progress" style="margin-left: ${spaces.length * 8}px"><span class="md-checkbox half-checked text-[#f59e0b]">◐</span> <span class="text-[#f59e0b]">${text}</span></div>`);
-  html = html.replace(/^(\s*)- \[ \] (.+)$/gm, (_m, spaces, text) => `<div class="md-check" style="margin-left: ${spaces.length * 8}px"><span class="md-checkbox">○</span> ${text}</div>`);
-  html = html.replace(/^(\s*)- (.+)$/gm, (_m, spaces, text) => `<div class="md-li" style="margin-left: ${spaces.length * 8}px"><span class="md-bullet">•</span> ${text}</div>`);
+  html = html.replace(/^(\s*)- \[x\] (.+)$/gm, (_m, s, t) => `<div class="md-check done" style="margin-left: ${s.length * 8}px"><span class="md-checkbox checked">✓</span> ${t}</div>`);
+  html = html.replace(/^(\s*)- \[\/\] (.+)$/gm, (_m, s, t) => `<div class="md-check in-progress" style="margin-left: ${s.length * 8}px"><span class="md-checkbox half-checked text-[#f59e0b]">◐</span> <span class="text-[#f59e0b]">${t}</span></div>`);
+  html = html.replace(/^(\s*)- \[ \] (.+)$/gm, (_m, s, t) => `<div class="md-check" style="margin-left: ${s.length * 8}px"><span class="md-checkbox">○</span> ${t}</div>`);
+  html = html.replace(/^(\s*)- (.+)$/gm, (_m, s, t) => `<div class="md-li" style="margin-left: ${s.length * 8}px"><span class="md-bullet">•</span> ${t}</div>`);
   html = html.replace(/^&gt; (.+)$/gm, '<div class="md-blockquote">$1</div>');
   html = html.replace(/\n{2,}/g, '\n\n');
   return html;
@@ -81,8 +114,6 @@ function renderMarkdown(text: string): string {
 export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const activeTab = useChangesetStore(s => s.activeReviewTab);
   const setActiveTab = useChangesetStore(s => s.setActiveReviewTab);
-
-  // File Changes state
   const ucteChanges = useChangesetStore(s => s.ucteChanges);
   const isScanningUcte = useChangesetStore(s => s.isScanningUcte);
   const scanFileChanges = useChangesetStore(s => s.scanFileChanges);
@@ -92,7 +123,6 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const isTakingBaseline = useChangesetStore(s => s.isTakingBaseline);
   const checkBaselineExists = useChangesetStore(s => s.checkBaselineExists);
 
-  // File explorer state
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedFileAbsolutePath, setSelectedFileAbsolutePath] = useState<string | null>(null);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -103,12 +133,8 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
   const projects = useOrchestratorStore(s => s.projects);
   const settings = useOrchestratorStore(s => s.settings);
+  const activeProjects = useMemo(() => projects.filter(p => p.workspaceId === activeWorkspaceId), [projects, activeWorkspaceId]);
 
-  const activeProjects = useMemo(() => {
-    return projects.filter(p => p.workspaceId === activeWorkspaceId);
-  }, [projects, activeWorkspaceId]);
-
-  // Editor state
   const [editedFileContent, setEditedFileContent] = useState<string>('');
   const [debouncedEditedContent, setDebouncedEditedContent] = useState<string>('');
   const [editorTab, setEditorTab] = useState<'preview' | 'edit'>('preview');
@@ -117,161 +143,106 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const [editorRef, setEditorRef] = useState<any>(null);
   const [monacoRef, setMonacoRef] = useState<any>(null);
 
-  // Diff states
   const [originalContent, setOriginalContent] = useState<string>('');
   const [modifiedContent, setModifiedContent] = useState<string>('');
   const [isDiffLoading, setIsDiffLoading] = useState<boolean>(false);
-
-  // Scan scope: which project to scan, or 'all'
+  const [diffMode, setDiffMode] = useState<'split' | 'inline'>('split');
   const [scanScope, setScanScope] = useState<string>('all');
 
   const loadedPaths = useRef<Set<string>>(new Set());
+  const autoBaselineDone = useRef(false);
 
-  // Check baseline on mount
+  // Auto-baseline on mount: if no baseline exists, take one automatically
   useEffect(() => {
-    checkBaselineExists(repoPath);
+    if (autoBaselineDone.current) return;
+    autoBaselineDone.current = true;
+
+    const target = repoPath;
+    invoke<string[]>('scan_file_changes', { repoPath: target })
+      .then(() => {
+        // Baseline exists
+        useChangesetStore.setState({ hasBaseline: true });
+      })
+      .catch(() => {
+        // No baseline — auto-create one
+        takeBaseline(target);
+      });
   }, [repoPath]);
 
-  // Reset auto-expand tracking and loaded paths when workspace changes
-  useEffect(() => {
-    setHasAutoExpanded(false);
-    loadedPaths.current.clear();
-  }, [activeWorkspaceId]);
+  useEffect(() => { setHasAutoExpanded(false); loadedPaths.current.clear(); }, [activeWorkspaceId]);
 
-  // Debounce file edits
   useEffect(() => {
-    if (editedFileContent === workspaceFileContent) {
-      setDebouncedEditedContent(editedFileContent);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setDebouncedEditedContent(editedFileContent);
-    }, 400);
-    return () => clearTimeout(timer);
+    if (editedFileContent === workspaceFileContent) { setDebouncedEditedContent(editedFileContent); return; }
+    const t = setTimeout(() => setDebouncedEditedContent(editedFileContent), 400);
+    return () => clearTimeout(t);
   }, [editedFileContent, workspaceFileContent]);
 
-  // Auto-switch to preview for markdown
   useEffect(() => {
-    if (selectedFilePath?.toLowerCase().endsWith('.md')) {
-      setEditorTab('preview');
-    } else {
-      setEditorTab('edit');
-    }
+    setEditorTab(selectedFilePath?.toLowerCase().endsWith('.md') ? 'preview' : 'edit');
   }, [selectedFilePath]);
 
-  // Load file content when selection changes
+  // Load file / diff content
   useEffect(() => {
     if (!selectedFilePath || !selectedFileAbsolutePath) return;
-
-    // Strip [deleted] prefix for path matching
     const cleanPath = selectedFilePath.replace(/^\[deleted\] /, '');
     const isChanged = activeTab === 'changeset' && ucteChanges.includes(selectedFilePath);
     const isDeleted = selectedFilePath.startsWith('[deleted] ');
 
     if (isChanged && !isDeleted) {
-      // Load diff: baseline (original) vs current (modified)
       setIsDiffLoading(true);
       const scanRoot = scanScope !== 'all' ? scanScope : repoPath;
       Promise.all([
         invoke<string>('read_baseline_file', { repoPath: scanRoot, filePath: cleanPath }).catch(() => ''),
         invoke<string>('read_project_file', { path: selectedFileAbsolutePath })
-      ])
-        .then(([orig, mod]) => {
-          setOriginalContent(orig);
-          setModifiedContent(mod);
-          setWorkspaceFileContent(mod);
-          setEditedFileContent(mod);
-          setIsDiffLoading(false);
-        })
-        .catch((err) => {
-          console.error("Failed to read files for diff:", err);
-          setIsDiffLoading(false);
-        });
+      ]).then(([orig, mod]) => {
+        setOriginalContent(orig); setModifiedContent(mod);
+        setWorkspaceFileContent(mod); setEditedFileContent(mod); setIsDiffLoading(false);
+      }).catch(() => setIsDiffLoading(false));
       return;
     }
-
     if (isDeleted) {
-      // For deleted files, show the baseline content
-      const scanRoot = scanScope !== 'all' ? scanScope : repoPath;
       setIsDiffLoading(true);
+      const scanRoot = scanScope !== 'all' ? scanScope : repoPath;
       invoke<string>('read_baseline_file', { repoPath: scanRoot, filePath: cleanPath })
-        .then((orig) => {
-          setOriginalContent(orig);
-          setModifiedContent('');
-          setIsDiffLoading(false);
-        })
+        .then((orig) => { setOriginalContent(orig); setModifiedContent(''); setIsDiffLoading(false); })
         .catch(() => setIsDiffLoading(false));
       return;
     }
-
-    // Normal file loading
     setIsFileLoading(true);
     invoke<string>('read_project_file', { path: selectedFileAbsolutePath })
-      .then((content) => {
-        setWorkspaceFileContent(content);
-        setEditedFileContent(content);
-        setIsFileLoading(false);
-      })
-      .catch((err) => {
-        console.error("Failed to read file:", err);
-        const errMsg = `// Error loading file: ${err}`;
-        setWorkspaceFileContent(errMsg);
-        setEditedFileContent(errMsg);
-        setIsFileLoading(false);
-      });
+      .then((content) => { setWorkspaceFileContent(content); setEditedFileContent(content); setIsFileLoading(false); })
+      .catch((err) => { const msg = `// Error loading file: ${err}`; setWorkspaceFileContent(msg); setEditedFileContent(msg); setIsFileLoading(false); });
   }, [selectedFilePath, selectedFileAbsolutePath, activeTab, ucteChanges, scanScope]);
 
-  // Clear decorations when selected file changes
-  useEffect(() => {
-    if (editorRef) {
-      editorRef.gitDecorations = editorRef.deltaDecorations(editorRef.gitDecorations || [], []);
-    }
-  }, [selectedFilePath, editorRef]);
+  useEffect(() => { if (editorRef) editorRef.gitDecorations = editorRef.deltaDecorations(editorRef.gitDecorations || [], []); }, [selectedFilePath, editorRef]);
 
-  // Git gutter decorations
   useEffect(() => {
     if (!editorRef || !monacoRef) return;
-    const originalLines = workspaceFileContent.split('\n');
-    const editedLines = debouncedEditedContent.split('\n');
-    const newDecorations: any[] = [];
-    const oldDecorations = editorRef.gitDecorations || [];
-    for (let i = 0; i < editedLines.length; i++) {
-      if (i >= originalLines.length) {
-        newDecorations.push({
-          range: new monacoRef.Range(i + 1, 1, i + 1, 1),
-          options: { isWholeLine: false, linesDecorationsClassName: 'git-gutter-added', overviewRuler: { color: '#2ea44f', position: monacoRef.editor.OverviewRulerLane.Left } }
-        });
-      } else if (editedLines[i] !== originalLines[i]) {
-        newDecorations.push({
-          range: new monacoRef.Range(i + 1, 1, i + 1, 1),
-          options: { isWholeLine: false, linesDecorationsClassName: 'git-gutter-modified', overviewRuler: { color: '#005cc5', position: monacoRef.editor.OverviewRulerLane.Left } }
-        });
-      }
+    const origLines = workspaceFileContent.split('\n');
+    const editLines = debouncedEditedContent.split('\n');
+    const decs: any[] = [];
+    for (let i = 0; i < editLines.length; i++) {
+      if (i >= origLines.length) decs.push({ range: new monacoRef.Range(i+1,1,i+1,1), options: { isWholeLine: false, linesDecorationsClassName: 'git-gutter-added', overviewRuler: { color: '#2ea44f', position: monacoRef.editor.OverviewRulerLane.Left } } });
+      else if (editLines[i] !== origLines[i]) decs.push({ range: new monacoRef.Range(i+1,1,i+1,1), options: { isWholeLine: false, linesDecorationsClassName: 'git-gutter-modified', overviewRuler: { color: '#005cc5', position: monacoRef.editor.OverviewRulerLane.Left } } });
     }
-    editorRef.gitDecorations = editorRef.deltaDecorations(oldDecorations, newDecorations);
+    editorRef.gitDecorations = editorRef.deltaDecorations(editorRef.gitDecorations || [], decs);
   }, [debouncedEditedContent, workspaceFileContent, editorRef, monacoRef]);
 
-  // Load root directories for active projects
   useEffect(() => {
     if (activeTab === 'workspace' && activeProjects.length > 0) {
-      activeProjects.forEach(async (project) => {
-        if (!loadedPaths.current.has(project.path)) {
-          loadedPaths.current.add(project.path);
-          try {
-            const nodes = await invoke<FileNode[]>('list_directory', { dirPath: project.path });
-            setDirContents(prev => ({ ...prev, [project.path]: nodes }));
-          } catch (err) {
-            loadedPaths.current.delete(project.path);
-          }
+      activeProjects.forEach(async (p) => {
+        if (!loadedPaths.current.has(p.path)) {
+          loadedPaths.current.add(p.path);
+          try { const n = await invoke<FileNode[]>('list_directory', { dirPath: p.path }); setDirContents(prev => ({ ...prev, [p.path]: n })); }
+          catch { loadedPaths.current.delete(p.path); }
         }
       });
     }
   }, [activeTab, activeProjects]);
 
-  // Auto-expand single project
   useEffect(() => {
     if (activeTab === 'workspace' && activeProjects.length === 1 && !hasAutoExpanded) {
-      setExpandedDirs(prev => { const next = new Set(prev); next.add(activeProjects[0].path); return next; });
+      setExpandedDirs(prev => { const n = new Set(prev); n.add(activeProjects[0].path); return n; });
       setHasAutoExpanded(true);
     }
   }, [activeTab, activeProjects, hasAutoExpanded]);
@@ -281,38 +252,20 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     setSaveStatus('saving');
     try {
       await invoke('write_project_file', { path: selectedFileAbsolutePath, content: editedFileContent });
-      setWorkspaceFileContent(editedFileContent);
-      setSaveStatus('saved');
+      setWorkspaceFileContent(editedFileContent); setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (err) {
-      console.error("Failed to save:", err);
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus('idle'), 3000);
-    }
+    } catch { setSaveStatus('error'); setTimeout(() => setSaveStatus('idle'), 3000); }
   };
 
   const toggleDir = async (dirPath: string) => {
     const next = new Set(expandedDirs);
-    if (next.has(dirPath)) {
-      next.delete(dirPath);
-      setExpandedDirs(next);
-    } else {
+    if (next.has(dirPath)) { next.delete(dirPath); } else {
       next.add(dirPath);
-      setExpandedDirs(next);
       if (!dirContents[dirPath]) {
-        try {
-          const nodes = await invoke<FileNode[]>('list_directory', { dirPath });
-          setDirContents(prev => ({ ...prev, [dirPath]: nodes }));
-        } catch (err) {
-          console.error("Failed to list directory:", err);
-        }
+        try { const n = await invoke<FileNode[]>('list_directory', { dirPath }); setDirContents(prev => ({ ...prev, [dirPath]: n })); } catch {}
       }
     }
-  };
-
-  const handleTakeBaseline = () => {
-    const target = scanScope !== 'all' ? scanScope : repoPath;
-    takeBaseline(target);
+    setExpandedDirs(next);
   };
 
   const handleScanChanges = () => {
@@ -320,109 +273,140 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     scanFileChanges(target);
   };
 
-  // ─── File Changes sidebar ───
+  const handleRevertFile = async (filePath: string) => {
+    const cleanPath = filePath.replace(/^\[deleted\] /, '');
+    const scanRoot = scanScope !== 'all' ? scanScope : repoPath;
+    try {
+      const baselineContent = await invoke<string>('read_baseline_file', { repoPath: scanRoot, filePath: cleanPath });
+      const absPath = `${scanRoot}/${cleanPath}`;
+      await invoke('write_project_file', { path: absPath, content: baselineContent });
+      // Re-scan to update list
+      handleScanChanges();
+      // If this was the selected file, reload it
+      if (selectedFilePath === filePath) {
+        setWorkspaceFileContent(baselineContent);
+        setEditedFileContent(baselineContent);
+        setOriginalContent(baselineContent);
+        setModifiedContent(baselineContent);
+      }
+    } catch (e) {
+      console.error('Failed to revert file:', e);
+    }
+  };
+
+  const handleRetakeBaseline = () => {
+    const target = scanScope !== 'all' ? scanScope : repoPath;
+    takeBaseline(target);
+  };
+
+  // ─── File Changes Sidebar ───
   const renderFileChangesSidebar = () => (
     <div className="flex flex-col h-full">
-      {/* Scope selector */}
-      <div className="p-2 border-b border-[#1B1B22] bg-[#09090b]/60">
-        <label className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Scan Scope</label>
-        <select
-          value={scanScope}
-          onChange={(e) => setScanScope(e.target.value)}
-          className="w-full bg-[#121215] border border-[#1B1B22] rounded px-2 py-1 text-[10px] text-zinc-300 focus:outline-none focus:border-[#7C5CFF]/50"
-        >
-          <option value="all">All Projects (Root)</option>
-          {activeProjects.map(p => (
-            <option key={p.id} value={p.path}>{p.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Baseline Controls */}
-      <div className="p-2 border-b border-[#1B1B22] space-y-1.5 bg-[#09090b]/40">
-        <div className="flex items-center justify-between">
-          <span className="text-[9px] text-zinc-500 font-mono">
-            {hasBaseline
-              ? `Baseline: ${baselineFileCount > 0 ? `${baselineFileCount} files` : 'Ready'}`
-              : 'No baseline yet'}
-          </span>
-        </div>
-        <div className="flex gap-1">
-          <button
-            onClick={handleTakeBaseline}
-            disabled={isTakingBaseline}
-            className="flex-1 flex items-center justify-center gap-1 bg-emerald-600/80 hover:bg-emerald-600 disabled:opacity-50 text-white text-[9px] font-bold py-1.5 rounded transition-all cursor-pointer select-none"
+      {/* Compact toolbar row */}
+      <div className="px-2.5 py-2 border-b border-[#1B1B22] bg-[#09090b]/60 space-y-2">
+        {/* Scope + Scan Row */}
+        <div className="flex items-center gap-1.5">
+          <select
+            value={scanScope}
+            onChange={(e) => setScanScope(e.target.value)}
+            className="flex-1 bg-[#121215] border border-[#252530] rounded px-2 py-1 text-[10px] text-zinc-300 focus:outline-none focus:border-[#7C5CFF]/40 appearance-none"
+            title="Scan scope"
           >
-            <Camera size={10} className={isTakingBaseline ? 'animate-pulse' : ''} />
-            <span>{isTakingBaseline ? 'Saving...' : 'Take Baseline'}</span>
-          </button>
+            <option value="all">All Projects</option>
+            {activeProjects.map(p => (
+              <option key={p.id} value={p.path}>{p.name}</option>
+            ))}
+          </select>
           <button
             onClick={handleScanChanges}
             disabled={isScanningUcte || !hasBaseline}
-            className="flex-1 flex items-center justify-center gap-1 bg-[#7C5CFF] hover:bg-[#7C5CFF]/90 disabled:opacity-50 text-white text-[9px] font-bold py-1.5 rounded transition-all cursor-pointer select-none"
+            title="Scan for changes"
+            className="h-[26px] px-2.5 flex items-center gap-1 bg-[#7C5CFF] hover:bg-[#6B4EE6] disabled:opacity-40 text-white text-[9px] font-bold rounded transition-all cursor-pointer select-none shrink-0"
           >
             <RefreshCw size={10} className={isScanningUcte ? 'animate-spin' : ''} />
-            <span>{isScanningUcte ? 'Scanning...' : 'Scan Changes'}</span>
+            Scan
           </button>
         </div>
-        {!hasBaseline && (
-          <p className="text-[8px] text-amber-400/80 italic leading-tight">
-            Take a baseline first, then edit your files. Scan to see what changed.
-          </p>
-        )}
+
+        {/* Baseline info row */}
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] text-zinc-500 font-mono">
+            {isTakingBaseline ? 'Saving baseline...' : hasBaseline ? `Baseline · ${baselineFileCount || '✓'} files` : 'No baseline'}
+          </span>
+          <button
+            onClick={handleRetakeBaseline}
+            disabled={isTakingBaseline}
+            title="Re-take baseline snapshot"
+            className="text-[8px] text-zinc-500 hover:text-emerald-400 px-1.5 py-0.5 rounded border border-[#252530] hover:border-emerald-500/30 transition-all cursor-pointer select-none disabled:opacity-40"
+          >
+            {isTakingBaseline ? '...' : '↻ Retake'}
+          </button>
+        </div>
       </div>
 
       {/* Changes List */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+      <div className="flex-1 overflow-y-auto">
         {ucteChanges.length > 0 && (
-          <div className="text-[9px] text-zinc-500 font-mono pb-1 border-b border-[#1B1B22] mb-1">
-            {ucteChanges.length} file{ucteChanges.length !== 1 ? 's' : ''} changed
+          <div className="px-2.5 py-1.5 text-[9px] text-zinc-500 font-mono border-b border-[#1B1B22]/50 bg-[#09090b]/30 flex items-center justify-between sticky top-0 z-10">
+            <span>{ucteChanges.length} change{ucteChanges.length !== 1 ? 's' : ''}</span>
           </div>
         )}
-        {ucteChanges.map((file) => {
-          const isSelected = selectedFilePath === file;
-          const isDeleted = file.startsWith('[deleted] ');
-          const displayName = isDeleted ? file.replace('[deleted] ', '') : file;
-          return (
-            <div
-              key={file}
-              onClick={() => {
-                setSelectedFilePath(file);
-                const cleanPath = file.replace(/^\[deleted\] /, '');
-                const scanRoot = scanScope !== 'all' ? scanScope : repoPath;
-                setSelectedFileAbsolutePath(`${scanRoot}/${cleanPath}`);
-              }}
-              className={`w-full text-left text-[11px] font-mono py-1.5 px-2 rounded-sm flex items-center gap-2 transition-colors cursor-pointer ${
-                isSelected
-                  ? 'bg-[#7C5CFF]/10 text-[#7C5CFF] font-semibold border-l-2 border-[#7C5CFF]'
-                  : 'text-zinc-400 hover:bg-zinc-900/60'
-              }`}
-            >
-              {isDeleted && (
-                <span className="text-[8px] bg-rose-500/15 text-rose-400 px-1 rounded font-bold shrink-0">DEL</span>
-              )}
-              {!isDeleted && (
-                <span className="text-[8px] bg-amber-500/15 text-amber-400 px-1 rounded font-bold shrink-0">MOD</span>
-              )}
-              <span className="truncate">{displayName}</span>
+        <div className="p-1.5 space-y-px">
+          {ucteChanges.map((file) => {
+            const isSelected = selectedFilePath === file;
+            const isDeleted = file.startsWith('[deleted] ');
+            const displayName = isDeleted ? file.replace('[deleted] ', '') : file;
+            const shortName = displayName.split('/').pop() || displayName;
+            const dirPath = displayName.includes('/') ? displayName.substring(0, displayName.lastIndexOf('/')) : '';
+
+            return (
+              <div
+                key={file}
+                onClick={() => {
+                  setSelectedFilePath(file);
+                  const cleanPath = file.replace(/^\[deleted\] /, '');
+                  const scanRoot = scanScope !== 'all' ? scanScope : repoPath;
+                  setSelectedFileAbsolutePath(`${scanRoot}/${cleanPath}`);
+                }}
+                className={`group w-full text-left text-[11px] font-mono py-1 px-2 rounded flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-[#7C5CFF]/12 text-[#A78BFA] border-l-2 border-[#7C5CFF] pl-1.5'
+                    : 'text-zinc-400 hover:bg-[#15151a] hover:text-zinc-300 border-l-2 border-transparent'
+                }`}
+              >
+                <span className={`text-[7px] font-bold px-1 py-px rounded shrink-0 uppercase tracking-wider ${
+                  isDeleted
+                    ? 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
+                    : 'bg-emerald-500/12 text-emerald-400 border border-emerald-500/20'
+                }`}>
+                  {isDeleted ? 'D' : 'M'}
+                </span>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="truncate leading-tight">{shortName}</span>
+                  {dirPath && <span className="text-[8px] text-zinc-600 truncate leading-tight">{dirPath}</span>}
+                </div>
+                {/* Revert button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleRevertFile(file); }}
+                  title="Revert to baseline"
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-rose-500/15 hover:text-rose-400 text-zinc-600 transition-all shrink-0"
+                >
+                  <Undo2 size={11} />
+                </button>
+              </div>
+            );
+          })}
+          {ucteChanges.length === 0 && (
+            <div className="text-center text-zinc-600 italic text-[10px] py-10">
+              {hasBaseline ? 'No changes since baseline.' : 'Setting up baseline...'}
             </div>
-          );
-        })}
-        {ucteChanges.length === 0 && hasBaseline && (
-          <div className="text-center text-zinc-600 italic text-[10px] py-8">
-            No changes detected since baseline.
-          </div>
-        )}
-        {ucteChanges.length === 0 && !hasBaseline && (
-          <div className="text-center text-zinc-600 italic text-[10px] py-8">
-            Take a baseline to start tracking changes.
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
 
-  // ─── Project Files sidebar ───
+  // ─── Project Files Sidebar ───
   const renderProjectFilesSidebar = () => (
     <div className="flex-grow overflow-y-auto p-3 space-y-1">
       {activeProjects.length > 0 ? (
@@ -430,45 +414,30 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
           const isExpanded = expandedDirs.has(project.path);
           return (
             <div key={project.id} className="flex flex-col">
-              <button
-                onClick={() => toggleDir(project.path)}
-                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm outline-none font-bold"
-              >
+              <button onClick={() => toggleDir(project.path)}
+                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm outline-none font-bold">
                 <span className="flex items-center gap-1.5">
                   <ChevronDown size={14} className={`text-zinc-500 shrink-0 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`} />
-                  {isExpanded
-                    ? <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
-                    : <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
-                  }
+                  {isExpanded ? <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" /> : <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />}
                   <span className="truncate">{project.name}</span>
                 </span>
               </button>
               {isExpanded && (
-                <DirectoryTree
-                  dirPath={project.path}
-                  depth={1}
-                  repoPath={project.path}
+                <DirectoryTree dirPath={project.path} depth={1} repoPath={project.path}
                   selectedFilePath={selectedFilePath}
-                  onFileSelect={(path, absolutePath) => { setSelectedFilePath(path); setSelectedFileAbsolutePath(absolutePath); }}
-                  expandedDirs={expandedDirs}
-                  toggleDir={toggleDir}
-                  dirContents={dirContents}
-                />
+                  onFileSelect={(p, a) => { setSelectedFilePath(p); setSelectedFileAbsolutePath(a); }}
+                  expandedDirs={expandedDirs} toggleDir={toggleDir} dirContents={dirContents} />
               )}
             </div>
           );
         })
       ) : repoPath ? (
-        <DirectoryTree
-          dirPath={repoPath} depth={0} repoPath={repoPath}
+        <DirectoryTree dirPath={repoPath} depth={0} repoPath={repoPath}
           selectedFilePath={selectedFilePath}
-          onFileSelect={(path, absolutePath) => { setSelectedFilePath(path); setSelectedFileAbsolutePath(absolutePath); }}
-          expandedDirs={expandedDirs} toggleDir={toggleDir} dirContents={dirContents}
-        />
+          onFileSelect={(p, a) => { setSelectedFilePath(p); setSelectedFileAbsolutePath(a); }}
+          expandedDirs={expandedDirs} toggleDir={toggleDir} dirContents={dirContents} />
       ) : (
-        <div className="flex items-center justify-center p-4 text-center text-zinc-500 text-xs font-mono">
-          No project directory available.
-        </div>
+        <div className="flex items-center justify-center p-4 text-center text-zinc-500 text-xs font-mono">No project directory available.</div>
       )}
     </div>
   );
@@ -478,12 +447,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     if (!selectedFilePath) {
       return (
         <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs">
-          {activeTab === 'workspace'
-            ? 'Select a file from the explorer sidebar to view.'
-            : hasBaseline
-              ? 'Click "Scan Changes" then select a changed file.'
-              : 'Take a baseline first to start tracking file changes.'
-          }
+          {activeTab === 'workspace' ? 'Select a file to view.' : 'Scan for changes, then select a file.'}
         </div>
       );
     }
@@ -492,61 +456,71 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     const isChanged = activeTab === 'changeset' && ucteChanges.includes(selectedFilePath);
     const isDeleted = selectedFilePath.startsWith('[deleted] ');
     const isMarkdown = cleanPath?.toLowerCase().endsWith('.md');
+    const showDiff = isChanged || isDeleted;
 
     return (
       <div className="flex-grow flex flex-col h-full overflow-hidden">
         <style dangerouslySetInnerHTML={{ __html: MARKDOWN_STYLES }} />
 
-        {/* Viewport Header */}
-        <div className="bg-[#0c0c0e]/80 border-b border-[#1B1B22] px-4 flex justify-between items-center select-none h-11 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="font-mono text-xs text-zinc-300 truncate" title={cleanPath}>{cleanPath}</span>
+        {/* Header */}
+        <div className="bg-[#0c0c0e]/80 border-b border-[#1B1B22] px-4 flex justify-between items-center select-none h-10 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="font-mono text-[11px] text-zinc-300 truncate" title={cleanPath}>{cleanPath}</span>
             {isDeleted ? (
-              <span className="text-[8px] tracking-wide uppercase px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold font-mono">
-                Deleted
-              </span>
+              <span className="text-[7px] tracking-wider uppercase px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold">Deleted</span>
             ) : isChanged ? (
-              <span className="text-[8px] tracking-wide uppercase px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold font-mono">
-                Modified (Split Diff)
-              </span>
+              <span className="text-[7px] tracking-wider uppercase px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">Modified</span>
             ) : isMarkdown ? (
-              <div className="flex bg-[#121215] border border-[#1B1B22] rounded p-0.5 h-7 items-center shrink-0">
+              <div className="flex bg-[#121215] border border-[#1B1B22] rounded p-0.5 h-6 items-center shrink-0">
                 <button onClick={() => setEditorTab('preview')}
-                  className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${editorTab === 'preview' ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'}`}>
+                  className={`text-[9px] px-2 h-full rounded transition-all cursor-pointer ${editorTab === 'preview' ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'}`}>
                   Preview
                 </button>
                 <button onClick={() => setEditorTab('edit')}
-                  className={`text-[10px] px-2.5 h-full rounded transition-all cursor-pointer flex items-center justify-center ${editorTab === 'edit' ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'}`}>
-                  Edit Source
+                  className={`text-[9px] px-2 h-full rounded transition-all cursor-pointer ${editorTab === 'edit' ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'}`}>
+                  Edit
                 </button>
               </div>
             ) : (
-              <span className="text-[9px] text-zinc-500 font-mono bg-[#101014] px-1.5 py-0.5 rounded border border-[#1B1B22] uppercase shrink-0">
-                {getLanguageFromPath(cleanPath)} (Editable)
+              <span className="text-[8px] text-zinc-500 font-mono bg-[#101014] px-1.5 py-0.5 rounded border border-[#1B1B22] uppercase shrink-0">
+                {getLanguageFromPath(cleanPath)}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {saveStatus === 'saving' && <span className="text-xs text-zinc-500 animate-pulse">Saving...</span>}
-            {saveStatus === 'saved' && <span className="text-xs text-emerald-400 font-semibold">Saved!</span>}
-            {saveStatus === 'error' && <span className="text-xs text-rose-400 font-semibold">Failed to save!</span>}
-            {!isChanged && !isDeleted && editedFileContent !== workspaceFileContent && (
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Split / Inline toggle for diff mode */}
+            {showDiff && (
+              <div className="flex bg-[#121215] border border-[#252530] rounded p-0.5 h-6 items-center">
+                <button onClick={() => setDiffMode('split')} title="Side by Side"
+                  className={`p-0.5 rounded transition-all cursor-pointer ${diffMode === 'split' ? 'bg-[#7C5CFF]/15 text-[#7C5CFF]' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                  <Columns2 size={13} />
+                </button>
+                <button onClick={() => setDiffMode('inline')} title="Inline"
+                  className={`p-0.5 rounded transition-all cursor-pointer ${diffMode === 'inline' ? 'bg-[#7C5CFF]/15 text-[#7C5CFF]' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                  <AlignJustify size={13} />
+                </button>
+              </div>
+            )}
+
+            {saveStatus === 'saving' && <span className="text-[10px] text-zinc-500 animate-pulse">Saving...</span>}
+            {saveStatus === 'saved' && <span className="text-[10px] text-emerald-400 font-semibold">Saved!</span>}
+            {saveStatus === 'error' && <span className="text-[10px] text-rose-400 font-semibold">Failed!</span>}
+            {!showDiff && editedFileContent !== workspaceFileContent && (
               <button onClick={handleSave} disabled={saveStatus === 'saving'}
-                className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-bold text-[11px] px-3 h-7 flex items-center justify-center rounded transition-colors cursor-pointer select-none">
-                Save Changes
+                className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-bold text-[10px] px-2.5 h-6 rounded transition-colors cursor-pointer select-none">
+                Save
               </button>
             )}
           </div>
         </div>
 
-        {/* Monaco Container */}
+        {/* Editor */}
         <div className="flex-grow w-full min-h-0 relative">
-          {(isChanged || isDeleted) ? (
+          {showDiff ? (
             isDiffLoading ? (
               <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
-                <RefreshCw className="animate-spin mr-2" size={14} />
-                <span>Loading diff contents...</span>
+                <RefreshCw className="animate-spin mr-2" size={14} /><span>Loading diff...</span>
               </div>
             ) : (
               <DiffEditor
@@ -554,19 +528,23 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                 original={originalContent}
                 modified={modifiedContent}
                 language={getLanguageFromPath(cleanPath)}
-                theme="vs-dark"
+                theme="nexora-dark"
+                beforeMount={defineMonacoTheme}
                 options={{
                   readOnly: true,
-                  minimap: { enabled: true },
-                  fontSize: 12,
-                  renderSideBySide: true,
+                  minimap: { enabled: false },
+                  fontSize: settings?.appearance?.typography?.codeFontSize ?? 12,
+                  fontFamily: settings?.appearance?.typography?.codeFontFamily ?? "'JetBrains Mono', 'Fira Code', monospace",
+                  renderSideBySide: diffMode === 'split',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  scrollbar: { vertical: 'visible', horizontal: 'visible', useShadows: false, verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
                 }}
               />
             )
           ) : isFileLoading ? (
             <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
-              <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500 mr-2"></div>
-              Loading file content...
+              <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500 mr-2" /> Loading...
             </div>
           ) : isMarkdown && editorTab === 'preview' ? (
             <div className="markdown-preview h-full overflow-y-auto px-8 py-6 text-[#ccccdd] text-sm leading-7 font-sans"
@@ -577,53 +555,17 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
               language={getLanguageFromPath(cleanPath)}
               value={editedFileContent}
               onChange={(val) => setEditedFileContent(val || '')}
-              theme="vscode-dark"
+              theme="nexora-dark"
               onMount={(editor, monaco) => { setEditorRef(editor); setMonacoRef(monaco); }}
-              beforeMount={(monaco) => {
-                monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true });
-                monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true });
-                monaco.languages.typescript.typescriptDefaults.setCompilerOptions({ jsx: 1, allowNonTsExtensions: true });
-                monaco.editor.defineTheme('vscode-dark', {
-                  base: 'vs-dark', inherit: true,
-                  rules: [
-                    { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
-                    { token: 'keyword', foreground: 'C586C0' },
-                    { token: 'string', foreground: 'CE9178' },
-                    { token: 'number', foreground: 'B5CEA8' },
-                    { token: 'regexp', foreground: 'D16969' },
-                    { token: 'type', foreground: '4EC9B0' },
-                    { token: 'class', foreground: '4EC9B0' },
-                    { token: 'function', foreground: 'DCDCAA' },
-                    { token: 'variable', foreground: '9CDCFE' },
-                    { token: 'tag', foreground: '569CD6' },
-                    { token: 'attribute.name', foreground: '9CDCFE' },
-                    { token: 'attribute.value', foreground: 'CE9178' }
-                  ],
-                  colors: {
-                    'editor.background': '#08080a',
-                    'editor.foreground': '#D4D4D4',
-                    'editorCursor.foreground': '#AEAFAD',
-                    'editor.lineHighlightBackground': '#141416',
-                    'editorLineNumber.foreground': '#858585',
-                    'editorLineNumber.activeForeground': '#C6C6C6',
-                    'editor.selectionBackground': '#264F78',
-                    'minimap.background': '#08080a',
-                    'editorIndentGuide.background': '#2c2c2e',
-                    'editorIndentGuide.background1': '#2c2c2e',
-                    'editorIndentGuide.activeBackground': '#4e4e50',
-                    'editorIndentGuide.activeBackground1': '#4e4e50'
-                  }
-                });
-              }}
+              beforeMount={defineMonacoTheme}
               options={{
                 readOnly: false,
                 minimap: { enabled: settings?.appearance?.workspace?.showMinimap ?? false },
                 fontSize: settings?.appearance?.typography?.codeFontSize ?? 12,
                 fontFamily: settings?.appearance?.typography?.codeFontFamily ?? "'JetBrains Mono', 'Fira Code', monospace",
                 lineNumbers: 'on', folding: true, scrollBeyondLastLine: false, automaticLayout: true,
-                renderIndentGuides: true,
-                guides: { indentation: true },
-                scrollbar: { vertical: 'visible', horizontal: 'visible', useShadows: false, verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
+                renderIndentGuides: true, guides: { indentation: true },
+                scrollbar: { vertical: 'visible', horizontal: 'visible', useShadows: false, verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
               }}
             />
           )}
@@ -635,33 +577,33 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   return (
     <div className="h-full w-full flex bg-[#0c0c0e] text-zinc-150 select-none overflow-hidden font-sans border border-[#1b1b22] rounded-xl shadow-2xl">
       {/* Sidebar */}
-      <div className="w-80 border-r border-[#1B1B22] flex flex-col bg-[#0D0D10] shrink-0">
+      <div className="w-72 border-r border-[#1B1B22] flex flex-col bg-[#0D0D10] shrink-0">
         {/* Header */}
-        <div className="p-3 border-b border-[#1B1B22] flex items-center justify-between shrink-0">
-          <span className="text-xs font-bold text-zinc-200 uppercase tracking-wider">Review Center</span>
+        <div className="h-10 px-3 border-b border-[#1B1B22] flex items-center justify-between shrink-0">
+          <span className="text-[11px] font-bold text-zinc-200 uppercase tracking-wider">Review Center</span>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-[#1B1B22] transition-colors cursor-pointer">
-            <X size={15} />
+            <X size={14} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-0.5 p-1 bg-[#09090b] border-b border-[#1B1B22] shrink-0">
+        <div className="flex items-center gap-px p-1 bg-[#09090b] border-b border-[#1B1B22] shrink-0">
           <button onClick={() => setActiveTab('changeset')}
             className={`flex-1 h-7 flex items-center justify-center rounded text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'changeset' ? 'bg-[#7C5CFF]/15 border border-[#7C5CFF]/30 text-[#7C5CFF]' : 'text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent'
+              activeTab === 'changeset' ? 'bg-[#7C5CFF]/15 border border-[#7C5CFF]/30 text-[#7C5CFF]' : 'text-zinc-500 hover:text-zinc-300 bg-transparent border border-transparent'
             }`}>
-            File Changes
+            Changes
           </button>
           <button onClick={() => setActiveTab('workspace')}
             className={`flex-1 h-7 flex items-center justify-center rounded text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'workspace' ? 'bg-[#7C5CFF]/15 border border-[#7C5CFF]/30 text-[#7C5CFF]' : 'text-zinc-400 hover:text-zinc-200 bg-transparent border border-transparent'
+              activeTab === 'workspace' ? 'bg-[#7C5CFF]/15 border border-[#7C5CFF]/30 text-[#7C5CFF]' : 'text-zinc-500 hover:text-zinc-300 bg-transparent border border-transparent'
             }`}>
-            Project Files
+            Files
           </button>
         </div>
 
-        {/* Sidebar Content */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Content */}
+        <div className="flex-1 overflow-hidden flex flex-col">
           {activeTab === 'changeset' ? renderFileChangesSidebar() : renderProjectFilesSidebar()}
         </div>
       </div>
@@ -674,25 +616,21 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   );
 }
 
+// ─── DirectoryTree ───
 interface DirectoryTreeProps {
-  dirPath: string;
-  depth: number;
-  repoPath: string;
+  dirPath: string; depth: number; repoPath: string;
   selectedFilePath: string | null;
   onFileSelect: (path: string, absolutePath: string) => void;
-  expandedDirs: Set<string>;
-  toggleDir: (path: string) => void;
+  expandedDirs: Set<string>; toggleDir: (path: string) => void;
   dirContents: Record<string, FileNode[]>;
 }
 
 export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFileSelect, expandedDirs, toggleDir, dirContents }: DirectoryTreeProps) {
   const children = dirContents[dirPath] || [];
-
-  const getRelativePath = (absolutePath: string) => {
-    const normPath = absolutePath.replace(/\\/g, '/');
-    const normRepo = repoPath.replace(/\\/g, '/');
-    const prefix = normRepo.endsWith('/') ? normRepo : `${normRepo}/`;
-    return normPath.startsWith(prefix) ? normPath.substring(prefix.length) : normPath;
+  const getRelativePath = (abs: string) => {
+    const n = abs.replace(/\\/g, '/'); const r = repoPath.replace(/\\/g, '/');
+    const p = r.endsWith('/') ? r : `${r}/`;
+    return n.startsWith(p) ? n.substring(p.length) : n;
   };
 
   return (
@@ -701,7 +639,6 @@ export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFi
         const isExpanded = expandedDirs.has(node.path);
         const relPath = getRelativePath(node.path);
         const isSelected = selectedFilePath === relPath;
-
         if (node.is_dir) {
           return (
             <div key={node.path} className="flex flex-col">
@@ -710,18 +647,11 @@ export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFi
                 aria-expanded={isExpanded}>
                 <span className="flex items-center gap-1.5" style={{ paddingLeft: `${depth * 16}px` }}>
                   <ChevronDown size={14} className={`text-zinc-500 shrink-0 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`} />
-                  {isExpanded
-                    ? <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
-                    : <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />
-                  }
+                  {isExpanded ? <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" /> : <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />}
                   <span className="truncate">{node.name}</span>
                 </span>
               </button>
-              {isExpanded && (
-                <DirectoryTree dirPath={node.path} depth={depth + 1} repoPath={repoPath}
-                  selectedFilePath={selectedFilePath} onFileSelect={onFileSelect}
-                  expandedDirs={expandedDirs} toggleDir={toggleDir} dirContents={dirContents} />
-              )}
+              {isExpanded && <DirectoryTree dirPath={node.path} depth={depth + 1} repoPath={repoPath} selectedFilePath={selectedFilePath} onFileSelect={onFileSelect} expandedDirs={expandedDirs} toggleDir={toggleDir} dirContents={dirContents} />}
             </div>
           );
         } else {
