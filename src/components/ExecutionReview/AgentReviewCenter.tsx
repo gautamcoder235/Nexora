@@ -558,10 +558,10 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
           return (
             <div key={project.id} className="flex flex-col">
               <button onClick={() => toggleDir(project.path)}
-                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-zinc-900/40 flex items-center transition-colors text-zinc-300 hover:text-zinc-100 cursor-pointer rounded-sm outline-none font-bold">
+                className="w-full text-left text-xs font-mono py-1.5 px-2 hover:bg-[var(--border-glass)] flex items-center transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer rounded-sm outline-none font-bold">
                 <span className="flex items-center gap-1.5">
-                  <ChevronDown size={14} className={`text-zinc-500 shrink-0 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`} />
-                  {isExpanded ? <FolderOpen size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" /> : <Folder size={14} className="text-blue-500/80 fill-blue-500/10 shrink-0" />}
+                  <ChevronDown size={14} className="text-[var(--text-muted)] shrink-0 transition-transform duration-200" style={{ transform: !isExpanded ? 'rotate(-90deg)' : 'none' }} />
+                  {isExpanded ? <FolderOpen size={14} className="text-[var(--accent-primary)] fill-[rgba(var(--accent-primary-rgb),0.1)] shrink-0" /> : <Folder size={14} className="text-[var(--accent-primary)] fill-[rgba(var(--accent-primary-rgb),0.1)] shrink-0" />}
                   <span className="truncate">{project.name}</span>
                 </span>
               </button>
