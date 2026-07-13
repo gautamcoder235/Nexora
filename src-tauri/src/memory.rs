@@ -266,6 +266,68 @@ pub fn memory_initialize(app: AppHandle, project_path: String) -> Result<String,
     let conn = open_memory_db(&project_path)?;
     initialize_db_schema(&conn)?;
 
+    // 2.5 Rebuild SQLite metadata DB from Git history if repository exists but DB is empty
+    let has_git_history = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "--is-inside-work-tree"]).is_ok()
+        && execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"]).is_ok();
+
+    if has_git_history {
+        let db_commits_count: i64 = conn.query_row("SELECT COUNT(*) FROM commits", [], |r| r.get(0)).unwrap_or(0);
+        if db_commits_count == 0 {
+            let log_stdout = execute_git(&git_path, &git_dir, work_tree, &["log", "--reverse", "--format=%H"])?;
+            for hash in log_stdout.lines() {
+                let hash = hash.trim();
+                if hash.is_empty() { continue; }
+
+                let subject = execute_git(&git_path, &git_dir, work_tree, &["log", "-1", "--format=%s", hash]).unwrap_or_else(|_| "Imported state".to_string());
+                let author_time = execute_git(&git_path, &git_dir, work_tree, &["log", "-1", "--format=%aI", hash]).unwrap_or_default();
+                let source = if subject.contains("AI") || subject.contains("Agent") { "agent" } else if subject.contains("Baseline") || subject.contains("system") { "system" } else { "user" };
+
+                let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
+                let _ = conn.execute(
+                    "INSERT OR IGNORE INTO commits (id, git_commit_hash, type, source, description, status, timestamp) VALUES (?1,?2,'snapshot',?3,?4,'approved',?5)",
+                    params![commit_id, hash, source, subject, author_time]
+                );
+
+                let diff_stdout = execute_git(&git_path, &git_dir, work_tree, &[
+                    "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", hash
+                ]).unwrap_or_default();
+
+                for line in diff_stdout.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let status = parts[0];
+                        let file_path = parts[1];
+                        let mut operation_type = "created";
+                        let mut old_path: Option<&str> = None;
+
+                        if status.starts_with('M') {
+                            operation_type = "modified";
+                        } else if status.starts_with('D') {
+                            operation_type = "deleted";
+                        } else if status.starts_with('R') {
+                            operation_type = "renamed";
+                            if parts.len() >= 3 {
+                                old_path = Some(parts[1]);
+                            }
+                        }
+
+                        let op_id = format!("op-{}", uuid::Uuid::new_v4());
+                        let _ = conn.execute(
+                            "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
+                            params![op_id, commit_id, file_path, operation_type, old_path]
+                        );
+                    }
+                }
+            }
+        }
+        let head_hash = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES ('nexora/main', ?1)",
+            params![head_hash]
+        );
+        return Ok(head_hash);
+    }
+
     // 3. Stage & commit baseline files (excluding large ones)
     // Walk directory and check for >50MB files to ignore
     let exclude_path = git_dir.join("info").join("exclude");
