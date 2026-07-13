@@ -188,16 +188,14 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
 
   const loadedPaths = useRef<Set<string>>(new Set());
   const initDone = useRef(false);
+  const diffCache = useRef<Record<string, { orig: string; mod: string }>>({});
 
   // Initialize all projects in the workspace on mount
   useEffect(() => {
     if (initDone.current || activeProjects.length === 0) return;
     initDone.current = true;
     const paths = activeProjects.map(p => p.path);
-    initMemory(paths).then(() => {
-      const activePath = scanScope !== 'all' ? [scanScope] : paths;
-      loadHistory(activePath);
-    });
+    initMemory(paths);
   }, [activeProjects]);
 
   // Reload history when scanScope changes or memory is initialized
@@ -243,6 +241,15 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   // Load diff content when a commit file is selected
   useEffect(() => {
     if (!selectedCommit || !selectedFileOp) return;
+    const cacheKey = `${selectedCommit.project_path}-${selectedCommit.git_commit_hash}-${selectedFileOp.file_path}`;
+    if (diffCache.current[cacheKey]) {
+      const cached = diffCache.current[cacheKey];
+      setOriginalContent(cached.orig);
+      setModifiedContent(cached.mod);
+      setIsDiffLoading(false);
+      return;
+    }
+
     const target = selectedCommit.project_path;
     setIsDiffLoading(true);
 
@@ -260,6 +267,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
           mod = await readCommitVersion(target, selectedCommit.git_commit_hash, selectedFileOp.file_path);
         }
 
+        diffCache.current[cacheKey] = { orig, mod };
         setOriginalContent(orig);
         setModifiedContent(mod);
       } catch (e) {
@@ -660,8 +668,15 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
           {/* Diff Editor */}
           <div className="flex-grow w-full min-h-0 relative">
             {isDiffLoading ? (
-              <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
-                <RefreshCw className="animate-spin mr-2" size={14} /><span>Loading diff...</span>
+              <div className="h-full w-full bg-[#08080a] p-5 flex flex-col gap-3 animate-pulse select-none">
+                <div className="h-3 w-1/4 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-1/3 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-1/2 bg-zinc-800/30 rounded" />
+                <div className="h-3 w-2/3 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-2/5 bg-zinc-800/30 rounded" />
+                <div className="h-3 w-3/5 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-1/3 bg-zinc-800/30 rounded" />
+                <div className="h-3 w-1/2 bg-zinc-800/40 rounded" />
               </div>
             ) : (
               <DiffEditor
@@ -720,8 +735,15 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
           {/* Editor */}
           <div className="flex-grow w-full min-h-0 relative">
             {isFileLoading ? (
-              <div className="flex h-full w-full items-center justify-center text-zinc-500 font-mono text-xs bg-[#08080a]">
-                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500 mr-2" /> Loading...
+              <div className="h-full w-full bg-[#08080a] p-5 flex flex-col gap-3 animate-pulse select-none">
+                <div className="h-3 w-1/4 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-1/3 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-1/2 bg-zinc-800/30 rounded" />
+                <div className="h-3 w-2/3 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-2/5 bg-zinc-800/30 rounded" />
+                <div className="h-3 w-3/5 bg-zinc-800/40 rounded" />
+                <div className="h-3 w-1/3 bg-zinc-800/30 rounded" />
+                <div className="h-3 w-1/2 bg-zinc-800/40 rounded" />
               </div>
             ) : isMarkdown && editorTab === 'preview' ? (
               <div className="markdown-preview h-full overflow-y-auto px-8 py-6 text-[#ccccdd] text-sm leading-7 font-sans"
@@ -879,7 +901,7 @@ interface DirectoryTreeProps {
   dirContents: Record<string, FileNode[]>;
 }
 
-export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFileSelect, expandedDirs, toggleDir, dirContents }: DirectoryTreeProps) {
+export const DirectoryTree = React.memo(function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFileSelect, expandedDirs, toggleDir, dirContents }: DirectoryTreeProps) {
   const children = dirContents[dirPath] || [];
   const getRelativePath = (abs: string) => {
     const n = abs.replace(/\\/g, '/'); const r = repoPath.replace(/\\/g, '/');
@@ -888,7 +910,7 @@ export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFi
   };
 
   return (
-    <div className="flex flex-col select-none space-y-0.5">
+    <div className="flex flex-col select-none space-y-0.5 animate-in fade-in duration-100">
       {children.map((node) => {
         const isExpanded = expandedDirs.has(node.path);
         const relPath = getRelativePath(node.path);
@@ -923,4 +945,16 @@ export function DirectoryTree({ dirPath, depth, repoPath, selectedFilePath, onFi
       })}
     </div>
   );
-}
+}, (prev, next) => {
+  // Re-render only if selection inside this branch changed, expansion toggled, or items refreshed
+  const wasExpanded = prev.expandedDirs.has(prev.dirPath);
+  const isExpanded = next.expandedDirs.has(next.dirPath);
+  if (wasExpanded !== isExpanded) return false;
+  
+  if (isExpanded) {
+    if (prev.selectedFilePath !== next.selectedFilePath) return false;
+    if (prev.dirContents[prev.dirPath] !== next.dirContents[next.dirPath]) return false;
+    if (prev.expandedDirs !== next.expandedDirs) return false;
+  }
+  return true;
+});
