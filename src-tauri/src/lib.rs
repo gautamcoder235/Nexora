@@ -1569,38 +1569,230 @@ fn get_system_metrics() -> SystemMetrics {
 }
 
 #[tauri::command]
-fn read_original_file(path: String) -> Result<String, String> {
-    let path = std::path::Path::new(&path);
-    let parent = path.parent().ok_or("No parent directory")?;
-    
-    let root_output = std::process::Command::new("git")
-        .args(&["rev-parse", "--show-toplevel"])
-        .current_dir(parent)
-        .output()
-        .map_err(|e| e.to_string())?;
+fn take_baseline(repo_path: String) -> Result<u64, String> {
+    use std::path::Path;
 
-    if !root_output.status.success() {
-        return Err("Not a git repository".to_string());
+    let repo = Path::new(&repo_path);
+    let baseline_dir = repo.join(".nexora_baselines");
+
+    // Clear old baseline
+    if baseline_dir.exists() {
+        std::fs::remove_dir_all(&baseline_dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::create_dir_all(&baseline_dir).map_err(|e| e.to_string())?;
+
+    let ignore_dirs: std::collections::HashSet<&str> = [
+        "node_modules", ".git", "target", "dist", "build", ".next",
+        ".nexora_baselines", "__pycache__", ".vscode", ".idea",
+    ].iter().copied().collect();
+
+    let ignore_exts: std::collections::HashSet<&str> = [
+        "exe", "dll", "so", "dylib", "png", "jpg", "jpeg", "gif", "bmp",
+        "ico", "svg", "woff", "woff2", "ttf", "eot", "mp3", "mp4", "avi",
+        "zip", "tar", "gz", "rar", "7z", "pdf", "lock",
+    ].iter().copied().collect();
+
+    let mut count: u64 = 0;
+
+    fn walk_and_copy(
+        dir: &std::path::Path,
+        repo_root: &std::path::Path,
+        baseline_root: &std::path::Path,
+        ignore_dirs: &std::collections::HashSet<&str>,
+        ignore_exts: &std::collections::HashSet<&str>,
+        count: &mut u64,
+    ) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            if name.starts_with('.') && name != ".env" {
+                continue;
+            }
+
+            if path.is_dir() {
+                if ignore_dirs.contains(name.as_str()) {
+                    continue;
+                }
+                walk_and_copy(&path, repo_root, baseline_root, ignore_dirs, ignore_exts, count)?;
+            } else {
+                // Skip large files (> 1MB) and binary extensions
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    if meta.len() > 1_048_576 {
+                        continue;
+                    }
+                }
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if ignore_exts.contains(ext.to_lowercase().as_str()) {
+                        continue;
+                    }
+                }
+
+                let rel = path.strip_prefix(repo_root)
+                    .map_err(|e| e.to_string())?;
+                let dest = baseline_root.join(rel);
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                // Only copy text files (skip files that fail UTF-8 read)
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    std::fs::write(&dest, content).map_err(|e| e.to_string())?;
+                    *count += 1;
+                }
+            }
+        }
+        Ok(())
     }
 
-    let git_root = String::from_utf8_lossy(&root_output.stdout).trim().to_string();
-    let git_root_path = std::path::Path::new(&git_root);
+    walk_and_copy(repo, repo, &baseline_dir, &ignore_dirs, &ignore_exts, &mut count)?;
 
-    let relative_path = path.strip_prefix(git_root_path)
-        .map_err(|_| "File not under git root".to_string())?
-        .to_str()
-        .ok_or("Invalid relative path")?
-        .replace("\\", "/");
+    // Add baseline dir to .gitignore if it exists
+    let gitignore = repo.join(".gitignore");
+    if gitignore.exists() {
+        let content = std::fs::read_to_string(&gitignore).unwrap_or_default();
+        if !content.contains(".nexora_baselines") {
+            let mut new_content = content;
+            if !new_content.ends_with('\n') {
+                new_content.push('\n');
+            }
+            new_content.push_str(".nexora_baselines/\n");
+            let _ = std::fs::write(&gitignore, new_content);
+        }
+    }
 
-    let show_output = std::process::Command::new("git")
-        .args(&["show", &format!("HEAD:{}", relative_path)])
-        .current_dir(&git_root)
-        .output()
-        .map_err(|e| e.to_string())?;
+    Ok(count)
+}
 
-    if show_output.status.success() {
-        Ok(String::from_utf8_lossy(&show_output.stdout).into_owned())
+#[tauri::command]
+fn scan_file_changes(repo_path: String) -> Result<Vec<String>, String> {
+    use std::path::Path;
+
+    let repo = Path::new(&repo_path);
+    let baseline_dir = repo.join(".nexora_baselines");
+
+    if !baseline_dir.exists() {
+        return Err("No baseline exists. Take a baseline first.".to_string());
+    }
+
+    let ignore_dirs: std::collections::HashSet<&str> = [
+        "node_modules", ".git", "target", "dist", "build", ".next",
+        ".nexora_baselines", "__pycache__", ".vscode", ".idea",
+    ].iter().copied().collect();
+
+    let ignore_exts: std::collections::HashSet<&str> = [
+        "exe", "dll", "so", "dylib", "png", "jpg", "jpeg", "gif", "bmp",
+        "ico", "svg", "woff", "woff2", "ttf", "eot", "mp3", "mp4", "avi",
+        "zip", "tar", "gz", "rar", "7z", "pdf", "lock",
+    ].iter().copied().collect();
+
+    let mut changed: Vec<String> = Vec::new();
+
+    fn walk_and_compare(
+        dir: &std::path::Path,
+        repo_root: &std::path::Path,
+        baseline_root: &std::path::Path,
+        ignore_dirs: &std::collections::HashSet<&str>,
+        ignore_exts: &std::collections::HashSet<&str>,
+        changed: &mut Vec<String>,
+    ) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            if name.starts_with('.') && name != ".env" {
+                continue;
+            }
+
+            if path.is_dir() {
+                if ignore_dirs.contains(name.as_str()) {
+                    continue;
+                }
+                walk_and_compare(&path, repo_root, baseline_root, ignore_dirs, ignore_exts, changed)?;
+            } else {
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    if meta.len() > 1_048_576 {
+                        continue;
+                    }
+                }
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if ignore_exts.contains(ext.to_lowercase().as_str()) {
+                        continue;
+                    }
+                }
+
+                let rel = path.strip_prefix(repo_root)
+                    .map_err(|e| e.to_string())?;
+                let baseline_file = baseline_root.join(rel);
+
+                let current = match std::fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(_) => continue, // skip binary files
+                };
+
+                let rel_str = rel.to_string_lossy().replace("\\", "/");
+
+                if !baseline_file.exists() {
+                    // New file (not in baseline)
+                    changed.push(rel_str);
+                } else {
+                    let baseline = std::fs::read_to_string(&baseline_file).unwrap_or_default();
+                    if current != baseline {
+                        changed.push(rel_str);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    walk_and_compare(repo, repo, &baseline_dir, &ignore_dirs, &ignore_exts, &mut changed)?;
+
+    // Also detect deleted files (in baseline but not on disk)
+    fn walk_baseline_deletes(
+        dir: &std::path::Path,
+        repo_root: &std::path::Path,
+        baseline_root: &std::path::Path,
+        changed: &mut Vec<String>,
+    ) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk_baseline_deletes(&path, repo_root, baseline_root, changed)?;
+            } else {
+                let rel = path.strip_prefix(baseline_root).map_err(|e| e.to_string())?;
+                let real_file = repo_root.join(rel);
+                if !real_file.exists() {
+                    let rel_str = rel.to_string_lossy().replace("\\", "/");
+                    changed.push(format!("[deleted] {}", rel_str));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    walk_baseline_deletes(&baseline_dir, repo, &baseline_dir, &mut changed)?;
+
+    changed.sort();
+    Ok(changed)
+}
+
+#[tauri::command]
+fn read_baseline_file(repo_path: String, file_path: String) -> Result<String, String> {
+    use std::path::Path;
+
+    let baseline_dir = Path::new(&repo_path).join(".nexora_baselines");
+    let baseline_file = baseline_dir.join(&file_path);
+
+    if baseline_file.exists() {
+        std::fs::read_to_string(&baseline_file).map_err(|e| e.to_string())
     } else {
+        // File didn't exist in baseline (new file)
         Ok(String::new())
     }
 }
@@ -1742,7 +1934,9 @@ pub fn run() {
             get_terminal_metrics,
             get_system_metrics,
             get_git_branch,
-            read_original_file,
+            take_baseline,
+            scan_file_changes,
+            read_baseline_file,
             ucte::ucte_create_snapshot,
             ucte::ucte_get_snapshot_diff,
             ucte::ucte_get_changes,

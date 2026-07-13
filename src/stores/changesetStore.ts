@@ -14,9 +14,12 @@ interface ChangesetState {
   isAgentInspectorOpen: boolean;
   activeReviewTab: 'changeset' | 'workspace' | 'worktree_explorer';
 
-  // UCTE live changes scanning/state
+  // File changes state
   ucteChanges: string[];
   isScanningUcte: boolean;
+  hasBaseline: boolean;
+  baselineFileCount: number;
+  isTakingBaseline: boolean;
 
   // Actions
   setReviewCenterOpen: (open: boolean) => void;
@@ -25,10 +28,11 @@ interface ChangesetState {
   setSelectedAgentIdForInspector: (agentId: string | null) => void;
   setAgentInspectorOpen: (open: boolean) => void;
   setActiveReviewTab: (tab: 'changeset' | 'workspace' | 'worktree_explorer') => void;
-  
-  // UCTE Actions
-  scanUcteChanges: (repoPath: string) => Promise<void>;
-  scanSingleFileUcte: (repoPath: string, filePath: string) => Promise<void>;
+
+  // Baseline / Scan Actions
+  takeBaseline: (repoPath: string) => Promise<void>;
+  scanFileChanges: (repoPath: string) => Promise<void>;
+  checkBaselineExists: (repoPath: string) => void;
 
   // Stub changeset-related API calls
   loadChangesets: () => Promise<void>;
@@ -68,9 +72,12 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
   isAgentInspectorOpen: false,
   activeReviewTab: 'changeset',
 
-  // UCTE State
-  ucteChanges: ['src/components/NexoraTeam/TeamGraph.tsx', 'src/stores/teamStore.ts'],
+  // File changes state
+  ucteChanges: [],
   isScanningUcte: false,
+  hasBaseline: false,
+  baselineFileCount: 0,
+  isTakingBaseline: false,
 
   setReviewCenterOpen: (open: boolean) => set({ isReviewCenterOpen: open }),
   toggleReviewPanelPinned: () => set((state) => ({ isReviewPanelPinned: !state.isReviewPanelPinned })),
@@ -79,44 +86,39 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
   setAgentInspectorOpen: (open: boolean) => set({ isAgentInspectorOpen: open }),
   setActiveReviewTab: (tab) => set({ activeReviewTab: tab }),
 
-  // UCTE scan implementation (streamlined live changes scanning)
-  scanUcteChanges: async (repoPath: string) => {
-    set({ isScanningUcte: true });
+  // Check if a baseline exists for this repo
+  checkBaselineExists: (repoPath: string) => {
+    invoke<string[]>('scan_file_changes', { repoPath })
+      .then(() => set({ hasBaseline: true }))
+      .catch(() => set({ hasBaseline: false }));
+  },
+
+  // Take a baseline snapshot of all project files
+  takeBaseline: async (repoPath: string) => {
+    set({ isTakingBaseline: true });
     try {
-      const files = await invoke<string[]>('scan_ucte_changes', { repoPath });
-      set({ ucteChanges: files, isScanningUcte: false });
+      const count = await invoke<number>('take_baseline', { repoPath });
+      set({ hasBaseline: true, baselineFileCount: count, isTakingBaseline: false, ucteChanges: [] });
     } catch (e) {
-      console.warn('Backend UCTE scan command not found, using frontend fallback list.', e);
-      set({ 
-        ucteChanges: [
-          'src/components/NexoraTeam/TeamGraph.tsx', 
-          'src/stores/teamStore.ts'
-        ], 
-        isScanningUcte: false 
-      });
+      console.error('take_baseline failed:', e);
+      set({ isTakingBaseline: false });
     }
   },
 
-  scanSingleFileUcte: async (repoPath: string, filePath: string) => {
+  // Scan files for changes against the baseline
+  scanFileChanges: async (repoPath: string) => {
     set({ isScanningUcte: true });
     try {
-      const isChanged = await invoke<boolean>('scan_single_file_ucte', { repoPath, filePath });
-      set((state) => {
-        const currentChanges = new Set(state.ucteChanges);
-        if (isChanged) {
-          currentChanges.add(filePath);
-        } else {
-          currentChanges.delete(filePath);
-        }
-        return { ucteChanges: Array.from(currentChanges), isScanningUcte: false };
-      });
-    } catch (e) {
-      console.warn('Backend single-file UCTE scan command not found, keeping file in changes list.', e);
-      set((state) => {
-        const currentChanges = new Set(state.ucteChanges);
-        currentChanges.add(filePath);
-        return { ucteChanges: Array.from(currentChanges), isScanningUcte: false };
-      });
+      const files = await invoke<string[]>('scan_file_changes', { repoPath });
+      set({ ucteChanges: files, isScanningUcte: false });
+    } catch (e: any) {
+      const msg = typeof e === 'string' ? e : e?.message || '';
+      if (msg.includes('No baseline exists')) {
+        set({ hasBaseline: false, ucteChanges: [], isScanningUcte: false });
+      } else {
+        console.warn('scan_file_changes failed:', e);
+        set({ ucteChanges: [], isScanningUcte: false });
+      }
     }
   },
 
