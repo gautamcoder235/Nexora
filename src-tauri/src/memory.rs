@@ -329,6 +329,38 @@ pub fn memory_initialize(app: AppHandle, project_path: String) -> Result<String,
         params![commit_hash]
     ).map_err(|e| e.to_string())?;
 
+    // Populate operations table for initial baseline commit using diff-tree --root
+    let diff_stdout = execute_git(&git_path, &git_dir, work_tree, &[
+        "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_hash
+    ]).unwrap_or_default();
+
+    for line in diff_stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let status = parts[0];
+            let file_path = parts[1];
+            let mut operation_type = "created";
+            let mut old_path: Option<&str> = None;
+
+            if status.starts_with('M') {
+                operation_type = "modified";
+            } else if status.starts_with('D') {
+                operation_type = "deleted";
+            } else if status.starts_with('R') {
+                operation_type = "renamed";
+                if parts.len() >= 3 {
+                    old_path = Some(parts[1]);
+                }
+            }
+
+            let op_id = format!("op-{}", uuid::Uuid::new_v4());
+            conn.execute(
+                "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
+                params![op_id, commit_id, file_path, operation_type, old_path]
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+
     Ok(commit_hash)
 }
 
@@ -390,7 +422,7 @@ pub fn memory_snapshot(
 
     // 5. Parse commit diff changes using diff-tree
     let diff_stdout = execute_git(&git_path, &git_dir, work_tree, &[
-        "diff-tree", "--no-commit-id", "--name-status", "-r", &commit_hash
+        "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_hash
     ])?;
 
     for line in diff_stdout.lines() {
