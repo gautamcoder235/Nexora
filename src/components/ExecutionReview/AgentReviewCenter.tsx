@@ -335,6 +335,8 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     if (selectedCommit.git_commit_hash === commitHash) {
       setSelectedCommit(prev => prev ? { ...prev, status: 'approved' } : null);
     }
+    const activeScope = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
+    await loadHistory(activeScope);
   };
 
   const handleRevert = async (commitHash: string) => {
@@ -344,6 +346,8 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     if (selectedCommit.git_commit_hash === commitHash) {
       setSelectedCommit(prev => prev ? { ...prev, status: 'rejected' } : null);
     }
+    const activeScope = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
+    await loadHistory(activeScope);
   };
 
   const handleRevertFile = async (commitHash: string, filePath: string) => {
@@ -351,6 +355,8 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     if (!target) return;
     await restoreCommit(target, `${commitHash}~1`, [filePath]);
     await captureSnapshot(target, 'system', `Reverted ${filePath} to before ${commitHash.substring(0,7)}`);
+    const activeScope = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
+    await loadHistory(activeScope);
   };
 
   const handleRestoreProject = (commit: TimelineEntry) => {
@@ -360,6 +366,8 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
       onConfirm: async () => {
         await restoreCommit(commit.project_path, commit.git_commit_hash);
         setConfirmModal(null);
+        const activeScope = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
+        await loadHistory(activeScope);
       }
     });
   };
@@ -372,6 +380,7 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     }
     setCheckpointName('');
     setShowCheckpointInput(false);
+    await loadHistory(target);
   };
 
   const toggleCommitExpand = (hash: string) => {
