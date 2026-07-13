@@ -534,27 +534,60 @@ pub fn memory_create_checkpoint(
     let git_dir = Path::new(&project_path).join(".nexora").join("repo");
     let work_tree = Path::new(&project_path);
 
-    // 1. Stage and commit current state
+    // 1. Stage and commit current state (empty allowed to guarantee a commit is created)
     execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
-    
-    // Check if dirty
-    let status = execute_git(&git_path, &git_dir, work_tree, &["status", "--porcelain"])?;
-    let commit_hash = if !status.is_empty() {
-        execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", &format!("Checkpoint: {}", name)])?;
-        execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
-    } else {
-        execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
-    };
+    execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", &format!("Checkpoint: {}", name)])?;
+    let commit_hash = execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
 
-    // 2. SQLite refs record
+    // 2. Setup SQLite DB connection
     let conn = open_memory_db(&project_path)?;
+
+    // 3. Register commit in commits table
+    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
+    conn.execute(
+        "INSERT INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'checkpoint','user',?3,'approved')",
+        params![commit_id, commit_hash, name]
+    ).map_err(|e| e.to_string())?;
+
+    // 4. Populate operations using diff-tree
+    let diff_stdout = execute_git(&git_path, &git_dir, work_tree, &[
+        "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_hash
+    ]).unwrap_or_default();
+
+    for line in diff_stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let status = parts[0];
+            let file_path = parts[1];
+            let mut operation_type = "modified";
+            let mut old_path: Option<&str> = None;
+
+            if status.starts_with('A') {
+                operation_type = "created";
+            } else if status.starts_with('D') {
+                operation_type = "deleted";
+            } else if status.starts_with('R') {
+                operation_type = "renamed";
+                if parts.len() >= 3 {
+                    old_path = Some(parts[1]);
+                }
+            }
+
+            let op_id = format!("op-{}", uuid::Uuid::new_v4());
+            conn.execute(
+                "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
+                params![op_id, commit_id, file_path, operation_type, old_path]
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+
+    // 5. Update checkpoints and refs
     let ref_name = format!("nexora/checkpoints/{}", name.replace(" ", "-"));
     conn.execute(
         "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES (?1, ?2)",
         params![ref_name, commit_hash]
     ).map_err(|e| e.to_string())?;
 
-    // Create a checkpoint record
     let cp_id = format!("cp-{}", uuid::Uuid::new_v4());
     conn.execute(
         "INSERT INTO checkpoints (id, commit_id, name) VALUES (?1, ?2, ?3)",
