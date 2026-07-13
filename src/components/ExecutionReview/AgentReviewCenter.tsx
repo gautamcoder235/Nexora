@@ -172,6 +172,12 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const [isDiffLoading, setIsDiffLoading] = useState<boolean>(false);
   const [diffMode, setDiffMode] = useState<'split' | 'inline'>('split');
   const [scanScope, setScanScope] = useState<string>('all');
+  const [isScopeDropdownOpen, setIsScopeDropdownOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [checkpointName, setCheckpointName] = useState<string>('');
   const [showCheckpointInput, setShowCheckpointInput] = useState(false);
 
@@ -347,10 +353,15 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     await captureSnapshot(target, 'system', `Reverted ${filePath} to before ${commitHash.substring(0,7)}`);
   };
 
-  const handleRestoreProject = async (commit: TimelineEntry) => {
-    if (confirm(`Are you sure you want to restore the entire project state to ${commit.git_commit_hash.substring(0,7)}?`)) {
-      await restoreCommit(commit.project_path, commit.git_commit_hash);
-    }
+  const handleRestoreProject = (commit: TimelineEntry) => {
+    setConfirmModal({
+      isOpen: true,
+      message: `Are you sure you want to restore the entire project state to ${commit.git_commit_hash.substring(0,7)}?`,
+      onConfirm: async () => {
+        await restoreCommit(commit.project_path, commit.git_commit_hash);
+        setConfirmModal(null);
+      }
+    });
   };
 
   const handleCreateCheckpoint = async () => {
@@ -445,13 +456,17 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
                     onClick={() => toggleCommitExpand(commit.git_commit_hash)}
                     className="p-2 flex items-center justify-between hover:bg-[#15151a] cursor-pointer transition-all"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot}`} title={`Review state: ${commit.status}`} />
                       <SourceIcon src={commit.source} />
-                      <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[10px] font-medium text-zinc-200 truncate leading-tight">{displayDesc}</span>
-                          <span className="text-[8px] bg-[#1a1a22] text-[#22c55e] border border-[#22c55e]/20 px-1 py-px rounded font-mono shrink-0 font-bold" title={`${commit.files.length} files changed`}>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 min-w-0 w-full justify-between">
+                          <span className="text-[10px] font-medium text-zinc-200 truncate leading-tight flex-1" title={displayDesc}>{displayDesc}</span>
+                          <span className={`text-[8px] px-1 py-px rounded font-mono shrink-0 font-bold ${
+                            commit.files.length === 0 
+                              ? 'bg-[#16161a] text-zinc-500 border border-[#252530]'
+                              : 'bg-[#1a1a22] text-[#22c55e] border border-[#22c55e]/20'
+                          }`} title={`${commit.files.length} files changed`}>
                             {commit.files.length}
                           </span>
                         </div>
@@ -770,16 +785,42 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
           </button>
         </div>
 
-        {/* Scope Picker Dropdown (visible in both Timeline and Files tabs) */}
-        <div className="px-2.5 py-2 bg-[#09090b]/40 border-b border-[#1B1B22] shrink-0">
-          <select
-            value={scanScope}
-            onChange={(e) => setScanScope(e.target.value)}
-            className="w-full bg-[#121215] border border-[#252530] rounded px-2.5 py-1 text-[10px] text-zinc-300 focus:outline-none focus:border-[#7C5CFF]/40 appearance-none cursor-pointer"
+        {/* Custom Scope Picker Dropdown (visible in both Timeline and Files tabs) */}
+        <div className="px-2.5 py-2 bg-[#09090b]/40 border-b border-[#1B1B22] shrink-0 relative">
+          <button
+            onClick={() => setIsScopeDropdownOpen(!isScopeDropdownOpen)}
+            className="w-full flex items-center justify-between bg-[#121215] hover:bg-[#15151b] border border-[#252530] rounded px-2.5 py-1 text-[10px] text-zinc-300 transition-all cursor-pointer select-none text-left font-mono"
           >
-            <option value="all">All Projects</option>
-            {activeProjects.map(p => (<option key={p.id} value={p.path}>{p.name}</option>))}
-          </select>
+            <span>{scanScope === 'all' ? 'All Projects' : activeProjects.find(p => p.path === scanScope)?.name || scanScope}</span>
+            <ChevronDown size={12} className={`text-zinc-500 transition-transform duration-200 ${isScopeDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {isScopeDropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setIsScopeDropdownOpen(false)} />
+              <div className="absolute left-2.5 right-2.5 mt-1 bg-[#0c0c0e]/95 border border-[#252530] rounded shadow-2xl z-50 py-1 overflow-hidden font-mono border-t-0 animate-in fade-in duration-100">
+                <button
+                  onClick={() => { setScanScope('all'); setIsScopeDropdownOpen(false); }}
+                  className={`w-full text-left text-[10px] px-3 py-1.5 transition-all hover:bg-[#7C5CFF]/10 hover:text-white cursor-pointer ${
+                    scanScope === 'all' ? 'text-[#7C5CFF] font-bold bg-[#7C5CFF]/5' : 'text-zinc-400'
+                  }`}
+                >
+                  All Projects
+                </button>
+                {activeProjects.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setScanScope(p.path); setIsScopeDropdownOpen(false); }}
+                    className={`w-full text-left text-[10px] px-3 py-1.5 transition-all hover:bg-[#7C5CFF]/10 hover:text-white cursor-pointer ${
+                      scanScope === p.path ? 'text-[#7C5CFF] font-bold bg-[#7C5CFF]/5' : 'text-zinc-400'
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Content */}
@@ -792,6 +833,30 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
       <div className="flex-grow flex-1 flex flex-col min-w-0 overflow-hidden bg-[#08080a] relative">
         {renderViewport()}
       </div>
+
+      {/* Custom Confirmation Popup Modal */}
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] animate-in fade-in duration-200">
+          <div className="bg-[#0c0c0e]/95 border border-[#252530] rounded-xl p-5 w-[380px] max-w-[90vw] shadow-2xl flex flex-col gap-4 font-sans select-none animate-in zoom-in duration-150">
+            <h3 className="text-zinc-200 text-xs font-bold uppercase tracking-wider">Confirm Action</h3>
+            <p className="text-zinc-400 text-[11px] leading-relaxed font-mono">{confirmModal.message}</p>
+            <div className="flex items-center justify-end gap-2 mt-2">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-3.5 py-1.5 bg-[#1A1A22] hover:bg-[#252530] border border-[#252530] text-zinc-300 text-[10px] font-bold rounded-lg transition-all cursor-pointer select-none"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className="px-3.5 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-[10px] font-bold rounded-lg transition-all cursor-pointer select-none"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -241,6 +241,47 @@ __pycache__/
     Ok(())
 }
 
+fn populate_commit_operations(
+    conn: &rusqlite::Connection,
+    git_path: &Path,
+    git_dir: &Path,
+    work_tree: &Path,
+    commit_hash: &str,
+    commit_id: &str,
+) -> Result<(), String> {
+    let diff_stdout = execute_git(git_path, git_dir, work_tree, &[
+        "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", commit_hash
+    ]).unwrap_or_default();
+
+    for line in diff_stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let status = parts[0];
+            let file_path = parts[1];
+            let mut operation_type = "modified";
+            let mut old_path: Option<&str> = None;
+
+            if status.starts_with('A') {
+                operation_type = "created";
+            } else if status.starts_with('D') {
+                operation_type = "deleted";
+            } else if status.starts_with('R') {
+                operation_type = "renamed";
+                if parts.len() >= 3 {
+                    old_path = Some(parts[1]);
+                }
+            }
+
+            let op_id = format!("op-{}", uuid::Uuid::new_v4());
+            let _ = conn.execute(
+                "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
+                params![op_id, commit_id, file_path, operation_type, old_path]
+            );
+        }
+    }
+    Ok(())
+}
+
 // ── Command Implementation ──
 
 #[command]
@@ -702,6 +743,8 @@ pub fn memory_restore(
         params![commit_id, new_hash, format!("Restored state to {}", commit_hash)]
     ).map_err(|e| e.to_string())?;
 
+    let _ = populate_commit_operations(&conn, &git_path, &git_dir, work_tree, &new_hash, &commit_id);
+
     Ok(())
 }
 
@@ -733,6 +776,8 @@ pub fn memory_review_change(
             "INSERT INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'restore','system',?3,'approved')",
             params![commit_id, new_hash, format!("Reverted change {}", commit_hash)]
         ).map_err(|e| e.to_string())?;
+
+        let _ = populate_commit_operations(&conn, &git_path, &git_dir, work_tree, &new_hash, &commit_id);
     }
 
     // Update reviews metadata
