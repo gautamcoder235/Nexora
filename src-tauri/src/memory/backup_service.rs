@@ -1,35 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
-use serde::{Serialize, Deserialize};
 use rusqlite::params;
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ProjectConfig {
-    pub project_id: String,
-    pub name: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BackupMetadata {
-    pub project_id: String,
-    pub name: String,
-    pub original_path: String,
-    pub timestamp: String,
-    pub repo_bundle_hash: String,
-    pub memory_db_hash: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct MissingProject {
-    pub id: String,
-    pub name: String,
-    pub original_path: String,
-    pub last_backup: String,
-    pub status: String, // "healthy" | "corrupted" | "missing"
-}
-
-// ── Helpers ──
+use crate::memory::models::{ProjectConfig, BackupMetadata};
 
 pub fn get_or_create_project_id(app: &AppHandle, project_path: &str) -> Result<String, String> {
     let config_path = Path::new(project_path).join(".nexora").join("config.json");
@@ -43,7 +16,6 @@ pub fn get_or_create_project_id(app: &AppHandle, project_path: &str) -> Result<S
         }
     }
 
-    // Generate or query from main database
     let name = Path::new(project_path)
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
@@ -90,12 +62,10 @@ fn compute_file_hash(path: &Path) -> Result<String, String> {
     Ok(hash.to_hex().to_string())
 }
 
-fn get_vault_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
+pub fn get_vault_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     Ok(app_dir.join("RecoveryVault").join("Projects").join(project_id))
 }
-
-// ── Core Operations ──
 
 pub fn rotate_generations(vault_dir: &Path) -> Result<(), String> {
     let history_dir = vault_dir.join("history");
@@ -105,20 +75,16 @@ pub fn rotate_generations(vault_dir: &Path) -> Result<(), String> {
     let gen2 = history_dir.join("gen-2");
     let gen1 = history_dir.join("gen-1");
 
-    // gen-2 -> gen-3
     if gen3.exists() {
         let _ = fs::remove_dir_all(&gen3);
     }
     if gen2.exists() {
         fs::rename(&gen2, &gen3).map_err(|e| format!("Failed to rotate gen-2 to gen-3: {}", e))?;
     }
-
-    // gen-1 -> gen-2
     if gen1.exists() {
         fs::rename(&gen1, &gen2).map_err(|e| format!("Failed to rotate gen-1 to gen-2: {}", e))?;
     }
 
-    // current backup -> gen-1
     let active_bundle = vault_dir.join("repo.bundle");
     let active_db = vault_dir.join("memory.db");
     let active_meta = vault_dir.join("metadata.json");
@@ -143,38 +109,27 @@ pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String>
     let project_id = get_or_create_project_id(app, project_path)?;
     let vault_dir = get_vault_dir(app, &project_id)?;
 
-    // 1. Rotate generations
     rotate_generations(&vault_dir)?;
 
-    // 2. Setup paths
     let bundle_path = vault_dir.join("repo.bundle");
     let dest_db_path = vault_dir.join("memory.db");
     let meta_path = vault_dir.join("metadata.json");
 
-    let git_path = crate::memory::resolve_git_binary(app)?;
+    let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
     let src_db_path = Path::new(project_path).join(".nexora").join("memory.db");
 
-    // 3. Create bundle
     let bundle_path_str = bundle_path.to_string_lossy();
-    let _ = crate::memory::execute_git(
-        &git_path,
-        &git_dir,
-        work_tree,
-        &["bundle", "create", &bundle_path_str, "--all"]
-    ).map_err(|e| format!("Failed to create git bundle: {}", e))?;
+    let _ = super::git_provider::create_git_bundle(&git_path, &git_dir, work_tree, &bundle_path_str)?;
 
-    // 4. Safe copy SQLite DB
     if src_db_path.exists() {
         fs::copy(&src_db_path, &dest_db_path).map_err(|e| format!("Failed to backup memory.db: {}", e))?;
     }
 
-    // 5. Generate checksums
     let bundle_hash = compute_file_hash(&bundle_path).unwrap_or_default();
     let db_hash = compute_file_hash(&dest_db_path).unwrap_or_default();
 
-    // 6. Write metadata
     let name = Path::new(project_path)
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
@@ -213,9 +168,8 @@ pub fn verify_backup_integrity(app: &AppHandle, vault_dir: &Path) -> Result<Back
         return Err("Backup files missing".to_string());
     }
 
-    // Verify hash checksums
     let current_bundle_hash = compute_file_hash(&bundle_path)?;
-    let current_db_hash = compute_db_hash_safe(&db_path)?;
+    let current_db_hash = compute_file_hash(&db_path)?;
 
     if current_bundle_hash != meta.repo_bundle_hash {
         return Err("Git bundle file checksum mismatch (corrupted)".to_string());
@@ -224,48 +178,26 @@ pub fn verify_backup_integrity(app: &AppHandle, vault_dir: &Path) -> Result<Back
         return Err("SQLite database checksum mismatch (corrupted)".to_string());
     }
 
-    // Run git bundle verify to test repository internal consistency
-    let git_path = crate::memory::resolve_git_binary(app)?;
+    let git_path = super::git_provider::resolve_git_binary(app)?;
     let bundle_path_str = bundle_path.to_string_lossy();
     let temp_git_dir = vault_dir.join("temp_fsck_repo");
-    let _ = fs::remove_dir_all(&temp_git_dir);
     
-    let mut cmd = std::process::Command::new(&git_path);
-    cmd.arg("init").arg(&temp_git_dir);
-    let output = cmd.output().map_err(|e| e.to_string())?;
-    if output.status.success() {
-        let mut verify_cmd = std::process::Command::new(&git_path);
-        verify_cmd.arg(format!("--git-dir={}", temp_git_dir.join(".git").to_string_lossy()));
-        verify_cmd.arg("bundle").arg("verify").arg(&*bundle_path_str);
-        let verify_output = verify_cmd.output().map_err(|e| e.to_string())?;
-        let _ = fs::remove_dir_all(&temp_git_dir);
-        if !verify_output.status.success() {
-            return Err("Git bundle verification failed".to_string());
-        }
-    }
+    super::git_provider::verify_git_bundle(&git_path, &temp_git_dir, &bundle_path_str)?;
 
     Ok(meta)
-}
-
-// SQLite safe copy hash to prevent active WAL files mismatch
-fn compute_db_hash_safe(db_path: &Path) -> Result<String, String> {
-    compute_file_hash(db_path)
 }
 
 pub fn restore_project(app: &AppHandle, project_id: &str, target_path: &str) -> Result<(), String> {
     let vault_dir = get_vault_dir(app, project_id)?;
 
-    // 1. Locate the newest healthy generation
     let mut healthy_vault = None;
     let mut errs = Vec::new();
 
-    // Check main active vault
     match verify_backup_integrity(app, &vault_dir) {
         Ok(m) => healthy_vault = Some((vault_dir.clone(), m)),
         Err(e) => errs.push(format!("Primary backup check failed: {}", e)),
     }
 
-    // Fallback to gen-1 -> gen-2 -> gen-3
     if healthy_vault.is_none() {
         for gen_idx in 1..=3 {
             let gen_dir = vault_dir.join("history").join(format!("gen-{}", gen_idx));
@@ -285,7 +217,6 @@ pub fn restore_project(app: &AppHandle, project_id: &str, target_path: &str) -> 
         format!("All backup generations are corrupted or missing. Check errors: {:?}", errs)
     })?;
 
-    // 2. Recreate target folder
     let target_dir = Path::new(target_path);
     if !target_dir.exists() {
         fs::create_dir_all(target_dir).map_err(|e| e.to_string())?;
@@ -300,29 +231,26 @@ pub fn restore_project(app: &AppHandle, project_id: &str, target_path: &str) -> 
     }
     fs::create_dir_all(&git_dir).map_err(|e| e.to_string())?;
 
-    // 3. Unpack Git bundle
-    let git_path = crate::memory::resolve_git_binary(app)?;
+    let git_path = super::git_provider::resolve_git_binary(app)?;
     let bundle_file = src_vault.join("repo.bundle");
     let bundle_path_str = bundle_file.to_string_lossy();
     
-    crate::memory::execute_git(&git_path, &git_dir, target_dir, &["init"])?;
-    crate::memory::execute_git(&git_path, &git_dir, target_dir, &["config", "core.autocrlf", "false"])?;
-    crate::memory::execute_git(&git_path, &git_dir, target_dir, &["config", "core.quotepath", "false"])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["init"])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["config", "core.autocrlf", "false"])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["config", "core.quotepath", "false"])?;
 
-    crate::memory::execute_git(&git_path, &git_dir, target_dir, &["remote", "add", "bundle", &*bundle_path_str])?;
-    crate::memory::execute_git(&git_path, &git_dir, target_dir, &["fetch", "bundle"])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["remote", "add", "bundle", &*bundle_path_str])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["fetch", "bundle"])?;
     
-    let fetch_head = crate::memory::execute_git(&git_path, &git_dir, target_dir, &["rev-parse", "FETCH_HEAD"])?;
-    crate::memory::execute_git(&git_path, &git_dir, target_dir, &["checkout", "-f", &fetch_head])?;
-    crate::memory::execute_git(&git_path, &git_dir, target_dir, &["update-ref", "refs/heads/nexora/main", &fetch_head])?;
+    let fetch_head = super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["rev-parse", "FETCH_HEAD"])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["checkout", "-f", &fetch_head])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["update-ref", "refs/heads/nexora/main", &fetch_head])?;
 
-    // 4. Restore SQLite database
     let src_db = src_vault.join("memory.db");
     if src_db.exists() {
         fs::copy(&src_db, &db_file).map_err(|e| format!("Failed to restore memory.db: {}", e))?;
     }
 
-    // 5. Restore config.json
     let config_path = nexora_dir.join("config.json");
     let config = ProjectConfig {
         project_id: meta.project_id,

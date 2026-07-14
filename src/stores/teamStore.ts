@@ -188,51 +188,24 @@ export const useTeamStore = create<TeamStoreState>()(
           messages: [...state.messages, userMsg]
         }));
 
-        if (agentId === null) {
-          // Send to ALL nodes with connectedTerminalId
-          const targets = get().nodes.filter((n) => n.connectedTerminalId);
-          if (targets.length === 0) {
-            // Fallback to coordinator if no terminals are connected
-            const coordinator = get().nodes.find((n) => n.role === 'coordinator');
-            if (coordinator && coordinator.connectedTerminalId) {
-              targets.push(coordinator);
-            }
-          }
+        const targetNode = agentId
+          ? get().nodes.find((n) => n.id === agentId)
+          : get().nodes.find((n) => n.role === 'coordinator');
 
-          for (const targetNode of targets) {
-            try {
-              await invoke('write_pty', {
-                sessionId: targetNode.connectedTerminalId,
-                data: content + '\r'
-              });
-            } catch (e) {
-              console.error(`Failed to write to PTY terminal (${targetNode.connectedTerminalId}):`, e);
-            }
-          }
-
-          set((state) => ({
-            nodes: state.nodes.map((n) =>
-              targets.some(t => t.id === n.id) ? { ...n, status: 'running' } : n
-            )
-          }));
-        } else {
-          // Send to specific node
-          const targetNode = get().nodes.find((n) => n.id === agentId);
-          if (targetNode && targetNode.connectedTerminalId) {
-            try {
-              await invoke('write_pty', {
-                sessionId: targetNode.connectedTerminalId,
-                data: content + '\r'
-              });
-              
-              set((state) => ({
-                nodes: state.nodes.map((n) =>
-                  n.id === targetNode.id ? { ...n, status: 'running' } : n
-                )
-              }));
-            } catch (e) {
-              console.error(`Failed to write to PTY terminal (${targetNode.connectedTerminalId}):`, e);
-            }
+        if (targetNode && targetNode.connectedTerminalId) {
+          try {
+            await invoke('write_pty', {
+              sessionId: targetNode.connectedTerminalId,
+              data: content + '\r'
+            });
+            
+            set((state) => ({
+              nodes: state.nodes.map((n) =>
+                n.id === targetNode.id ? { ...n, status: 'running' } : n
+              )
+            }));
+          } catch (e) {
+            console.error(`Failed to write to PTY terminal (${targetNode.connectedTerminalId}):`, e);
           }
         }
       },

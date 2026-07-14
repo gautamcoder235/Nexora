@@ -1,6 +1,5 @@
 pub mod hidden_command;
 pub mod memory;
-pub mod vault;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -1582,67 +1581,6 @@ fn get_system_metrics() -> SystemMetrics {
 }
 
 
-#[tauri::command]
-async fn backup_project_command(app: AppHandle, project_path: String) -> Result<(), String> {
-    vault::backup_project(&app, &project_path)
-}
-
-#[tauri::command]
-async fn restore_project_command(app: AppHandle, project_id: String, target_path: String) -> Result<(), String> {
-    vault::restore_project(&app, &project_id, &target_path)
-}
-
-#[tauri::command]
-async fn check_missing_projects(app_handle: AppHandle) -> Result<Vec<vault::MissingProject>, String> {
-    let db_state = app_handle.state::<database::DbState>();
-    let mut missing = Vec::new();
-
-    let guard = db_state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(conn) = guard.as_ref() {
-        let mut stmt = conn.prepare("SELECT id, name, root_path FROM repositories WHERE deleted_at IS NULL").map_err(|e| e.to_string())?;
-        let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
-        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            let id: String = row.get(0).map_err(|e| e.to_string())?;
-            let name: String = row.get(1).map_err(|e| e.to_string())?;
-            let root_path: String = row.get(2).map_err(|e| e.to_string())?;
-
-            let path = std::path::Path::new(&root_path);
-            if !path.exists() {
-                let mut status = "missing".to_string();
-                let mut last_backup = "Never".to_string();
-
-                let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
-                let vault_dir = app_dir.join("RecoveryVault").join("Projects").join(&id);
-                if vault_dir.exists() {
-                    if let Ok(meta) = vault::verify_backup_integrity(&app_handle, &vault_dir) {
-                        status = "healthy".to_string();
-                        last_backup = meta.timestamp;
-                    } else {
-                        let mut has_healthy_gen = false;
-                        for gen_idx in 1..=3 {
-                            let gen_dir = vault_dir.join("history").join(format!("gen-{}", gen_idx));
-                            if gen_dir.exists() && vault::verify_backup_integrity(&app_handle, &gen_dir).is_ok() {
-                                has_healthy_gen = true;
-                                break;
-                            }
-                        }
-                        status = if has_healthy_gen { "healthy".to_string() } else { "corrupted".to_string() };
-                    }
-                }
-
-                missing.push(vault::MissingProject {
-                    id,
-                    name,
-                    original_path: root_path,
-                    last_backup,
-                    status,
-                });
-            }
-        }
-    }
-
-    Ok(missing)
-}
 
 #[tauri::command]
 fn exit_app(app_handle: AppHandle) {
@@ -1748,9 +1686,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             exit_app,
             get_perf_timings,
-            backup_project_command,
-            restore_project_command,
-            check_missing_projects,
+            memory::commands::backup_project_command,
+            memory::commands::restore_project_command,
+            memory::commands::check_missing_projects,
             spawn_browser_webview,
             sync_browser_webview_layout,
             destroy_browser_webview,
@@ -1784,16 +1722,16 @@ pub fn run() {
             get_terminal_metrics,
             get_system_metrics,
             get_git_branch,
-            memory::memory_initialize,
-            memory::memory_snapshot,
-            memory::memory_get_history,
-            memory::memory_get_diff,
-            memory::memory_restore,
-            memory::memory_review_change,
-            memory::memory_apply_hunks,
-            memory::memory_read_version,
-            memory::memory_create_checkpoint,
-            memory::memory_is_initialized,
+            memory::commands::memory_initialize,
+            memory::commands::memory_snapshot,
+            memory::commands::memory_get_history,
+            memory::commands::memory_get_diff,
+            memory::commands::memory_restore,
+            memory::commands::memory_review_change,
+            memory::commands::memory_apply_hunks,
+            memory::commands::memory_read_version,
+            memory::commands::memory_create_checkpoint,
+            memory::commands::memory_is_initialized,
             ucte::ucte_create_snapshot,
             ucte::ucte_get_snapshot_diff,
             ucte::ucte_get_changes,

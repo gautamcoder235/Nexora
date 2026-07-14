@@ -1,0 +1,566 @@
+For the final volume, I would not make it another "prompt." Instead, it should be an engineering implementation specification. Volumes 1 and 2 define what the system is. Volume 3 defines how it must be built.
+
+It should include:
+
+Rust module architecture
+Tauri IPC layer
+React component hierarchy
+Zustand stores
+Background worker system
+File watcher pipeline
+GitProvider interface
+Timeline service
+Recovery service
+Database repository layer
+Error handling strategy
+Logging
+Performance budgets
+Testing strategy
+Coding standards
+Future extensibility
+
+This volume becomes the implementation handbook for every AI coding agent and developer working on Nexora.
+
+Nexora Memory Core Architecture Specification
+Volume 3 — Implementation Guide, Engineering Standards & Production Rules
+
+Version: 1.0 (Implementation Specification)
+
+1. Purpose
+
+This document defines the implementation standards for Nexora Memory Core.
+
+Volumes 1 and 2 define the architecture.
+
+Volume 3 defines how every subsystem must be implemented.
+
+The objective is to ensure:
+
+maintainability
+modularity
+scalability
+reliability
+performance
+
+The implementation must prioritize correctness over speed of development.
+
+2. High-Level Backend Architecture
+
+The backend should follow a service-oriented architecture with strict separation of concerns.
+
+src-tauri/src/
+
+memory/
+│
+├── mod.rs
+├── manager.rs
+├── git_provider.rs
+├── snapshot_engine.rs
+├── event_engine.rs
+├── timeline_service.rs
+├── recovery_service.rs
+├── backup_service.rs
+├── integrity.rs
+├── file_watcher.rs
+├── metadata_store.rs
+├── database.rs
+├── models.rs
+├── commands.rs
+└── utils.rs
+
+Each module must have a single responsibility.
+
+No module should directly access another module's internal state.
+
+3. GitProvider Interface
+
+Every Git operation must pass through a single abstraction.
+
+Example responsibilities:
+
+initialize repository
+create commit
+checkout commit
+restore files
+generate diff
+retrieve commit metadata
+perform integrity verification
+garbage collection
+repository maintenance
+
+No other module should execute Git commands directly.
+
+This ensures future replacement with gitoxide or libgit2 without changing higher-level code.
+
+4. Memory Manager
+
+The Memory Manager is the orchestrator.
+
+Responsibilities:
+
+coordinate all services
+receive Tauri commands
+dispatch background jobs
+update metadata
+notify frontend
+
+It must not contain business logic from other modules.
+
+5. Snapshot Engine
+
+Responsible only for deciding when snapshots are created.
+
+Inputs:
+
+file watcher events
+AI session events
+terminal events
+manual checkpoints
+
+Responsibilities:
+
+debounce changes
+batch operations
+create meaningful snapshots
+avoid duplicate commits
+
+Never perform Git operations directly.
+
+6. Event Engine
+
+Receives low-level events and transforms them into timeline events.
+
+Examples:
+
+Filesystem Event
+
+↓
+
+User Event
+
+↓
+
+Session Event
+
+↓
+
+Timeline Event
+
+The Event Engine should support future plugins without architectural changes.
+
+7. Timeline Service
+
+Responsibilities:
+
+build timeline
+group sessions
+search
+filter
+sort
+paginate
+
+Timeline entries should never be generated directly from Git history.
+
+They are composed from SQLite metadata and linked Git commits.
+
+8. Recovery Service
+
+Responsible for:
+
+restore preview
+vault management
+recovery execution
+integrity validation
+generation management
+
+Recovery must be transactional.
+
+Partial recovery failures must automatically roll back.
+
+9. Backup Service
+
+Runs independently.
+
+Responsibilities:
+
+background synchronization
+generation creation
+metadata updates
+retention cleanup
+vault health monitoring
+
+Never block UI.
+
+10. File Watcher
+
+Requirements:
+
+recursive watching
+debounce
+ignore temporary files
+ignore excluded directories
+cross-platform behavior
+
+Ignored paths:
+
+.nexora/
+.git/
+node_modules/
+target/
+dist/
+build/
+.cache/
+
+Future additions should be configurable.
+
+11. Background Worker System
+
+Long-running work must never execute on the UI thread.
+
+Create dedicated workers for:
+
+snapshots
+diff generation
+backup synchronization
+restore operations
+integrity verification
+Git maintenance
+
+Workers communicate through thread-safe queues.
+
+12. Queue System
+
+Every asynchronous task enters a queue.
+
+Example:
+
+Watcher
+
+↓
+
+Event Queue
+
+↓
+
+Snapshot Queue
+
+↓
+
+Git Queue
+
+↓
+
+Timeline Queue
+
+↓
+
+Frontend
+
+Queues prevent duplicate work and allow prioritization.
+
+13. Frontend Architecture
+
+React components should remain presentation-only.
+
+Business logic belongs in Zustand stores and backend services.
+
+Suggested structure:
+
+src/
+
+components/
+stores/
+services/
+hooks/
+types/
+utils/
+
+Components should never call Git-related commands directly.
+
+14. Zustand Stores
+
+Separate stores by responsibility.
+
+Example:
+
+TimelineStore
+ReviewStore
+RecoveryStore
+SessionStore
+MemoryStore
+
+Avoid one large global store.
+
+15. IPC Design
+
+Every backend capability should have a dedicated Tauri command.
+
+Commands should be:
+
+focused
+asynchronous
+idempotent where possible
+well documented
+
+Avoid generic "do everything" commands.
+
+16. Database Layer
+
+Use a repository pattern.
+
+No SQL should appear outside database modules.
+
+Every query should be centralized.
+
+Support future migrations.
+
+17. Error Handling
+
+Every operation must return structured errors.
+
+Include:
+
+category
+message
+recovery suggestion
+technical details (for logs)
+
+Never expose raw Git CLI output directly to users.
+
+18. Logging
+
+Maintain structured logs.
+
+Levels:
+
+Trace
+Debug
+Info
+Warning
+Error
+
+Logs should include:
+
+timestamp
+operation
+duration
+project UUID
+session ID
+
+Sensitive project content should not be logged.
+
+19. Performance Targets
+
+Target values:
+
+Repository initialization: < 2 seconds
+Snapshot creation: < 500 ms (typical project)
+Timeline loading: < 200 ms
+Diff generation: lazy, on demand
+Restore preview: < 1 second
+Background verification: minimal user impact
+
+Optimize for responsiveness over raw throughput.
+
+20. Memory Management
+
+Avoid loading entire repositories into memory.
+
+Use:
+
+streaming
+lazy loading
+pagination
+incremental parsing
+
+Cache only frequently accessed metadata.
+
+21. Git Maintenance
+
+Run maintenance during idle periods.
+
+Tasks include:
+
+garbage collection
+object packing
+integrity verification
+
+Never run maintenance during active user operations.
+
+22. Testing Strategy
+
+Testing should include:
+
+Unit tests:
+
+GitProvider
+Event Engine
+Timeline Service
+Database layer
+
+Integration tests:
+
+snapshot workflow
+restore workflow
+AI review workflow
+recovery vault
+
+Stress tests:
+
+100k+ files
+long histories
+large repositories
+
+Failure tests:
+
+interrupted backup
+corrupted repository
+missing metadata
+missing vault
+23. Security
+
+Validate all paths.
+
+Prevent path traversal.
+
+Restrict operations to project boundaries.
+
+Never execute user-provided shell commands without explicit intent.
+
+Future encryption support should be designed into the Recovery Vault.
+
+24. Configuration
+
+Store configurable values in .nexora/config.json.
+
+Examples:
+
+snapshot debounce interval
+ignored paths
+retention policy
+backup frequency
+integrity verification interval
+
+Avoid hard-coded constants where configuration is appropriate.
+
+25. Observability
+
+Provide internal diagnostics:
+
+worker queue lengths
+last snapshot time
+last backup status
+repository health
+vault health
+pending operations
+
+This information should support debugging without exposing internal Git details to end users.
+
+26. Coding Standards
+Prefer composition over inheritance.
+Keep functions small and focused.
+Favor immutable data where practical.
+Use strong typing throughout Rust and TypeScript.
+Document public APIs.
+Avoid hidden side effects.
+Design interfaces for future replacement.
+27. Future Extensibility
+
+The architecture should support future features without redesign:
+
+multiple AI agents
+cloud synchronization
+collaborative editing
+remote Recovery Vaults
+plugin-defined timeline events
+branch-like workspaces
+semantic code history
+IDE integrations
+28. Implementation Rules
+Rule 1
+
+Every subsystem must expose a clear interface.
+
+Rule 2
+
+No subsystem may bypass the Memory Manager.
+
+Rule 3
+
+Never execute Git commands outside GitProvider.
+
+Rule 4
+
+Every long-running operation must be asynchronous.
+
+Rule 5
+
+Never block the UI for filesystem, Git, backup, or recovery operations.
+
+Rule 6
+
+Never duplicate project data unnecessarily.
+
+Reuse Git's object model.
+
+Rule 7
+
+All destructive operations must create checkpoints before execution.
+
+Rule 8
+
+Every AI-generated change must be reviewable and reversible.
+
+Rule 9
+
+Use SQLite exclusively for metadata and timeline information.
+
+Do not duplicate project contents in the database.
+
+Rule 10
+
+The Recovery Vault must remain isolated from the active workspace.
+
+Rule 11
+
+Background workers must be idempotent where possible so interrupted operations can be safely retried.
+
+Rule 12
+
+Support cancellation for long-running operations such as restore, backup, and large diff generation.
+
+Rule 13
+
+Favor incremental updates over full rescans whenever reliable change information is available.
+
+Rule 14
+
+Public interfaces should remain stable to allow future replacement of underlying implementations without breaking the rest of the system.
+
+29. Production Readiness Checklist
+
+Before releasing this subsystem, verify:
+
+Portable Git initializes correctly on supported platforms.
+.nexora repositories remain isolated from user .git repositories.
+Smart snapshots create meaningful history without excessive commits.
+Timeline events correctly map to underlying Git commits.
+Recovery Vault can restore deleted projects.
+Integrity verification detects repository corruption.
+Background workers do not block the UI.
+Large projects remain responsive.
+Automated and manual tests pass consistently.
+30. Final Success Criteria
+
+The Memory Core is considered production-ready when it delivers:
+
+A reliable offline versioning engine powered by Git but hidden from the user.
+A rich event-based timeline that is intuitive for humans and AI-assisted workflows.
+Safe, previewable, and fully reversible change management.
+Efficient storage that avoids unnecessary duplication.
+Modular services with clear interfaces and asynchronous execution.
+A Recovery Vault capable of restoring projects after deletion or corruption.
+A foundation that can evolve with future collaboration, plugins, and cloud features without requiring architectural rewrites.
+One final recommendation
+
+These three volumes form an excellent foundation. Before implementation, I'd add a Volume 0 — ADR (Architecture Decision Record) containing why each major decision was made (Portable Git vs. libgit2, SQLite vs. JSON, event timeline vs. commit timeline, etc.). That document makes future maintenance much easier because contributors understand the reasoning behind the architecture rather than just the implementation.
