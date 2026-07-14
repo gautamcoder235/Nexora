@@ -1134,7 +1134,7 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
         
         // If a URL was specified, navigate to it
         if let Some(u) = url.as_ref() {
-            if !u.trim().is_empty() {
+            if !u.trim().is_empty() && u != "--background" {
                 if let Ok(Ok(mut stream)) = tokio::time::timeout(Duration::from_millis(50), tokio::net::TcpStream::connect("127.0.0.1:30120")).await {
                     let mut encoded = String::new();
                     for b in u.trim().bytes() {
@@ -1241,11 +1241,22 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
         let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
         let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
         
-        let mut fallback_args = vec![shell_arg.to_string(), "npm start".to_string()];
-        if let Some(u) = url {
-            if !u.trim().is_empty() {
-                fallback_args.push("--".to_string());
-                fallback_args.push(u.trim().to_string());
+        let mut fallback_args = vec![shell_arg.to_string()];
+        if cfg!(target_os = "windows") {
+            let mut cmd_str = "npm start".to_string();
+            if let Some(u) = url {
+                if !u.trim().is_empty() {
+                    cmd_str.push_str(&format!(" -- {}", u.trim()));
+                }
+            }
+            fallback_args.push(cmd_str);
+        } else {
+            fallback_args.push("npm start".to_string());
+            if let Some(u) = url {
+                if !u.trim().is_empty() {
+                    fallback_args.push("--".to_string());
+                    fallback_args.push(u.trim().to_string());
+                }
             }
         }
 
