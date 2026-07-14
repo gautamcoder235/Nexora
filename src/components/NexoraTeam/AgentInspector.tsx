@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTeamStore } from '../../stores/teamStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { Lock, Unlock, Play, Pause, AlertTriangle, FileCode, CheckCircle, X, Terminal, Edit } from 'lucide-react';
+import { Lock, Unlock, Play, Pause, AlertTriangle, FileCode, CheckCircle, X, Terminal, Edit, Send } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const AgentInspector: React.FC = () => {
@@ -13,7 +13,9 @@ export const AgentInspector: React.FC = () => {
     resumeAgent, 
     releaseLocks, 
     tasks,
-    updateAgentProperties 
+    updateAgentProperties,
+    defaultInstructions,
+    sendDirective
   } = useTeamStore();
 
   const inspectedAgent = nodes.find(n => n.id === activeInspectId);
@@ -27,6 +29,10 @@ export const AgentInspector: React.FC = () => {
   const [editPrompts, setEditPrompts] = useState('');
   const [editConnectedTerminalId, setEditConnectedTerminalId] = useState('');
 
+  const [isSendOpen, setIsSendOpen] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const [customText, setCustomText] = useState('');
+
   // Update local states when inspectedAgent changes
   useEffect(() => {
     if (inspectedAgent) {
@@ -37,6 +43,9 @@ export const AgentInspector: React.FC = () => {
       setEditPrompts((inspectedAgent.promptContext || []).join('\n'));
       setEditConnectedTerminalId(inspectedAgent.connectedTerminalId || '');
       setIsEditing(false); // Close edit mode when switching agents
+      setIsSendOpen(false); // Close send dropdown
+      setCustomMode(false);
+      setCustomText('');
     }
   }, [activeInspectId, inspectedAgent]);
 
@@ -321,24 +330,105 @@ export const AgentInspector: React.FC = () => {
 
       {/* Operator controls */}
       {!isEditing && (
-        <div className="p-3.5 border-t border-[#1B1B22] bg-[#121218]/60 flex items-center justify-between gap-2.5 select-none">
-          {inspectedAgent.status === 'running' ? (
+        <div className="p-3.5 border-t border-[#1B1B22] bg-[#121218]/60 flex flex-col gap-2.5 select-none">
+          <div className="flex items-center justify-between gap-2.5">
+            {inspectedAgent.status === 'running' ? (
+              <button
+                onClick={() => pauseAgent(inspectedAgent.id)}
+                className="flex-1 py-2 px-3 rounded-lg bg-[#F59E0B] hover:bg-[#F59E0B]/90 text-[#0D0D10] font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-[#F59E0B]/10 cursor-pointer"
+              >
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>Pause</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => resumeAgent(inspectedAgent.id)}
+                className="flex-1 py-2 px-3 rounded-lg bg-[#22C55E] hover:bg-[#22C55E]/90 text-[#0D0D10] font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-[#22C55E]/10 cursor-pointer"
+                disabled={inspectedAgent.status === 'offline'}
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Resume</span>
+              </button>
+            )}
+
             <button
-              onClick={() => pauseAgent(inspectedAgent.id)}
-              className="flex-1 py-2 px-3 rounded-lg bg-[#F59E0B] hover:bg-[#F59E0B]/90 text-[#0D0D10] font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-[#F59E0B]/10 cursor-pointer"
+              onClick={() => setIsSendOpen(!isSendOpen)}
+              disabled={!inspectedAgent.connectedTerminalId}
+              className="flex-1 py-2 px-3 rounded-lg bg-[#7C5CFF] hover:bg-[#7C5CFF]/90 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-[#7C5CFF]/15 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title={inspectedAgent.connectedTerminalId ? "Send instruction to terminal" : "No terminal connected"}
             >
-              <Pause className="w-3 h-3 fill-current" />
-              <span>Pause Agent</span>
+              <Send className="w-3.5 h-3.5" />
+              <span>Send Inst</span>
             </button>
-          ) : (
-            <button
-              onClick={() => resumeAgent(inspectedAgent.id)}
-              className="flex-1 py-2 px-3 rounded-lg bg-[#22C55E] hover:bg-[#22C55E]/90 text-[#0D0D10] font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-[#22C55E]/10 cursor-pointer"
-              disabled={inspectedAgent.status === 'offline'}
+          </div>
+
+          {/* Send Dropdown/Form Inline */}
+          {isSendOpen && inspectedAgent.connectedTerminalId && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border border-[#1B1B22] bg-[#0D0D10] p-2.5 rounded-lg space-y-2 select-text"
             >
-              <Play className="w-3 h-3 fill-current" />
-              <span>Resume Agent</span>
-            </button>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => {
+                    const roleInst = defaultInstructions[inspectedAgent.role] || '';
+                    if (roleInst.trim()) {
+                      sendDirective(inspectedAgent.id, roleInst);
+                      setIsSendOpen(false);
+                    }
+                  }}
+                  disabled={!(defaultInstructions[inspectedAgent.role] || '').trim()}
+                  className="flex-1 py-1 px-2 rounded bg-[#1A1A24]/50 border border-[#1B1B22] text-[10px] text-zinc-300 hover:text-zinc-150 disabled:opacity-45 hover:border-zinc-700 transition-all cursor-pointer font-sans font-semibold"
+                >
+                  📋 Send Default
+                </button>
+                <button
+                  onClick={() => setCustomMode(true)}
+                  className="flex-1 py-1 px-2 rounded bg-[#1A1A24]/50 border border-[#1B1B22] text-[10px] text-zinc-300 hover:text-zinc-150 hover:border-zinc-700 transition-all cursor-pointer font-sans font-semibold"
+                >
+                  ✏️ Custom Inst
+                </button>
+              </div>
+
+              {customMode && (
+                <div className="space-y-1.5 pt-1.5 border-t border-[#1B1B22]">
+                  <textarea
+                    rows={3}
+                    placeholder="Enter custom instruction..."
+                    value={customText}
+                    onChange={(e) => setCustomText(e.target.value)}
+                    className="w-full p-2 rounded bg-[#121218] border border-[#1B1B22] text-[10px] text-zinc-250 font-mono resize-none focus:outline-none focus:border-[#7C5CFF]/50"
+                  />
+                  <div className="flex justify-end gap-1.5 select-none">
+                    <button
+                      onClick={() => {
+                        setCustomMode(false);
+                        setCustomText('');
+                      }}
+                      className="px-2 py-0.5 text-[9px] text-zinc-500 hover:text-zinc-300 font-semibold cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (customText.trim()) {
+                          sendDirective(inspectedAgent.id, customText);
+                          setCustomText('');
+                          setCustomMode(false);
+                          setIsSendOpen(false);
+                        }
+                      }}
+                      disabled={!customText.trim()}
+                      className="px-2.5 py-0.5 rounded bg-[#7C5CFF] text-white text-[9px] font-semibold hover:bg-[#7C5CFF]/90 transition-colors disabled:opacity-40 cursor-pointer"
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
           )}
         </div>
       )}

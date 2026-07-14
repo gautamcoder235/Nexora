@@ -52,7 +52,7 @@ pub struct HunkSelection {
 
 // ── Git Resolution & Execution ──
 
-fn resolve_git_binary(app_handle: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn resolve_git_binary(app_handle: &AppHandle) -> Result<PathBuf, String> {
     // 1. Production Mode check (Strictly bundled resources only)
     if let Ok(resource_dir) = app_handle.path().resource_dir() {
         let prod_git = resource_dir.join("resources").join("git").join("bin").join("git.exe");
@@ -86,7 +86,7 @@ fn resolve_git_binary(app_handle: &AppHandle) -> Result<PathBuf, String> {
     Err("Portable Git binary not found in bundled resources".to_string())
 }
 
-fn execute_git(git_path: &Path, git_dir: &Path, work_tree: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn execute_git(git_path: &Path, git_dir: &Path, work_tree: &Path, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new(git_path);
     cmd.arg(format!("--git-dir={}", git_dir.to_string_lossy()));
     cmd.arg(format!("--work-tree={}", work_tree.to_string_lossy()));
@@ -125,7 +125,7 @@ fn execute_git(git_path: &Path, git_dir: &Path, work_tree: &Path, args: &[&str])
 }
 
 // Check Git version is >= 2.40.0
-fn validate_git_version(git_path: &Path) -> Result<(), String> {
+pub(crate) fn validate_git_version(git_path: &Path) -> Result<(), String> {
     let mut cmd = Command::new(git_path);
     cmd.arg("--version");
     let output = cmd.output().map_err(|e| format!("Failed to get Git version: {}", e))?;
@@ -289,6 +289,9 @@ pub fn memory_initialize(app: AppHandle, project_path: String) -> Result<String,
     let git_path = resolve_git_binary(&app)?;
     validate_git_version(&git_path)?;
 
+    // Ensure project UUID exists
+    let _ = crate::vault::get_or_create_project_id(&app, &project_path);
+
     let git_dir = Path::new(&project_path).join(".nexora").join("repo");
     let work_tree = Path::new(&project_path);
 
@@ -366,6 +369,16 @@ pub fn memory_initialize(app: AppHandle, project_path: String) -> Result<String,
             "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES ('nexora/main', ?1)",
             params![head_hash]
         );
+
+        // Run recovery vault backup in background
+        let app_clone = app.clone();
+        let path_clone = project_path.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = crate::vault::backup_project(&app_clone, &path_clone) {
+                eprintln!("[RecoveryVault] Automatic backup failed: {}", e);
+            }
+        });
+
         return Ok(head_hash);
     }
 
@@ -464,6 +477,15 @@ pub fn memory_initialize(app: AppHandle, project_path: String) -> Result<String,
             ).map_err(|e| e.to_string())?;
         }
     }
+
+    // Run recovery vault backup in background
+    let app_clone = app.clone();
+    let path_clone = project_path.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = crate::vault::backup_project(&app_clone, &path_clone) {
+            eprintln!("[RecoveryVault] Automatic backup failed: {}", e);
+        }
+    });
 
     Ok(commit_hash)
 }
@@ -638,6 +660,15 @@ pub fn memory_create_checkpoint(
     // Approve any outstanding commits prior to the checkpoint
     conn.execute("UPDATE commits SET status = 'approved' WHERE status = 'pending'", []).map_err(|e| e.to_string())?;
     conn.execute("UPDATE reviews SET status = 'approved', review_time = CURRENT_TIMESTAMP WHERE status = 'pending'", []).map_err(|e| e.to_string())?;
+
+    // Run recovery vault backup in background
+    let app_clone = app.clone();
+    let path_clone = project_path.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = crate::vault::backup_project(&app_clone, &path_clone) {
+            eprintln!("[RecoveryVault] Automatic backup failed: {}", e);
+        }
+    });
 
     Ok(commit_hash)
 }

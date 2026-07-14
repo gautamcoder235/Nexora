@@ -31,6 +31,14 @@ export interface HunkSelection {
   approved: boolean;
 }
 
+export interface MissingProject {
+  id: string;
+  name: string;
+  original_path: string;
+  last_backup: string;
+  status: string; // "healthy" | "corrupted" | "missing"
+}
+
 interface ChangesetState {
   activeChangesetId: string | null;
   changesets: Record<string, Changeset>;
@@ -50,6 +58,10 @@ interface ChangesetState {
   isCapturing: boolean;
   isLoadingChanges: boolean;
 
+  // Recovery Vault state
+  missingProjects: MissingProject[];
+  isRestoring: boolean;
+
   // Actions — UI
   setReviewCenterOpen: (open: boolean) => void;
   toggleReviewPanelPinned: () => void;
@@ -68,6 +80,10 @@ interface ChangesetState {
   applyHunks: (projectPath: string, commitHash: string, approvedHunks: HunkSelection[]) => Promise<void>;
   readCommitVersion: (projectPath: string, commitHash: string, filePath: string) => Promise<string>;
   getDiff: (projectPath: string, fromCommit: string, toCommit: string) => Promise<string>;
+
+  // Actions — Recovery Vault
+  checkMissingProjects: () => Promise<void>;
+  restoreProject: (projectId: string, targetPath: string) => Promise<void>;
 
   // Stub changeset API calls (kept for compatibility)
   loadChangesets: () => Promise<void>;
@@ -99,6 +115,10 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
   timeline: [],
   isCapturing: false,
   isLoadingChanges: false,
+
+  // Recovery Vault state
+  missingProjects: [],
+  isRestoring: false,
 
   // UI actions
   setReviewCenterOpen: (open: boolean) => set({ isReviewCenterOpen: open }),
@@ -233,6 +253,29 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
     } catch (e) {
       console.error('memory_get_diff failed:', e);
       return '';
+    }
+  },
+
+  // Actions — Recovery Vault
+  checkMissingProjects: async () => {
+    try {
+      const missing = await invoke<MissingProject[]>('check_missing_projects');
+      set({ missingProjects: missing });
+    } catch (e) {
+      console.error('check_missing_projects failed:', e);
+    }
+  },
+
+  restoreProject: async (projectId: string, targetPath: string) => {
+    set({ isRestoring: true });
+    try {
+      await invoke('restore_project_command', { projectId, targetPath });
+      const missing = await invoke<MissingProject[]>('check_missing_projects');
+      set({ missingProjects: missing, isRestoring: false });
+    } catch (e) {
+      console.error('restore_project_command failed:', e);
+      set({ isRestoring: false });
+      throw e;
     }
   },
 

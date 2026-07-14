@@ -17,6 +17,7 @@ interface TeamStoreState {
   isTeamPanelVisible: boolean;
   teamPanelHeight: number;
   isTeamPaused: boolean;
+  defaultInstructions: Record<AgentRole, string>;
 
   // Actions
   fetchState: () => Promise<void>;
@@ -25,6 +26,9 @@ interface TeamStoreState {
   addCustomAgent: (name: string, role: AgentRole, cliCommand: string, connections: string[]) => void;
   updateAgentProperties: (agentId: string, updates: Partial<TeamNode>) => void;
   sendDirective: (agentId: string | null, content: string) => Promise<void>;
+  setDefaultInstructions: (role: AgentRole, instructions: string) => void;
+  broadcastDirective: (content: string) => Promise<void>;
+  broadcastDefaultInstructions: () => Promise<void>;
   pauseAgent: (agentId: string) => Promise<void>;
   resumeAgent: (agentId: string) => Promise<void>;
   releaseLocks: (agentId: string) => Promise<void>;
@@ -95,6 +99,13 @@ const DEFAULT_EDGES: TeamEdge[] = [
   }
 ];
 
+const DEFAULT_ROLE_INSTRUCTIONS: Record<AgentRole, string> = {
+  coordinator: "You are the team coordinator. Decompose requirements, assign tasks to specialized agents, and oversee task execution.",
+  builder: "Write robust code conforming to project style and linting standards. Focus on direct implementation without unnecessary explanations.",
+  scout: "Index source code files, search for symbols, analyze project dependencies, and document codebase structure.",
+  reviewer: "Review code modifications, run verify tasks, check for syntax or logical errors, and validate pull requests."
+};
+
 export const useTeamStore = create<TeamStoreState>()(
   persist(
     (set, get) => ({
@@ -108,6 +119,7 @@ export const useTeamStore = create<TeamStoreState>()(
       isTeamPanelVisible: false,
       teamPanelHeight: 300,
       isTeamPaused: false,
+      defaultInstructions: DEFAULT_ROLE_INSTRUCTIONS,
 
       // Stubs
       executions: [],
@@ -176,25 +188,110 @@ export const useTeamStore = create<TeamStoreState>()(
           messages: [...state.messages, userMsg]
         }));
 
-        const targetNode = agentId
-          ? get().nodes.find((n) => n.id === agentId)
-          : get().nodes.find((n) => n.role === 'coordinator');
-
-        if (targetNode && targetNode.connectedTerminalId) {
-          try {
-            await invoke('write_pty', {
-              sessionId: targetNode.connectedTerminalId,
-              data: content + '\r'
-            });
-            
-            set((state) => ({
-              nodes: state.nodes.map((n) =>
-                n.id === targetNode.id ? { ...n, status: 'running' } : n
-              )
-            }));
-          } catch (e) {
-            console.error(`Failed to write to PTY terminal (${targetNode.connectedTerminalId}):`, e);
+        if (agentId === null) {
+          // Send to ALL nodes with connectedTerminalId
+          const targets = get().nodes.filter((n) => n.connectedTerminalId);
+          if (targets.length === 0) {
+            // Fallback to coordinator if no terminals are connected
+            const coordinator = get().nodes.find((n) => n.role === 'coordinator');
+            if (coordinator && coordinator.connectedTerminalId) {
+              targets.push(coordinator);
+            }
           }
+
+          for (const targetNode of targets) {
+            try {
+              await invoke('write_pty', {
+                sessionId: targetNode.connectedTerminalId,
+                data: content + '\r'
+              });
+            } catch (e) {
+              console.error(`Failed to write to PTY terminal (${targetNode.connectedTerminalId}):`, e);
+            }
+          }
+
+          set((state) => ({
+            nodes: state.nodes.map((n) =>
+              targets.some(t => t.id === n.id) ? { ...n, status: 'running' } : n
+            )
+          }));
+        } else {
+          // Send to specific node
+          const targetNode = get().nodes.find((n) => n.id === agentId);
+          if (targetNode && targetNode.connectedTerminalId) {
+            try {
+              await invoke('write_pty', {
+                sessionId: targetNode.connectedTerminalId,
+                data: content + '\r'
+              });
+              
+              set((state) => ({
+                nodes: state.nodes.map((n) =>
+                  n.id === targetNode.id ? { ...n, status: 'running' } : n
+                )
+              }));
+            } catch (e) {
+              console.error(`Failed to write to PTY terminal (${targetNode.connectedTerminalId}):`, e);
+            }
+          }
+        }
+      },
+
+      setDefaultInstructions: (role, instructions) => {
+        set((state) => ({
+          defaultInstructions: {
+            ...state.defaultInstructions,
+            [role]: instructions
+          }
+        }));
+      },
+
+      broadcastDirective: async (content) => {
+        await get().sendDirective(null, content);
+      },
+
+      broadcastDefaultInstructions: async () => {
+        const targets = get().nodes.filter((n) => n.connectedTerminalId);
+        if (targets.length === 0) {
+          // Fallback to coordinator if no terminals are connected
+          const coordinator = get().nodes.find((n) => n.role === 'coordinator');
+          if (coordinator && coordinator.connectedTerminalId) {
+            targets.push(coordinator);
+          }
+        }
+
+        if (targets.length > 0) {
+          const userMsg: AgentMessage = {
+            id: `m-system-${Date.now()}`,
+            sender: 'system',
+            content: 'Broadcasted role-specific default instructions to active terminals.',
+            timestamp: new Date(),
+            blockId: null
+          };
+
+          set((state) => ({
+            messages: [...state.messages, userMsg]
+          }));
+
+          for (const targetNode of targets) {
+            const roleInst = get().defaultInstructions[targetNode.role] || '';
+            if (roleInst.trim()) {
+              try {
+                await invoke('write_pty', {
+                  sessionId: targetNode.connectedTerminalId,
+                  data: roleInst + '\r'
+                });
+              } catch (e) {
+                console.error(`Failed to write to PTY terminal (${targetNode.connectedTerminalId}):`, e);
+              }
+            }
+          }
+
+          set((state) => ({
+            nodes: state.nodes.map((n) =>
+              targets.some(t => t.id === n.id) ? { ...n, status: 'running' } : n
+            )
+          }));
         }
       },
 
@@ -253,7 +350,8 @@ export const useTeamStore = create<TeamStoreState>()(
         edges: state.edges,
         messages: state.messages,
         isTeamPanelVisible: state.isTeamPanelVisible,
-        teamPanelHeight: state.teamPanelHeight
+        teamPanelHeight: state.teamPanelHeight,
+        defaultInstructions: state.defaultInstructions
       })
     }
   )

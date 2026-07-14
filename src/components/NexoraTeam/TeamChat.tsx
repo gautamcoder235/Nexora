@@ -6,7 +6,7 @@ import { Send, User, Bot, AlertTriangle, ShieldCheck, Sparkles, MessageSquare, T
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const TeamChat: React.FC = () => {
-  const { messages, nodes, sendDirective, clearAllMessages } = useTeamStore();
+  const { messages, nodes, sendDirective, clearAllMessages, defaultInstructions, broadcastDefaultInstructions } = useTeamStore();
   const [inputText, setInputText] = useState('');
   const [targetAgent, setTargetAgent] = useState<string>('all');
   const feedRef = useRef<HTMLDivElement>(null);
@@ -130,21 +130,52 @@ export const TeamChat: React.FC = () => {
       {/* Input Action Form */}
       <form onSubmit={handleSend} className="p-3 border-t border-[#1B1B22] bg-[#121218]/50 flex items-center gap-3">
         <div className="flex flex-col gap-2 flex-1">
-          {/* Target Selector */}
-          <div className="flex items-center gap-2 text-[10px] text-zinc-500 px-1 select-none">
-            <span>Direct Intervention To:</span>
-            <select
-              value={targetAgent}
-              onChange={(e) => setTargetAgent(e.target.value)}
-              className="bg-[#0D0D10] border border-[#1B1B22] rounded-md px-2 py-0.5 text-[9px] font-semibold text-zinc-300 focus:outline-none focus:border-[#7C5CFF]/50 cursor-pointer"
-            >
-              <option value="all">Global Broadcast</option>
-              {nodes.map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.label} ({node.role})
-                </option>
-              ))}
-            </select>
+          {/* Target Selector & Quick Action */}
+          <div className="flex items-center justify-between text-[10px] text-zinc-500 px-1 select-none">
+            <div className="flex items-center gap-2">
+              <span>Direct Intervention To:</span>
+              <select
+                value={targetAgent}
+                onChange={(e) => setTargetAgent(e.target.value)}
+                className="bg-[#0D0D10] border border-[#1B1B22] rounded-md px-2 py-0.5 text-[9px] font-semibold text-zinc-300 focus:outline-none focus:border-[#7C5CFF]/50 cursor-pointer"
+              >
+                <option value="all">Global Broadcast</option>
+                {nodes.map((node) => (
+                  <option key={node.id} value={node.id}>
+                    {node.label} ({node.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(() => {
+              const selectedNode = nodes.find(n => n.id === targetAgent);
+              const roleInst = selectedNode ? (defaultInstructions[selectedNode.role] || '') : '';
+              const isEnabled = targetAgent === 'all'
+                ? Object.values(defaultInstructions).some(inst => inst && inst.trim().length > 0)
+                : roleInst.trim().length > 0;
+              const title = targetAgent === 'all'
+                ? "Broadcast role-specific default instructions to active terminals"
+                : `Send default ${selectedNode?.role} instructions to this agent`;
+
+              return isEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (targetAgent === 'all') {
+                      broadcastDefaultInstructions();
+                    } else {
+                      sendDirective(targetAgent, roleInst);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-[#7C5CFF]/20 bg-[#7C5CFF]/5 text-[9px] font-semibold text-[#9C82FF] hover:bg-[#7C5CFF]/15 transition-all active:scale-95 cursor-pointer"
+                  title={title}
+                >
+                  <Sparkles className="w-3 h-3 text-[#9C82FF]" />
+                  <span>Quick-Send Default</span>
+                </button>
+              ) : null;
+            })()}
           </div>
 
           <div className="flex items-center gap-2">

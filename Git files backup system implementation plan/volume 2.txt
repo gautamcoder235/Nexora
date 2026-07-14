@@ -1,0 +1,810 @@
+Nexora Memory Core Architecture Specification
+Volume 2 — Timeline, Review System & Recovery Vault
+
+Version: 1.0 (Intelligence Layer)
+
+1. Vision
+
+The purpose of this volume is to transform Git's low-level history into a human-friendly, AI-aware memory system.
+
+Users should never think:
+
+"Which commit do I need?"
+
+Instead they should think:
+
+"Take me back to before the AI refactored authentication."
+
+The timeline is therefore event-driven, not commit-driven.
+
+2. Timeline Philosophy
+
+Git stores states.
+
+Nexora stores stories.
+
+Example:
+
+Git
+
+Commit A
+Commit B
+Commit C
+Commit D
+
+User sees
+
+Yesterday
+
+09:15
+
+Created Login Screen
+
+09:42
+
+Claude added OAuth support
+
+10:05
+
+npm install
+
+10:20
+
+Checkpoint:
+Before Authentication Refactor
+
+10:31
+
+Authentication Refactor Complete
+
+11:00
+
+User approved AI changes
+
+Timeline entries reference Git commits internally.
+
+3. Event Model
+
+Everything becomes an Event.
+
+An Event may create:
+
+zero commits
+one commit
+multiple commits
+
+Example
+
+AI Task
+
+↓
+
+Session
+
+↓
+
+Commits
+
+↓
+
+Timeline Event
+
+Timeline displays only the Event.
+
+4. Event Types
+
+Supported events
+
+User
+File edits
+Folder rename
+Manual checkpoint
+Restore
+Delete
+AI
+Task Started
+Task Completed
+Auto Refactor
+Fix
+Generation
+Apply Patch
+Terminal
+npm install
+cargo build
+git clone
+pip install
+Workspace
+Project opened
+Project closed
+Crash recovered
+Restore completed
+Recovery
+Backup Created
+Backup Restored
+Verification Failed
+5. Session System
+
+A Session groups related events.
+
+Example
+
+Session
+
+Implement Authentication
+
+contains
+
+AI created 18 files
+
+AI modified 31 files
+
+User approved
+
+Checkpoint created
+
+Timeline
+
+Authentication
+
+49 Files
+
+23 Minutes
+
+Approved
+
+instead of
+
+49 entries.
+
+6. Smart Snapshot Policy
+
+Never snapshot every event.
+
+Instead classify importance.
+
+Critical
+
+AI task start
+AI task end
+Restore
+Delete folder
+Package installation
+Refactor
+
+↓
+
+Snapshot
+
+Medium
+
+Manual save
+Rename
+Multiple edits
+
+↓
+
+Debounced Snapshot
+
+Low
+
+Typing
+Temporary file
+Build artifacts
+
+↓
+
+No snapshot
+
+7. Review Workflow
+
+Every AI modification follows
+
+Checkpoint
+
+↓
+
+AI edits
+
+↓
+
+Temporary Snapshot
+
+↓
+
+Diff
+
+↓
+
+Review
+
+↓
+
+Approve
+
+or
+
+Revert
+
+No AI operation should become permanent without user confirmation unless explicitly configured.
+
+8. Diff Engine
+
+Git provides raw diffs.
+
+Nexora transforms them.
+
+Supported modes
+
+Unified
+- old
+
++ new
+Side by Side
+Old        New
+Inline
+
+Highlighted modifications.
+
+File Tree
++ Added
+
+- Deleted
+
+M Modified
+
+R Renamed
+9. Partial Apply
+
+User should not be forced to accept everything.
+
+Supported
+
+Authentication
+
+✓
+
+Database
+
+✕
+
+UI
+
+✓
+
+Future
+
+Hunk level
+
+Line level
+
+Symbol level
+
+AST level
+
+The architecture should support progressively finer granularity.
+
+10. Restore Philosophy
+
+Never overwrite history.
+
+Every restore creates history.
+
+Example
+
+A
+
+↓
+
+B
+
+↓
+
+C
+
+↓
+
+Restore A
+
+↓
+
+D
+
+D becomes
+
+Restored to A
+
+History remains complete.
+
+11. Time Travel
+
+User should browse history visually.
+
+Example
+
+Yesterday
+
+↓
+
+Morning
+
+↓
+
+09:30
+
+↓
+
+Authentication Session
+
+↓
+
+Preview
+
+Selecting a point shows
+
+Files changed
+AI involved
+Description
+Diff summary
+
+before restoration.
+
+12. File History
+
+Every file has independent history.
+
+Example
+
+auth.rs
+
+Yesterday
+
+Today
+
+Last Week
+
+Operations
+
+Restore File
+
+Compare Versions
+
+Open Previous
+
+Copy Previous
+
+13. Folder History
+
+Entire folders have history.
+
+Example
+
+src/components/
+
+↓
+
+History
+
+User restores only that folder.
+
+14. Project History
+
+Entire project history
+
+Supports
+
+Restore
+
+Compare
+
+Duplicate
+
+Export
+
+Branch (future)
+
+15. Recovery Vault
+
+Purpose
+
+Recover projects after
+
+Deletion
+
+Disk failure
+
+Corruption
+
+Accidental overwrite
+
+Recovery is independent from the project folder.
+
+16. Vault Structure
+AppData/
+
+Nexora/
+
+RecoveryVault/
+
+Projects/
+
+UUID/
+
+repo/
+
+memory.db
+
+metadata.json
+
+history/
+
+logs/
+
+Projects are identified only by UUID.
+
+Never by filesystem path.
+
+17. Backup Strategy
+
+Never copy the entire project every checkpoint.
+
+Instead
+
+Project
+
+↓
+
+Git Repository
+
+↓
+
+Incremental Sync
+
+↓
+
+Vault
+
+Git already stores only changed objects.
+
+Reuse that efficiency.
+
+18. Backup Generations
+
+Never overwrite previous recovery points.
+
+Generation 1
+
+↓
+
+Generation 2
+
+↓
+
+Generation 3
+
+Each generation stores
+
+metadata
+repository state
+database
+
+Old generations can be pruned using retention rules.
+
+19. Integrity Verification
+
+Every recovery point must be validated.
+
+Use
+
+Git
+
+git fsck
+
+to verify repository integrity.
+
+Additionally verify
+
+SQLite checksum
+Metadata checksum
+
+Do not restore corrupted backups.
+
+If the newest generation fails verification, automatically try the previous healthy generation.
+
+20. Restore Workflow
+Project Missing
+
+↓
+
+Vault Located
+
+↓
+
+Integrity Check
+
+↓
+
+Preview
+
+↓
+
+Restore Confirmation
+
+↓
+
+Restore
+
+↓
+
+Validation
+
+↓
+
+Success
+21. Restore Preview
+
+Before restoration display
+
+Project Name
+
+UUID
+
+Last Backup
+
+History Size
+
+Repository Size
+
+Files
+
+Folders
+
+Last Checkpoint
+
+Health Status
+
+Estimated Restore Time
+
+22. Recovery Levels
+
+Support
+
+Entire Project
+
+Selected Folder
+
+Selected Files
+
+Checkpoint
+
+Session
+
+Future
+
+Workspace Restore
+
+23. Project Relocation
+
+Never assume deletion.
+
+If path missing
+
+Check
+
+UUID
+
+↓
+
+Known locations
+
+↓
+
+Ask user
+
+Locate
+
+Restore
+
+Remove Workspace
+
+Moving projects should not break Nexora history.
+
+24. Backup Health Monitor
+
+Background worker periodically verifies
+
+Git repository integrity
+
+Database integrity
+
+Metadata integrity
+
+Disk accessibility
+
+Vault consistency
+
+Health
+
+Healthy
+
+Warning
+
+Corrupted
+
+The user should know about problems before recovery is needed.
+
+25. Retention Policy
+
+Automatic cleanup should preserve useful history.
+
+Example strategy
+
+Keep all snapshots for the last 7 days.
+Keep one snapshot per day for the last month.
+Keep one snapshot per week for older history.
+Never remove manually created checkpoints unless the user explicitly deletes them.
+
+Cleanup should be configurable and always preserve repository consistency.
+
+26. Event Search
+
+Timeline supports searching by
+
+File
+
+Folder
+
+AI Agent
+
+Session
+
+Terminal Command
+
+Description
+
+Date
+
+Tags
+
+Example
+
+Search
+
+authentication
+
+↓
+
+5 Sessions
+
+32 Events
+
+12 Restores
+27. Filters
+
+Timeline filters
+
+Today
+
+Yesterday
+
+This Week
+
+AI
+
+User
+
+Terminal
+
+Restore
+
+Checkpoint
+
+Approved
+
+Rejected
+
+Pending
+
+28. Future Collaboration Support
+
+Architecture must allow
+
+Multiple AI agents
+
+Multiple terminals
+
+Multiple workspaces
+
+Remote synchronization
+
+Cloud backup
+
+Shared history
+
+without redesigning the timeline engine.
+
+29. Strict Engineering Rules
+Rule 1
+
+Timeline is built from Events.
+
+Never expose raw Git commits directly in the UI.
+
+Rule 2
+
+Never rewrite Git history.
+
+All restores and reverts create new commits.
+
+Rule 3
+
+Every AI operation must begin with a checkpoint unless explicitly disabled by the user.
+
+Rule 4
+
+Never restore data without passing integrity verification.
+
+Rule 5
+
+Never overwrite Recovery Vault generations.
+
+Always create a new generation before pruning old ones.
+
+Rule 6
+
+Recovery operations must be transactional.
+
+Either restore completely or leave the existing state untouched.
+
+Rule 7
+
+Do not block the UI during backup, restore, verification, or diff generation.
+
+Rule 8
+
+If a project path is missing, verify relocation before assuming deletion.
+
+Rule 9
+
+Use Git for project contents.
+
+Use SQLite for metadata.
+
+Do not duplicate responsibilities.
+
+Rule 10
+
+All restore actions must be previewable before execution.
+
+Rule 11
+
+Every operation affecting user data must be fully reversible.
+
+Rule 12
+
+Background verification must never modify repositories.
+
+Verification is read-only.
+
+Rule 13
+
+The Recovery Vault must remain independent of the active project directory.
+
+Deleting the project must never delete the vault.
+
+Rule 14
+
+If integrity verification fails, automatically fall back to the most recent healthy recovery generation and clearly notify the user which generation was restored.
+
+30. Success Criteria
+
+Volume 2 is complete when Nexora provides:
+
+An event-driven timeline instead of a commit list.
+AI sessions grouped into meaningful review items.
+Smart snapshot and checkpoint policies.
+Rich diff viewing with room for future hunk- and symbol-level review.
+Safe restore workflows that never rewrite history.
+A Recovery Vault with incremental synchronization, multiple generations, and integrity verification.
+Searchable, filterable history that remains intuitive even for very large projects.
+
+At this point, Nexora's memory system should feel less like a version control tool and more like a project time machine, where users can understand, review, and safely reverse changes without needing to think in terms of Git internals.

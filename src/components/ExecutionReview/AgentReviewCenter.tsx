@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useChangesetStore, TimelineEntry, FileOperation, HunkSelection } from '../../stores/changesetStore';
+import { useChangesetStore, TimelineEntry, FileOperation, HunkSelection, MissingProject } from '../../stores/changesetStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { X, ChevronDown, Folder, FolderOpen, File, RefreshCw, Undo2, Columns2, AlignJustify, Check, Bookmark, History, FilePlus2, FileEdit, FileX2, ArrowRightLeft, User, Cpu, Terminal, AppWindow, Play, Info } from 'lucide-react';
+import { X, ChevronDown, Folder, FolderOpen, File, RefreshCw, Undo2, Columns2, AlignJustify, Check, Bookmark, History, FilePlus2, FileEdit, FileX2, ArrowRightLeft, User, Cpu, Terminal, AppWindow, Play, Info, AlertTriangle, DownloadCloud } from 'lucide-react';
 import { getLanguageFromPath } from '../../utils/language';
 import { invoke } from '@tauri-apps/api/core';
 import Editor, { DiffEditor } from '@monaco-editor/react';
@@ -148,6 +148,11 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   const reviewCommit = useChangesetStore(s => s.reviewCommit);
   const applyHunks = useChangesetStore(s => s.applyHunks);
   const readCommitVersion = useChangesetStore(s => s.readCommitVersion);
+  
+  const missingProjects = useChangesetStore(s => s.missingProjects);
+  const isRestoring = useChangesetStore(s => s.isRestoring);
+  const checkMissingProjects = useChangesetStore(s => s.checkMissingProjects);
+  const restoreProject = useChangesetStore(s => s.restoreProject);
 
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
   const [selectedCommit, setSelectedCommit] = useState<TimelineEntry | null>(null);
@@ -194,16 +199,36 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   useEffect(() => {
     if (initDone.current || activeProjects.length === 0) return;
     initDone.current = true;
-    const paths = activeProjects.map(p => p.path);
-    initMemory(paths);
+    checkMissingProjects().then(() => {
+      const missingPaths = new Set(useChangesetStore.getState().missingProjects.map(p => p.original_path));
+      const paths = activeProjects.map(p => p.path).filter(p => !missingPaths.has(p));
+      if (paths.length > 0) {
+        initMemory(paths);
+      }
+    });
   }, [activeProjects]);
+
+  // Initialize newly restored projects
+  useEffect(() => {
+    if (activeProjects.length === 0) return;
+    const missingPaths = new Set(missingProjects.map(p => p.original_path));
+    const healthyPaths = activeProjects.map(p => p.path).filter(p => !missingPaths.has(p));
+    const pathsToInit = healthyPaths.filter(path => !loadedPaths.current.has(path));
+    if (pathsToInit.length > 0) {
+      initMemory(pathsToInit);
+      pathsToInit.forEach(p => loadedPaths.current.add(p));
+    }
+  }, [missingProjects, activeProjects]);
 
   // Reload history when scanScope changes or memory is initialized
   useEffect(() => {
     if (!isMemoryInitialized || activeProjects.length === 0) return;
-    const activePath = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
-    loadHistory(activePath);
-  }, [scanScope, isMemoryInitialized, activeProjects]);
+    const missingPaths = new Set(missingProjects.map(p => p.original_path));
+    const activePath = (scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path)).filter(p => !missingPaths.has(p));
+    if (activePath.length > 0) {
+      loadHistory(activePath);
+    }
+  }, [scanScope, isMemoryInitialized, activeProjects, missingProjects]);
 
   // Load first commit expand automatically
   useEffect(() => {
@@ -603,8 +628,81 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     );
   };
 
+  // Recovery panel render
+  const renderRecoveryPanel = (missingProj: MissingProject) => {
+    return (
+      <div className="flex-grow flex flex-col items-center justify-center p-8 bg-[#0c0c0e]/80 backdrop-blur-xl h-full font-mono text-xs select-none">
+        <div className="max-w-md w-full border border-[var(--border-glass)] rounded-xl bg-black/40 p-6 flex flex-col gap-4 shadow-2xl relative overflow-hidden animate-in zoom-in duration-200">
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500/80 via-yellow-500/80 to-amber-500/80 animate-pulse" />
+          
+          <div className="flex items-center gap-3 mt-2 text-amber-400">
+            <AlertTriangle size={24} className="shrink-0" />
+            <span className="text-sm font-bold uppercase tracking-wider">Project Folder Missing</span>
+          </div>
+
+          <div className="text-zinc-400 leading-5">
+            The project <strong className="text-zinc-200">{missingProj.name}</strong> was not found at its configured location:
+            <div className="bg-black/30 border border-zinc-800/80 rounded px-2.5 py-1.5 text-[10px] mt-2 select-text break-all">
+              {missingProj.original_path}
+            </div>
+          </div>
+
+          <div className="border-t border-zinc-800/80 pt-4 flex flex-col gap-2">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-zinc-500">Project UUID:</span>
+              <span className="text-zinc-300">{missingProj.id}</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-zinc-500">Backup Status:</span>
+              <span className={`font-bold ${missingProj.status === 'healthy' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {missingProj.status.toUpperCase()}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-zinc-500">Last Recovery Point:</span>
+              <span className="text-zinc-300">{missingProj.last_backup !== 'Never' ? new Date(missingProj.last_backup).toLocaleString() : 'None'}</span>
+            </div>
+          </div>
+
+          {missingProj.status === 'healthy' ? (
+            <button
+              onClick={() => restoreProject(missingProj.id, missingProj.original_path)}
+              disabled={isRestoring}
+              className="mt-2 w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-bold rounded border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer flex items-center justify-center gap-2 select-none"
+            >
+              {isRestoring ? (
+                <>
+                  <RefreshCw className="animate-spin" size={13} />
+                  Restoring project state...
+                </>
+              ) : (
+                <>
+                  <DownloadCloud size={13} />
+                  Restore Project from Vault
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="mt-2 text-center text-rose-400 text-[10px] bg-rose-500/5 border border-rose-500/15 py-2 rounded">
+              Backup vault is missing or corrupted. Automatic recovery unavailable.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // ─── Viewport ───
   const renderViewport = () => {
+    // Check if the current project view scope is missing
+    const missingProj = scanScope !== 'all'
+      ? missingProjects.find(p => p.original_path === scanScope)
+      : missingProjects.find(p => activeProjects.some(ap => ap.path === p.original_path));
+
+    if (missingProj) {
+      return renderRecoveryPanel(missingProj);
+    }
+
     // Diff view for timeline file selection
     if (selectedCommit && selectedFileOp && activeTab === 'changeset') {
       const cleanPath = selectedFileOp.file_path;
