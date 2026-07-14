@@ -215,6 +215,7 @@ export const useChangesetStore = create<ChangesetState>((set, get) => ({
       set({ timeline: history });
     } catch (e) {
       console.error('memory_restore failed:', e);
+      throw e;
     }
   },
 

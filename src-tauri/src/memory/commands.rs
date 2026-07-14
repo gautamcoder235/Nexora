@@ -71,12 +71,17 @@ pub fn memory_is_initialized(project_path: String) -> Result<bool, String> {
 
 #[command]
 pub fn backup_project_command(app: AppHandle, project_path: String) -> Result<(), String> {
-    super::backup_service::backup_project(&app, &project_path)
+    let git_path = super::git_provider::resolve_git_binary(&app)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let project_id = super::backup_service::get_or_create_project_id(&app, &project_path)?;
+    super::backup_service::backup_project(&git_path, &app_data_dir, &project_id, &project_path)
 }
 
 #[command]
 pub fn restore_project_command(app: AppHandle, project_id: String, target_path: String) -> Result<(), String> {
-    super::backup_service::restore_project(&app, &project_id, &target_path)
+    let git_path = super::git_provider::resolve_git_binary(&app)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    super::backup_service::restore_project(&git_path, &app_data_dir, &project_id, &target_path)
 }
 
 #[command]
@@ -101,14 +106,15 @@ pub fn check_missing_projects(app_handle: AppHandle) -> Result<Vec<MissingProjec
                 let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
                 let vault_dir = app_dir.join("RecoveryVault").join("Projects").join(&id);
                 if vault_dir.exists() {
-                    if let Ok(meta) = super::backup_service::verify_backup_integrity(&app_handle, &vault_dir) {
+                    let git_path = super::git_provider::resolve_git_binary(&app_handle).unwrap_or_default();
+                    if let Ok(meta) = super::backup_service::verify_backup_integrity(&git_path, &vault_dir) {
                         status = "healthy".to_string();
                         last_backup = meta.timestamp;
                     } else {
                         let mut has_healthy_gen = false;
                         for gen_idx in 1..=3 {
                             let gen_dir = vault_dir.join("history").join(format!("gen-{}", gen_idx));
-                            if gen_dir.exists() && super::backup_service::verify_backup_integrity(&app_handle, &gen_dir).is_ok() {
+                            if gen_dir.exists() && super::backup_service::verify_backup_integrity(&git_path, &gen_dir).is_ok() {
                                 has_healthy_gen = true;
                                 break;
                             }
@@ -133,12 +139,18 @@ pub fn check_missing_projects(app_handle: AppHandle) -> Result<Vec<MissingProjec
 
 #[command]
 pub fn memory_run_integrity_check(app: AppHandle, project_path: String) -> Result<crate::memory::integrity::HealthStatus, String> {
-    super::integrity::run_integrity_scan(&app, &project_path)
+    let git_path = super::git_provider::resolve_git_binary(&app)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let project_id = super::backup_service::get_or_create_project_id(&app, &project_path)?;
+    super::integrity::run_integrity_scan(&git_path, &app_data_dir, &project_id, &project_path)
 }
 
 #[command]
 pub fn memory_run_repair(app: AppHandle, project_path: String) -> Result<(), String> {
-    super::integrity::execute_repair(&app, &project_path)
+    let git_path = super::git_provider::resolve_git_binary(&app)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let project_id = super::backup_service::get_or_create_project_id(&app, &project_path)?;
+    super::integrity::execute_repair(&git_path, &app_data_dir, &project_id, &project_path)
 }
 
 #[command]

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useChangesetStore, TimelineEntry, FileOperation, HunkSelection, MissingProject } from '../../stores/changesetStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { X, ChevronDown, Folder, FolderOpen, File, RefreshCw, Undo2, Columns2, AlignJustify, Check, Bookmark, History, FilePlus2, FileEdit, FileX2, ArrowRightLeft, User, Cpu, Terminal, AppWindow, Play, Info, AlertTriangle, DownloadCloud } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, Folder, FolderOpen, File, RefreshCw, Undo2, Columns2, AlignJustify, Check, Bookmark, History, FilePlus2, FileEdit, FileX2, ArrowRightLeft, User, Cpu, Terminal, AppWindow, Play, Info, AlertTriangle, DownloadCloud, Camera, Clock, Shield, Database, FolderTree, GitCommitHorizontal, Search, RotateCcw, Plus } from 'lucide-react';
 import { getLanguageFromPath } from '../../utils/language';
 import { invoke } from '@tauri-apps/api/core';
 import Editor, { DiffEditor } from '@monaco-editor/react';
@@ -104,10 +104,11 @@ function renderMarkdown(text: string): string {
 // ── Icons for sources ──
 function SourceIcon({ src }: { src: string }) {
   switch (src?.toLowerCase()) {
-    case 'agent': return <Cpu size={12} className="text-purple-400" />;
-    case 'terminal': return <Terminal size={12} className="text-amber-400" />;
-    case 'external': return <AppWindow size={12} className="text-blue-400" />;
-    default: return <User size={12} className="text-zinc-400" />;
+    case 'agent': return <Cpu size={13} className="text-purple-400 shrink-0" />;
+    case 'terminal': return <Terminal size={13} className="text-amber-400 shrink-0" />;
+    case 'external': return <AppWindow size={13} className="text-blue-400 shrink-0" />;
+    case 'system': return <Shield size={13} className="text-cyan-400 shrink-0" />;
+    default: return <User size={13} className="text-zinc-400 shrink-0" />;
   }
 }
 
@@ -130,6 +131,36 @@ function OpBadge({ op }: { op: string }) {
   };
   const labels: Record<string, string> = { created: 'NEW', modified: 'MOD', deleted: 'DEL', renamed: 'REN' };
   return <span className={`text-[7px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${styles[op] || 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>{labels[op] || op}</span>;
+}
+
+function TypeBadge({ type }: { type: string }) {
+  const config: Record<string, { bg: string; text: string; label: string }> = {
+    snapshot: { bg: 'bg-violet-500/10 border-violet-500/20', text: 'text-violet-400', label: 'Snapshot' },
+    checkpoint: { bg: 'bg-blue-500/10 border-blue-500/20', text: 'text-blue-400', label: 'Checkpoint' },
+    ai: { bg: 'bg-purple-500/10 border-purple-500/20', text: 'text-purple-400', label: 'AI' },
+    restore: { bg: 'bg-amber-500/10 border-amber-500/20', text: 'text-amber-400', label: 'Restore' },
+  };
+  const c = config[type] || { bg: 'bg-zinc-800 border-zinc-700', text: 'text-zinc-400', label: type };
+  return <span className={`text-[7px] font-bold px-1.5 py-px rounded border ${c.bg} ${c.text} uppercase tracking-wider`}>{c.label}</span>;
+}
+
+function formatRelativeTime(isoDate: string): string {
+  try {
+    const now = Date.now();
+    const then = new Date(isoDate).getTime();
+    const diff = Math.max(0, now - then);
+    const secs = Math.floor(diff / 1000);
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch {
+    return isoDate;
+  }
 }
 
 export function AgentReviewCenter({ repoPath, onClose }: Props) {
@@ -384,20 +415,32 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   };
 
   const handleRevertFile = async (commitHash: string, filePath: string) => {
+    if (commitHash === 'no-changes') return;
     const target = selectedCommit?.project_path || (scanScope !== 'all' ? scanScope : activeProjects[0]?.path);
     if (!target) return;
-    await restoreCommit(target, `${commitHash}~1`, [filePath]);
-    await captureSnapshot(target, 'system', `Reverted ${filePath} to before ${commitHash.substring(0,7)}`);
-    const activeScope = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
-    await loadHistory(activeScope);
+    try {
+      await restoreCommit(target, `${commitHash}~1`, [filePath]);
+      await captureSnapshot(target, 'system', `Reverted ${filePath} to before ${commitHash.substring(0,7)}`);
+      const activeScope = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
+      await loadHistory(activeScope);
+    } catch (e) {
+      console.error('Revert file failed:', e);
+    }
   };
 
   const handleRestoreProject = (commit: TimelineEntry) => {
+    if (commit.git_commit_hash === 'no-changes') {
+      return; // Cannot restore empty snapshots with no actual git commit
+    }
     setConfirmModal({
       isOpen: true,
       message: `Are you sure you want to restore the entire project state to ${commit.git_commit_hash.substring(0,7)}?`,
       onConfirm: async () => {
-        await restoreCommit(commit.project_path, commit.git_commit_hash);
+        try {
+          await restoreCommit(commit.project_path, commit.git_commit_hash);
+        } catch (e) {
+          console.error('Restore failed:', e);
+        }
         setConfirmModal(null);
         const activeScope = scanScope !== 'all' ? [scanScope] : activeProjects.map(p => p.path);
         await loadHistory(activeScope);
@@ -425,150 +468,219 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
     });
   };
 
-  // ─── File Changes Sidebar ───
+  // ─── File Changes Sidebar (Memory Tab) ───
   const renderChangesSidebar = () => (
     <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="px-2.5 py-2 border-b border-[#1B1B22] bg-[#09090b]/60 space-y-1.5">
-        <div className="flex items-center justify-between gap-1.5">
-          <span className="text-[10px] text-zinc-500 font-mono">Operations</span>
+      {/* Operations Toolbar */}
+      <div className="px-3 py-2.5 border-b border-[#1B1B22] bg-[#09090b]/40 space-y-2">
+        {/* Action Buttons Row */}
+        <div className="flex items-center gap-1.5">
           <button
             onClick={handleCapture}
             disabled={isCapturing || isInitializing}
-            title="Stage and capture automatic snapshot"
-            className="h-[24px] px-2.5 flex items-center gap-1 bg-[#7C5CFF] hover:bg-[#6B4EE6] disabled:opacity-40 text-white text-[9px] font-bold rounded transition-all cursor-pointer select-none shrink-0"
+            title="Capture current project state as a snapshot"
+            className="flex-1 h-[28px] px-3 flex items-center justify-center gap-1.5 bg-gradient-to-r from-[#7C5CFF] to-[#6B4EE6] hover:from-[#8B6BFF] hover:to-[#7A5DF5] disabled:opacity-40 disabled:hover:from-[#7C5CFF] text-white text-[10px] font-semibold rounded-md transition-all cursor-pointer select-none shadow-[0_2px_8px_rgba(124,92,255,0.25)]"
           >
-            <RefreshCw size={10} className={isCapturing ? 'animate-spin' : ''} />
-            {isCapturing ? 'Scanning...' : 'Snapshot'}
+            <Camera size={11} className={isCapturing ? 'animate-spin' : ''} />
+            {isCapturing ? 'Capturing...' : 'Snapshot'}
+          </button>
+          <button
+            onClick={() => setShowCheckpointInput(!showCheckpointInput)}
+            disabled={!isMemoryInitialized}
+            title="Create a named checkpoint"
+            className="h-[28px] px-2.5 flex items-center gap-1 bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] disabled:opacity-30 text-zinc-400 hover:text-zinc-200 text-[10px] font-medium rounded-md border border-[#252530] hover:border-[#353545] transition-all cursor-pointer select-none"
+          >
+            <Bookmark size={10} />
+            Checkpoint
           </button>
         </div>
 
-        <div className="flex items-center justify-between">
-          <span className="text-[9px] text-zinc-500 font-mono">
-            {isInitializing ? 'Booting Git Engine...' : isMemoryInitialized ? `${timeline.length} history states` : 'Not initialized'}
-          </span>
-          {isMemoryInitialized && (
-            <button onClick={() => setShowCheckpointInput(!showCheckpointInput)}
-              className="text-[8px] text-zinc-500 hover:text-blue-400 px-1.5 py-0.5 rounded border border-[#252530] hover:border-blue-500/30 transition-all cursor-pointer select-none flex items-center gap-0.5">
-              <Bookmark size={8} /> Checkpoint
-            </button>
-          )}
-        </div>
-
+        {/* Checkpoint Name Input */}
         {showCheckpointInput && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 animate-in slide-in-from-top-1 duration-150">
             <input
               value={checkpointName}
               onChange={e => setCheckpointName(e.target.value)}
-              placeholder="Checkpoint name..."
-              className="flex-1 bg-[#121215] border border-[#252530] rounded px-2 py-1 text-[10px] text-zinc-200 focus:outline-none focus:border-blue-500/40 placeholder:text-zinc-600"
-              onKeyDown={e => e.key === 'Enter' && handleCreateCheckpoint()}
+              placeholder="Name this checkpoint..."
+              className="flex-1 bg-[#0a0a0c] border border-[#252530] rounded-md px-2.5 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-[#7C5CFF]/50 focus:ring-1 focus:ring-[#7C5CFF]/20 placeholder:text-zinc-600 font-mono transition-all"
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleCreateCheckpoint();
+                if (e.key === 'Escape') {
+                  setShowCheckpointInput(false);
+                  setCheckpointName('');
+                }
+              }}
               autoFocus
             />
-            <button onClick={handleCreateCheckpoint} className="h-[22px] px-2 bg-blue-500/20 text-blue-400 text-[9px] font-bold rounded hover:bg-blue-500/30 border border-blue-500/20 cursor-pointer select-none">
-              ✓
+            <button onClick={handleCreateCheckpoint} className="h-[26px] w-[26px] flex items-center justify-center bg-[#7C5CFF]/20 text-[#7C5CFF] rounded-md hover:bg-[#7C5CFF]/30 border border-[#7C5CFF]/20 cursor-pointer select-none transition-all" title="Confirm">
+              <Check size={12} />
+            </button>
+            <button 
+              onClick={() => { setShowCheckpointInput(false); setCheckpointName(''); }} 
+              className="h-[26px] w-[26px] flex items-center justify-center bg-rose-500/10 text-rose-400 rounded-md hover:bg-rose-500/20 border border-rose-500/20 cursor-pointer select-none transition-all"
+              title="Cancel"
+            >
+              <X size={12} />
             </button>
           </div>
         )}
+
+        {/* Status Bar */}
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] text-zinc-500 font-mono flex items-center gap-1">
+            {isInitializing ? (
+              <><RefreshCw size={8} className="animate-spin" /> Initializing...</>
+            ) : isMemoryInitialized ? (
+              <><Database size={8} className="text-emerald-500" /> {timeline.length} {timeline.length === 1 ? 'state' : 'states'}</>
+            ) : (
+              <><Database size={8} className="text-zinc-600" /> Not initialized</>
+            )}
+          </span>
+        </div>
       </div>
 
       {/* History Timeline List */}
       <div className="flex-1 overflow-y-auto">
         {isLoadingChanges ? (
-          <div className="flex items-center justify-center py-10 text-zinc-500 text-[10px] font-mono">
-            <RefreshCw className="animate-spin mr-2" size={12} /> Reading timeline...
+          <div className="flex flex-col items-center justify-center py-12 gap-2">
+            <RefreshCw className="animate-spin text-[#7C5CFF]" size={16} />
+            <span className="text-[10px] text-zinc-500 font-mono">Loading timeline...</span>
           </div>
         ) : timeline.length > 0 ? (
-          <div className="p-1.5 space-y-1.5">
-            {timeline.map((commit) => {
+          <div className="p-2 space-y-1">
+            {timeline.map((commit, idx) => {
               const isExpanded = expandedCommits.has(commit.git_commit_hash);
               const displayDesc = commit.description || `Commit ${commit.git_commit_hash.substring(0, 7)}`;
+              const isNoChanges = commit.git_commit_hash === 'no-changes';
               
-              // Status color helper
-              const statusDot = commit.status === 'approved' 
-                ? 'bg-emerald-500' 
+              // Status styling
+              const statusConfig = commit.status === 'approved' 
+                ? { dot: 'bg-emerald-500', ring: 'ring-emerald-500/20', label: 'Approved' }
                 : commit.status === 'rejected' 
-                ? 'bg-rose-500' 
-                : 'bg-amber-500 animate-pulse';
+                ? { dot: 'bg-rose-500', ring: 'ring-rose-500/20', label: 'Rejected' }
+                : { dot: 'bg-amber-500 animate-pulse', ring: 'ring-amber-500/20', label: 'Pending review' };
 
               return (
-                <div key={commit.git_commit_hash} className="bg-[#121215]/50 border border-[#1b1b22] rounded overflow-hidden">
+                <div key={`${commit.git_commit_hash}-${idx}`} className={`rounded-lg overflow-hidden transition-all duration-200 ${
+                  isExpanded 
+                    ? 'bg-[#121215] border border-[#252530] shadow-lg shadow-black/20' 
+                    : 'bg-[#0e0e11]/60 border border-[#1b1b22] hover:border-[#252530] hover:bg-[#121215]/80'
+                }`}>
                   {/* Header Row */}
                   <div
                     onClick={() => toggleCommitExpand(commit.git_commit_hash)}
-                    className="p-2 flex items-center justify-between hover:bg-[#15151a] cursor-pointer transition-all"
+                    className="px-2.5 py-2 flex items-start gap-2 cursor-pointer transition-all group"
                   >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot}`} title={`Review state: ${commit.status}`} />
-                      <SourceIcon src={commit.source} />
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0 w-full justify-between">
-                          <span className="text-[10px] font-medium text-zinc-200 truncate leading-tight flex-1" title={displayDesc}>{displayDesc}</span>
-                          <span className={`text-[8px] px-1 py-px rounded font-mono shrink-0 font-bold ${
-                            commit.files.length === 0 
-                              ? 'bg-[#16161a] text-zinc-500 border border-[#252530]'
-                              : 'bg-[#1a1a22] text-[#22c55e] border border-[#22c55e]/20'
-                          }`} title={`${commit.files.length} files changed`}>
-                            {commit.files.length}
-                          </span>
+                    {/* Timeline dot & line */}
+                    <div className="flex flex-col items-center pt-0.5 shrink-0">
+                      <div className={`w-2 h-2 rounded-full ${statusConfig.dot} ring-2 ${statusConfig.ring}`} title={statusConfig.label} />
+                      {idx < timeline.length - 1 && <div className="w-px flex-1 bg-[#1e1e28] mt-1 min-h-[12px]" />}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      {/* Title row */}
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[10.5px] font-medium text-zinc-200 truncate flex-1 leading-snug" title={displayDesc}>
+                          {displayDesc}
+                        </span>
+                      </div>
+                      
+                      {/* Meta row */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <TypeBadge type={commit.type} />
+                        <div className="flex items-center gap-1 text-[8px] text-zinc-500 font-mono">
+                          <SourceIcon src={commit.source} />
+                          <span>{commit.source}</span>
                         </div>
-                        <span className="text-[8px] text-zinc-500 font-mono mt-0.5">{commit.git_commit_hash.substring(0, 7)} · {commit.source}</span>
+                        <span className="text-[8px] text-zinc-600">·</span>
+                        <span className="text-[8px] text-zinc-500 font-mono flex items-center gap-0.5">
+                          <Clock size={7} />
+                          {formatRelativeTime(commit.timestamp)}
+                        </span>
+                        {!isNoChanges && (
+                          <span className="text-[8px] text-zinc-600 font-mono" title={commit.git_commit_hash}>
+                            {commit.git_commit_hash.substring(0, 7)}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {isExpanded && (
+
+                    {/* Right actions */}
+                    <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                      {/* File count badge */}
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded-md font-mono font-bold ${
+                        commit.files.length === 0 
+                          ? 'bg-[#16161a] text-zinc-600 border border-[#1e1e28]'
+                          : 'bg-[#22c55e]/8 text-[#22c55e] border border-[#22c55e]/15'
+                      }`} title={`${commit.files.length} files changed`}>
+                        {commit.files.length}
+                      </span>
+                      {/* Restore button (only for real commits) */}
+                      {isExpanded && !isNoChanges && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleRestoreProject(commit); }}
                           title="Restore entire project to this state"
-                          className="text-[8px] text-[#7C5CFF] hover:text-white bg-[#7C5CFF]/10 hover:bg-[#7C5CFF] border border-[#7C5CFF]/20 px-1.5 py-0.5 rounded transition-all cursor-pointer font-bold select-none"
+                          className="text-[8px] text-[#7C5CFF] hover:text-white bg-[#7C5CFF]/10 hover:bg-[#7C5CFF] border border-[#7C5CFF]/25 px-2 py-0.5 rounded-md transition-all cursor-pointer font-bold select-none flex items-center gap-0.5"
                         >
+                          <RotateCcw size={8} />
                           Restore
                         </button>
                       )}
-                      <ChevronDown size={12} className={`text-zinc-500 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                      <ChevronDown size={12} className={`text-zinc-600 group-hover:text-zinc-400 transition-all duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                     </div>
                   </div>
 
                   {/* Expanded Files */}
                   {isExpanded && (
-                    <div className="border-t border-[#1b1b22]/80 bg-[#09090b]/40 py-1 px-1.5 space-y-0.5">
-                      {commit.files.map((fileOp) => {
-                        const isFileSelected = selectedCommit?.git_commit_hash === commit.git_commit_hash && selectedFileOp?.id === fileOp.id;
-                        const shortName = fileOp.file_path.split('/').pop() || fileOp.file_path;
-                        return (
-                          <div
-                            key={fileOp.id}
-                            onClick={() => {
-                              setSelectedCommit(commit);
-                              setSelectedFileOp(fileOp);
-                            }}
-                            className={`group w-full text-left text-[10px] font-mono py-1 px-1.5 rounded flex items-center justify-between transition-all cursor-pointer ${
-                              isFileSelected
-                                ? 'bg-[#7C5CFF]/10 text-zinc-200 border-l border-[#7C5CFF]'
-                                : 'text-zinc-400 hover:bg-[#15151a] hover:text-zinc-300 border-l border-transparent'
-                            }`}
-                          >
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <OpIcon op={fileOp.operation_type} />
-                              <span className="truncate">{shortName}</span>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <OpBadge op={fileOp.operation_type} />
-                              {commit.status === 'pending' && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleRevertFile(commit.git_commit_hash, fileOp.file_path); }}
-                                  title="Revert just this file"
-                                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-rose-500/15 text-zinc-500 hover:text-rose-400 transition-all"
-                                >
-                                  <Undo2 size={10} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {commit.files.length === 0 && (
-                        <div className="text-center text-zinc-600 italic text-[9px] py-1.5">Empty baseline/snapshot.</div>
+                    <div className="border-t border-[#1e1e28] bg-[#09090b]/60">
+                      {commit.files.length > 0 ? (
+                        <div className="py-1 px-1">
+                          {commit.files.map((fileOp) => {
+                            const isFileSelected = selectedCommit?.git_commit_hash === commit.git_commit_hash && selectedFileOp?.id === fileOp.id;
+                            const shortName = fileOp.file_path.split('/').pop() || fileOp.file_path;
+                            const dirPath = fileOp.file_path.includes('/') ? fileOp.file_path.substring(0, fileOp.file_path.lastIndexOf('/')) : '';
+                            return (
+                              <div
+                                key={fileOp.id}
+                                onClick={() => {
+                                  setSelectedCommit(commit);
+                                  setSelectedFileOp(fileOp);
+                                }}
+                                className={`group w-full text-left text-[10px] font-mono py-1.5 px-2 rounded-md flex items-center justify-between transition-all cursor-pointer ${
+                                  isFileSelected
+                                    ? 'bg-[#7C5CFF]/10 text-zinc-100 border-l-2 border-[#7C5CFF]'
+                                    : 'text-zinc-400 hover:bg-[#151518] hover:text-zinc-300 border-l-2 border-transparent'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  <OpIcon op={fileOp.operation_type} />
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="truncate text-[10px] leading-tight">{shortName}</span>
+                                    {dirPath && <span className="truncate text-[8px] text-zinc-600 leading-tight">{dirPath}/</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <OpBadge op={fileOp.operation_type} />
+                                  {commit.status === 'pending' && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleRevertFile(commit.git_commit_hash, fileOp.file_path); }}
+                                      title="Revert this file to previous state"
+                                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-rose-500/15 text-zinc-500 hover:text-rose-400 transition-all"
+                                    >
+                                      <Undo2 size={10} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1.5 py-3 text-zinc-600 text-[9px] font-mono">
+                          <Info size={10} />
+                          {isNoChanges ? 'No file changes in this state' : 'Empty baseline — initial project state'}
+                        </div>
                       )}
                     </div>
                   )}
@@ -577,12 +689,14 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
             })}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-            <div className="w-10 h-10 rounded-full bg-[#121215] border border-[#252530] flex items-center justify-center mb-3">
-              <History size={18} className="text-zinc-500" />
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+            <div className="w-12 h-12 rounded-xl bg-[#121215] border border-[#252530] flex items-center justify-center mb-4 shadow-lg">
+              <History size={20} className="text-zinc-600" />
             </div>
-            <span className="text-[11px] text-zinc-500 font-mono">Empty Repository</span>
-            <span className="text-[9px] text-zinc-600 mt-1">Booting database and initializing session baseline...</span>
+            <span className="text-[11px] text-zinc-400 font-medium">No History Yet</span>
+            <span className="text-[9px] text-zinc-600 mt-1 leading-relaxed max-w-[200px]">
+              Click <strong className="text-[#7C5CFF]">Snapshot</strong> to capture your first project state
+            </span>
           </div>
         )}
       </div>
@@ -889,28 +1003,42 @@ export function AgentReviewCenter({ repoPath, onClose }: Props) {
   return (
     <div className="h-full w-full flex bg-[var(--bg-glass)] backdrop-blur-xl text-[var(--text-primary)] select-none overflow-hidden font-sans border border-[var(--border-glass)] rounded-xl shadow-2xl">
       {/* Sidebar */}
-      <div className="w-72 border-r border-[var(--border-glass)] flex flex-col bg-black/20 shrink-0">
+      <div className="w-72 border-r border-[var(--border-glass)] flex flex-col bg-[#08080a]/90 shrink-0">
         {/* Header */}
-        <div className="h-10 px-3 border-b border-[var(--border-glass)] flex items-center justify-between shrink-0">
-          <span className="text-[11px] font-bold text-[var(--text-primary)] uppercase tracking-wider">Memory Core</span>
-          <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 rounded hover:bg-[var(--border-glass)] transition-colors cursor-pointer">
+        <div className="h-10 px-3 border-b border-[var(--border-glass)] flex items-center justify-between shrink-0 bg-[#0a0a0d]/80">
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#7C5CFF]/20 to-[#7C5CFF]/5 border border-[#7C5CFF]/15 flex items-center justify-center">
+              <Database size={10} className="text-[#7C5CFF]" />
+            </div>
+            <span className="text-[11px] font-semibold text-zinc-200 tracking-wide">Nexora</span>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 p-1 rounded-md hover:bg-[rgba(255,255,255,0.05)] transition-all cursor-pointer">
             <X size={14} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-px p-1 bg-black/40 border-b border-[var(--border-glass)] shrink-0">
+        <div className="flex items-center border-b border-[var(--border-glass)] shrink-0">
           <button onClick={() => setActiveTab('changeset')}
-            className={`flex-1 h-7 flex items-center justify-center gap-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'changeset' ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] border border-[rgba(var(--accent-primary-rgb),0.3)] text-[var(--accent-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border border-transparent'
+            className={`flex-1 h-9 flex items-center justify-center gap-1.5 text-[10px] font-semibold tracking-wide transition-all cursor-pointer relative ${
+              activeTab === 'changeset' 
+                ? 'text-[#7C5CFF]' 
+                : 'text-zinc-500 hover:text-zinc-300 hover:bg-[rgba(255,255,255,0.02)]'
             }`}>
-            <History size={11} /> Timeline
+            <History size={12} />
+            Memory
+            {activeTab === 'changeset' && <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-[#7C5CFF] rounded-full" />}
           </button>
+          <div className="w-px h-5 bg-[#1e1e28]" />
           <button onClick={() => setActiveTab('workspace')}
-            className={`flex-1 h-7 flex items-center justify-center gap-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'workspace' ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] border border-[rgba(var(--accent-primary-rgb),0.3)] text-[var(--accent-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border border-transparent'
+            className={`flex-1 h-9 flex items-center justify-center gap-1.5 text-[10px] font-semibold tracking-wide transition-all cursor-pointer relative ${
+              activeTab === 'workspace' 
+                ? 'text-[#7C5CFF]' 
+                : 'text-zinc-500 hover:text-zinc-300 hover:bg-[rgba(255,255,255,0.02)]'
             }`}>
-            <Folder size={11} /> Files
+            <FolderTree size={12} />
+            File Explorer
+            {activeTab === 'workspace' && <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-[#7C5CFF] rounded-full" />}
           </button>
         </div>
 

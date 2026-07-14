@@ -37,8 +37,13 @@ impl ActiveJournal {
         let content = serde_json::to_string_pretty(&journal_data).map_err(|e| e.to_string())?;
         fs::write(&temp_journal, content).map_err(|e| e.to_string())?;
         
-        let file = fs::File::open(&temp_journal).map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
+        {
+            let file = fs::OpenOptions::new()
+                .write(true)
+                .open(&temp_journal)
+                .map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+        }
         fs::rename(temp_journal, &self.journal_path).map_err(|e| e.to_string())?;
         Ok(())
     }

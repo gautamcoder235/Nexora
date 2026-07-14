@@ -376,11 +376,11 @@ export const ActivityBar: React.FC = () => {
                 }
               }}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
-                useBrowserStore((s) => s.isElectronConnected)
+                useBrowserStore((s) => s.isBrowserPanelVisible)
                   ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
-              title={useBrowserStore((s) => s.isElectronConnected) ? "Close Web Browser" : "Open Web Browser"}
+              title={useBrowserStore((s) => s.isBrowserPanelVisible) ? "Close Web Browser" : "Open Web Browser"}
             >
               <Globe size={20} />
             </button>

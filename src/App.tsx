@@ -96,6 +96,27 @@ function App() {
   const settings = useOrchestratorStore(useShallow(s => s.settings));
   const settingsShortcut = settings?.shortcuts?.openSettings || "Ctrl+,";
 
+  // Deferred workspace mount: when workspace changes, delay mounting the heavy
+  // dashboard component tree so the browser can paint the TitleBar drag region first.
+  // Without this, React mounts hundreds of DOM nodes synchronously and blocks dragging.
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      setWorkspaceReady(false);
+      return;
+    }
+    // Reset to false immediately on workspace change, then defer to true
+    setWorkspaceReady(false);
+    const rafId = requestAnimationFrame(() => {
+      // Double-rAF ensures the browser has actually painted the loading shell
+      const rafId2 = requestAnimationFrame(() => {
+        setWorkspaceReady(true);
+      });
+      return () => cancelAnimationFrame(rafId2);
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [activeWorkspaceId]);
+
   const [gitBranch, setGitBranch] = useState<string>("");
   const activeWs = workspaces.find(w => w.id === activeWorkspaceId);
 
@@ -316,14 +337,19 @@ function App() {
         isConnected = connected;
         if (isMounted) {
           const current = useBrowserStore.getState().isElectronConnected;
-          if (connected !== current) {
+          const isVisible = useBrowserStore.getState().isBrowserPanelVisible;
+          if (connected !== current || (!connected && isVisible)) {
+            console.log(`[Browser Poller] Syncing state: connected=${connected}, wasConnected=${current}, wasVisible=${isVisible}`);
             useBrowserStore.getState().setElectronConnected(connected);
           }
         }
       } catch (err) {
+        console.error("[Browser Poller] Connection check error:", err);
         if (isMounted) {
           const current = useBrowserStore.getState().isElectronConnected;
-          if (current) {
+          const isVisible = useBrowserStore.getState().isBrowserPanelVisible;
+          if (current || isVisible) {
+            console.log("[Browser Poller] Connection lost on error, forcing false");
             useBrowserStore.getState().setElectronConnected(false);
           }
         }
@@ -597,10 +623,12 @@ function App() {
   if (showSplash) {
     return (
       <div 
-        className={`h-screen w-screen bg-[#0a0d16] flex flex-col justify-center items-center font-sans overflow-hidden select-none relative transition-opacity duration-500 ease-out z-[9999] ${
+        data-tauri-drag-region
+        className={`h-screen w-screen bg-[#0a0d16] flex flex-col justify-center items-center font-sans overflow-hidden select-none relative transition-opacity duration-500 ease-out z-[9999] cursor-default ${
           splashFade ? "opacity-0" : "opacity-100"
         }`}
       >
+        <TitleBar />
         <style dangerouslySetInnerHTML={{ __html: `
           @keyframes splashLogoBounce {
             0% { transform: scale(0.3); opacity: 0; filter: blur(10px); }
@@ -1214,6 +1242,32 @@ function App() {
   }
 
 
+  // Deferred mount gate: render a lightweight loading shell with the TitleBar
+  // so the window is draggable immediately. The heavy component tree mounts
+  // only after the browser has painted this shell (double rAF).
+  if (!workspaceReady) {
+    return (
+      <div className="relative h-screen w-screen bg-bg-primary overflow-hidden">
+        <TitleBar />
+        <div className="h-full w-full pt-[34px] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 animate-pulse">
+            <div 
+              className="w-8 h-8 rounded-full border-2 border-transparent animate-spin"
+              style={{ 
+                borderTopColor: 'var(--accent-primary, #38bdf8)',
+                borderRightColor: 'var(--accent-primary, #38bdf8)',
+                opacity: 0.6
+              }}
+            />
+            <span className="text-[11px] font-mono tracking-widest text-text-muted uppercase">
+              Loading Workspace...
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative h-screen w-screen bg-bg-primary overflow-hidden">
       <TitleBar />
@@ -1530,13 +1584,7 @@ function App() {
               </React.Suspense>
             </div>
 
-            {/* Backdrop overlay for unpinned browser panel */}
-            {isBrowserPanelVisible && !isBrowserPanelPinned && (
-              <div 
-                className="absolute inset-0 z-20 bg-black/20 cursor-default"
-                onClick={toggleBrowserPanel}
-              />
-            )}
+
 
             {/* Backdrop overlay for unpinned review center panel */}
             {isReviewCenterOpen && (
@@ -1544,62 +1592,6 @@ function App() {
                 className="absolute inset-0 z-20 bg-black/20 cursor-default"
                 onClick={() => setReviewCenterOpen(false)}
               />
-            )}
-
-            {isBrowserPanelVisible && isBrowserPanelPinned && (
-              <>
-                {/* Resizable Divider Handle (only when pinned) */}
-                <div
-                  onMouseDown={startBrowserResize}
-                  onDoubleClick={toggleBrowserPanel}
-                  className="w-1.5 hover:w-2 bg-transparent cursor-col-resize flex-shrink-0 h-full flex items-center justify-center group relative select-none z-10"
-                  title="Drag to resize browser panel, Double-click to collapse"
-                >
-                  <div className="w-[1px] h-full bg-border-glass group-hover:bg-accent-primary/50 group-active:bg-accent-primary transition-colors duration-150" />
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                  </div>
-                </div>
-
-                {/* Web Browser Panel (Pinned) */}
-                <div
-                  className={`flex-shrink-0 h-full overflow-hidden glass-panel ${
-                    isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
-                  }`}
-                  style={{ width: 'var(--browser-panel-width)', maxWidth: 'calc(100% - 100px)' }}
-                >
-                  <BrowserPanel />
-                </div>
-              </>
-            )}
-
-            {isBrowserPanelVisible && !isBrowserPanelPinned && (
-              <>
-                {/* Floating Resizer Handle (only when unpinned) */}
-                <div
-                  onMouseDown={startBrowserResize}
-                  className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-40"
-                  style={{ right: 'calc(min(var(--browser-panel-width), 100%) - 4px)' }}
-                >
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                  </div>
-                </div>
-
-                {/* Web Browser Panel (Unpinned/Popup) */}
-                <div
-                  className={`!absolute right-0 top-0 bottom-0 z-30 overflow-hidden glass-panel shadow-2xl bg-[#08080a] backdrop-blur-xl border border-border-glass rounded-lg ${
-                    isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
-                  }`}
-                  style={{ width: 'var(--browser-panel-width)', maxWidth: '100%' }}
-                >
-                  <BrowserPanel />
-                </div>
-              </>
             )}
 
             {/* Agent Review Center Panel (Floating/Popup) */}

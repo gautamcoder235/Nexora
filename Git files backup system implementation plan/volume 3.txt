@@ -1,6 +1,6 @@
 For the final volume, I would not make it another "prompt." Instead, it should be an engineering implementation specification. Volumes 1 and 2 define what the system is. Volume 3 defines how it must be built.
 
-It should include:
+It should include::
 
 Rust module architecture
 Tauri IPC layer

@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
+import { invoke } from '@tauri-apps/api/core';
 import { 
   X, Save, RotateCcw, Monitor, Terminal, Zap, FileCode2, Package, Plus, Cpu, Keyboard, 
   Palette, Pipette, Type, Layers, Eye, ShieldAlert, Accessibility, SplitSquareVertical, 
-  ArrowLeftRight, Download, Upload, Search, AlertTriangle, Check, RefreshCw, ChevronDown, ChevronRight
+  ArrowLeftRight, Download, Upload, Search, AlertTriangle, Check, RefreshCw, ChevronDown, ChevronRight,
+  FolderOpen
 } from 'lucide-react';
 import { AppSettings, DEFAULT_APP_SETTINGS, CustomCLI } from '../types';
 import { deepMerge } from '../utils/object';
@@ -75,8 +77,10 @@ interface SearchableOption {
 
 const searchableOptions: SearchableOption[] = [
   // General -> Shell
-  { id: 'shell-default', name: 'Default Shell', description: 'Default system shell to use for terminal sessions', category: 'shell', breadcrumbs: ['General', 'Shell', 'Default Shell'] },
-  { id: 'shell-args', name: 'Shell Arguments', description: 'Arguments passed to the shell executable', category: 'shell', breadcrumbs: ['General', 'Shell', 'Shell Arguments'] },
+  { id: 'shell-default', name: 'Default Shell', description: 'Default system shell to use for terminal sessions', category: 'shell', breadcrumbs: ['General', 'Shell & System', 'Default Shell'] },
+  { id: 'shell-args', name: 'Shell Arguments', description: 'Arguments passed to the shell executable', category: 'shell', breadcrumbs: ['General', 'Shell & System', 'Shell Arguments'] },
+  { id: 'system-restore-tabs', name: 'Restore Tabs on Startup', description: 'Automatically restore previous terminal sessions and layouts on launch', category: 'shell', breadcrumbs: ['General', 'Shell & System', 'Restore Tabs on Startup'] },
+  { id: 'system-confirm-exit', name: 'Confirm Before Closing', description: 'Show a confirmation prompt when exiting the application to prevent data loss', category: 'shell', breadcrumbs: ['General', 'Shell & System', 'Confirm Before Closing'] },
   // General -> CLIs
   { id: 'clis-custom', name: 'Custom CLIs', description: 'Registered custom CLI commands for agents', category: 'clis', breadcrumbs: ['General', 'Custom CLIs', 'Manage Custom CLIs'] },
   { id: 'clis-predefined', name: 'Predefined Agents Overrides', description: 'Overridden arguments/commands for built-in agent CLI plugins', category: 'clis', breadcrumbs: ['General', 'Custom CLIs', 'Predefined Agent Overrides'] },
@@ -333,6 +337,35 @@ export const SettingsModal: React.FC = () => {
       }
     } catch (e) {
       showAlertDialog("Import Failed", "Failed to parse JSON profile. Please verify format.");
+    }
+  };
+
+  const handleExportToFile = async () => {
+    try {
+      const jsonStr = JSON.stringify({
+        app: 'nexora',
+        version: localSettings.version || 2,
+        exportedAt: new Date().toISOString(),
+        settings: localSettings
+      }, null, 2);
+
+      const filePath = await invoke<string | null>('export_profile_to_file', { profileJson: jsonStr });
+      if (filePath) {
+        showAlertDialog("Profile Exported", `Profile configuration successfully saved to:\n${filePath}`);
+      }
+    } catch (e) {
+      showAlertDialog("Export Failed", `Failed to export profile to file: ${e}`);
+    }
+  };
+
+  const handleImportFromFile = async () => {
+    try {
+      const content = await invoke<string | null>('import_profile_from_file');
+      if (content) {
+        handleImport(content);
+      }
+    } catch (e) {
+      showAlertDialog("Import Failed", `Failed to import profile from file: ${e}`);
     }
   };
 
@@ -747,8 +780,8 @@ export const SettingsModal: React.FC = () => {
             {activeCategory === 'shell' && (
               <div className="space-y-6 max-w-xl">
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">Shell Configuration</h3>
-                  <p className="text-[10px] text-zinc-500 font-sans mt-0.5">Control which shell binaries and default parameters are launched.</p>
+                  <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">System & Shell Configuration</h3>
+                  <p className="text-[10px] text-zinc-500 font-sans mt-0.5">Control default shell environment settings and application exit/startup behaviors.</p>
                 </div>
 
                 <div 
@@ -791,6 +824,46 @@ export const SettingsModal: React.FC = () => {
                     placeholder="e.g. -c or --login"
                   />
                   <p className="text-[10px] text-zinc-500 font-sans">Space-separated arguments passed to the shell binary upon execution.</p>
+                </div>
+
+                <div 
+                  id="system-restore-tabs"
+                  className={`flex items-center justify-between py-2.5 border-b border-[#232329]/30 p-2 rounded transition-all duration-300 ${
+                    highlightedOptionId === 'system-restore-tabs' 
+                      ? 'bg-accent-primary/10 ring-1 ring-accent-primary/30 border border-accent-primary/20 shadow-glow' 
+                      : 'border border-transparent'
+                  }`}
+                >
+                  <div className="font-sans">
+                    <label className="text-xs text-zinc-300 font-medium block">Restore Tabs on Startup</label>
+                    <p className="text-[10px] text-zinc-500">Automatically restore previous PTY terminal tabs and layouts on launch.</p>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={localSettings.restoreTabsOnStartup}
+                    onChange={(e) => updateLocalNested('restoreTabsOnStartup', e.target.checked)}
+                    className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
+                  />
+                </div>
+
+                <div 
+                  id="system-confirm-exit"
+                  className={`flex items-center justify-between py-2.5 p-2 rounded transition-all duration-300 ${
+                    highlightedOptionId === 'system-confirm-exit' 
+                      ? 'bg-accent-primary/10 ring-1 ring-accent-primary/30 border border-accent-primary/20 shadow-glow' 
+                      : 'border border-transparent'
+                  }`}
+                >
+                  <div className="font-sans">
+                    <label className="text-xs text-zinc-300 font-medium block">Confirm Before Closing</label>
+                    <p className="text-[10px] text-zinc-500">Show a confirmation prompt when exiting the application to prevent data loss.</p>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={localSettings.confirmBeforeClosing}
+                    onChange={(e) => updateLocalNested('confirmBeforeClosing', e.target.checked)}
+                    className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
+                  />
                 </div>
               </div>
             )}
@@ -1062,46 +1135,62 @@ export const SettingsModal: React.FC = () => {
                         }, null, 2)}
                         className="w-full h-36 glass-input font-mono text-[10px] p-2.5 bg-[#050508]/85 border border-[#232329]/50 rounded resize-none"
                       />
-                      <button
-                        onClick={() => {
-                          const jsonStr = JSON.stringify({
-                            app: 'nexora',
-                            version: localSettings.version || 2,
-                            exportedAt: new Date().toISOString(),
-                            settings: localSettings
-                          }, null, 2);
-                          navigator.clipboard.writeText(jsonStr);
-                          showAlertDialog("Copied to Clipboard", "Profile configuration copied to clipboard!");
-                        }}
-                        className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-zinc-200 bg-white/5 hover:bg-white/10 rounded transition-colors border border-white/10 cursor-pointer"
-                      >
-                        <Download size={12} /> Copy JSON
-                      </button>
+                      <div className="absolute bottom-2.5 right-2.5 flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const jsonStr = JSON.stringify({
+                              app: 'nexora',
+                              version: localSettings.version || 2,
+                              exportedAt: new Date().toISOString(),
+                              settings: localSettings
+                            }, null, 2);
+                            navigator.clipboard.writeText(jsonStr);
+                            showAlertDialog("Copied to Clipboard", "Profile configuration copied to clipboard!");
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-zinc-200 bg-white/5 hover:bg-white/10 rounded transition-colors border border-white/10 cursor-pointer"
+                        >
+                          <Download size={12} /> Copy JSON
+                        </button>
+                        <button
+                          onClick={handleExportToFile}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-zinc-200 bg-accent-primary/10 hover:bg-accent-primary/20 rounded transition-colors border border-accent-primary/20 cursor-pointer"
+                        >
+                          <Save size={12} /> Export to File
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <div className="space-y-2 border-t border-border-glass pt-4">
                     <h4 className="text-xs text-zinc-300 font-semibold uppercase tracking-wider">Import Profile</h4>
                     <p className="text-[10px] text-zinc-500 font-sans leading-relaxed">
-                      Paste a versioned profile string to override your active configuration.
+                      Paste a versioned profile string or import a JSON settings file directly.
                     </p>
                     <textarea
                       id="import-profile-textarea"
                       placeholder="Paste JSON profile string..."
                       className="w-full h-36 glass-input font-mono text-[10px] p-2.5 bg-[#050508]/85 border border-[#232329]/50 rounded resize-none"
                     />
-                    <button
-                      onClick={() => {
-                        const textarea = document.getElementById('import-profile-textarea') as HTMLTextAreaElement;
-                        if (textarea) {
-                          handleImport(textarea.value);
-                          textarea.value = '';
-                        }
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-accent-primary bg-accent-primary/10 hover:bg-accent-primary/20 rounded transition-colors border border-accent-primary/20 cursor-pointer"
-                    >
-                      <Upload size={14} /> Import & Apply
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const textarea = document.getElementById('import-profile-textarea') as HTMLTextAreaElement;
+                          if (textarea) {
+                            handleImport(textarea.value);
+                            textarea.value = '';
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-accent-primary bg-accent-primary/10 hover:bg-accent-primary/20 rounded transition-colors border border-accent-primary/20 cursor-pointer"
+                      >
+                        <Upload size={14} /> Import & Apply
+                      </button>
+                      <button
+                        onClick={handleImportFromFile}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-205 bg-white/5 hover:bg-white/10 rounded transition-colors border border-white/10 cursor-pointer"
+                      >
+                        <FolderOpen size={14} className="text-zinc-400" /> Import from File
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

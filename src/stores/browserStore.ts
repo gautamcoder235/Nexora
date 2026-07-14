@@ -159,15 +159,21 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   },
 
   toggleBrowserPanel: () => {
-    const { isElectronConnected } = get();
-    if (isElectronConnected) {
-      // Optimistically toggle off connection state for instant UI responsiveness
-      set({ isElectronConnected: false });
+    const { isBrowserPanelVisible, isElectronConnected } = get();
+    if (isBrowserPanelVisible) {
+      // Collapse UI panel and close Electron app
+      set({ isBrowserPanelVisible: false });
       invoke("close_electron_browser").catch((err) => {
         console.error("Failed to close electron browser:", err);
       });
     } else {
+      // Expand UI panel and ensure Electron window is launched/shown
+      set({ isBrowserPanelVisible: true });
+      
       invoke("launch_electron_browser").then(() => {
+        // If already connected (pre-warmed), we don't need to poll
+        if (isElectronConnected) return;
+
         // Rapidly poll the ping endpoint every 100ms for up to 2 seconds to establish connection instantly
         let attempts = 0;
         const interval = setInterval(async () => {
@@ -191,7 +197,13 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   },
 
   setElectronConnected: (connected) => {
-    set({ isElectronConnected: connected });
+    console.log("[Zustand Store] setElectronConnected called with:", connected);
+    const updates: Partial<BrowserState> = { isElectronConnected: connected };
+    if (!connected) {
+      console.log("[Zustand Store] Connection lost, forcing isBrowserPanelVisible to false");
+      updates.isBrowserPanelVisible = false;
+    }
+    set(updates);
   },
 
   toggleBrowserPanelPinned: () => {

@@ -18,7 +18,7 @@ pub struct ProjectLock {
 impl ProjectLock {
     pub fn acquire(project_path: &str, operation: &str) -> Result<Self, String> {
         let locks_dir = Path::new(project_path).join(".nexora").join("locks");
-        fs::create_dir_all(&locks_dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&locks_dir).map_err(|e| format!("create_dir_all error on {:?}: {}", locks_dir, e))?;
 
         let lock_path = locks_dir.join(format!("{}.lock", operation));
         
@@ -38,7 +38,7 @@ impl ProjectLock {
                     }
                     
                     // The PID is dead or on a different machine name domain: safe to override/prune
-                    let _ = fs::remove_file(&lock_path);
+                    fs::remove_file(&lock_path).map_err(|e| format!("remove_file error on {:?}: {}", lock_path, e))?;
                 }
             }
         }
@@ -51,12 +51,17 @@ impl ProjectLock {
         };
 
         let temp_lock = lock_path.with_extension("tmp");
-        let content = serde_json::to_string_pretty(&lock_data).map_err(|e| e.to_string())?;
-        fs::write(&temp_lock, content).map_err(|e| e.to_string())?;
+        let content = serde_json::to_string_pretty(&lock_data).map_err(|e| format!("serialize error: {}", e))?;
+        fs::write(&temp_lock, content).map_err(|e| format!("write temp_lock error on {:?}: {}", temp_lock, e))?;
         
-        let file = fs::File::open(&temp_lock).map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-        fs::rename(temp_lock, &lock_path).map_err(|e| e.to_string())?;
+        {
+            let file = fs::OpenOptions::new()
+                .write(true)
+                .open(&temp_lock)
+                .map_err(|e| format!("open temp_lock for sync error on {:?}: {}", temp_lock, e))?;
+            file.sync_all().map_err(|e| format!("sync_all temp_lock error: {}", e))?;
+        }
+        fs::rename(&temp_lock, &lock_path).map_err(|e| format!("rename error from {:?} to {:?}: {}", temp_lock, lock_path, e))?;
 
         Ok(Self { lock_path })
     }

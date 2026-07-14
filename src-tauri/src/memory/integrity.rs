@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::Path;
 use serde::{Serialize, Deserialize};
-use tauri::AppHandle;
 use rusqlite::Connection;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -13,17 +12,21 @@ pub struct HealthStatus {
     pub issues: Vec<String>,
 }
 
-pub fn run_integrity_scan(app: &AppHandle, project_path: &str) -> Result<HealthStatus, String> {
+pub fn run_integrity_scan(
+    git_path: &Path,
+    app_data_dir: &Path,
+    project_id: &str,
+    project_path: &str,
+) -> Result<HealthStatus, String> {
     let mut issues = Vec::new();
     let timestamp = chrono::Local::now().to_rfc3339();
 
     // 1. Check Git Integrity
-    let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
 
     let git_fsck_status = if git_dir.exists() {
-        let mut fsck_cmd = std::process::Command::new(&git_path);
+        let mut fsck_cmd = std::process::Command::new(git_path);
         fsck_cmd.arg(format!("--git-dir={}", git_dir.to_string_lossy()));
         fsck_cmd.arg(format!("--work-tree={}", work_tree.to_string_lossy()));
         fsck_cmd.arg("fsck");
@@ -78,10 +81,9 @@ pub fn run_integrity_scan(app: &AppHandle, project_path: &str) -> Result<HealthS
     };
 
     // 3. Check Vault Status
-    let project_id = super::backup_service::get_or_create_project_id(app, project_path)?;
-    let vault_dir = super::backup_service::get_vault_dir(app, &project_id)?;
+    let vault_dir = super::backup_service::get_vault_dir(app_data_dir, project_id);
     let vault_status = if vault_dir.exists() {
-        match super::backup_service::verify_backup_integrity(app, &vault_dir) {
+        match super::backup_service::verify_backup_integrity(git_path, &vault_dir) {
             Ok(_) => "healthy".to_string(),
             Err(e) => {
                 issues.push(format!("Vault verification error: {}", e));
@@ -106,8 +108,13 @@ pub fn run_integrity_scan(app: &AppHandle, project_path: &str) -> Result<HealthS
     let temp_health = health_file.with_extension("tmp");
     fs::write(&temp_health, &content).map_err(|e| e.to_string())?;
     
-    let file = fs::File::open(&temp_health).map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
+    {
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .open(&temp_health)
+            .map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+    }
     fs::rename(temp_health, health_file).map_err(|e| e.to_string())?;
 
     // Also sync health.json to Vault directory
@@ -119,15 +126,19 @@ pub fn run_integrity_scan(app: &AppHandle, project_path: &str) -> Result<HealthS
     Ok(status)
 }
 
-pub fn execute_repair(app: &AppHandle, project_path: &str) -> Result<(), String> {
-    let project_id = super::backup_service::get_or_create_project_id(app, project_path)?;
-    let vault_dir = super::backup_service::get_vault_dir(app, &project_id)?;
+pub fn execute_repair(
+    git_path: &Path,
+    app_data_dir: &Path,
+    project_id: &str,
+    project_path: &str,
+) -> Result<(), String> {
+    let vault_dir = super::backup_service::get_vault_dir(app_data_dir, project_id);
 
     if !vault_dir.exists() {
         return Err("No backup vault exists for this project; cannot execute repair".to_string());
     }
 
     // Repair mode: restore everything clean from the vault copy
-    super::backup_service::restore_project(app, &project_id, project_path)?;
+    super::backup_service::restore_project(git_path, app_data_dir, project_id, project_path)?;
     Ok(())
 }

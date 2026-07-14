@@ -214,7 +214,7 @@ fn execute_task(
                 let cp_id = format!("cp-{}", uuid::Uuid::new_v4());
                 tx.execute(
                     "INSERT INTO checkpoints (id, commit_id, name) VALUES (?1, ?2, ?3)",
-                    params![cp_id, commit_hash, name]
+                    params![cp_id, commit_id, name]
                 ).map_err(|e| e.to_string())?;
 
                 tx.execute("UPDATE commits SET status = 'approved' WHERE status = 'pending'", []).map_err(|e| e.to_string())?;
@@ -286,6 +286,7 @@ fn execute_task(
                             s.source, s.description
                      FROM commits c
                      LEFT JOIN sessions s ON s.id = c.session_id
+                     WHERE c.git_commit_hash != 'no-changes'
                      ORDER BY c.timestamp DESC"
                 ).map_err(|e| e.to_string())?;
 

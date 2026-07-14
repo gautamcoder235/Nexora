@@ -272,7 +272,7 @@ fn get_perf_timings() -> HashMap<String, u64> {
 }
 
 #[tauri::command]
-fn spawn_pty(
+async fn spawn_pty(
     app: AppHandle,
     session_id: String,
     command: Option<String>,
@@ -915,7 +915,7 @@ fn kill_pty(session_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn kill_all_ptys() -> Result<(), String> {
+async fn kill_all_ptys() -> Result<(), String> {
     let mut sessions = get_sessions().lock().unwrap_or_else(|e| e.into_inner());
     for (session_id, mut session) in sessions.drain() {
         let _ = session.child.kill();
@@ -942,6 +942,37 @@ fn select_folder() -> Result<Option<String>, String> {
     Ok(folder.map(|p| p.to_string_lossy().to_string()))
 }
 
+#[tauri::command]
+async fn export_profile_to_file(profile_json: String) -> Result<Option<String>, String> {
+    let file = rfd::FileDialog::new()
+        .set_title("Export Settings Profile")
+        .add_filter("JSON Config", &["json"])
+        .set_file_name("nexora_profile.json")
+        .save_file();
+
+    if let Some(path) = file {
+        fs::write(&path, profile_json).map_err(|e| format!("Failed to write file: {}", e))?;
+        Ok(Some(path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+async fn import_profile_from_file() -> Result<Option<String>, String> {
+    let file = rfd::FileDialog::new()
+        .set_title("Import Settings Profile")
+        .add_filter("JSON Config", &["json"])
+        .pick_file();
+
+    if let Some(path) = file {
+        let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+        Ok(Some(content))
+    } else {
+        Ok(None)
+    }
+}
+
 fn get_config_path(app: &AppHandle, filename: &str) -> Result<PathBuf, String> {
     let mut path = app.path().app_config_dir().map_err(|e| e.to_string())?;
 
@@ -954,14 +985,14 @@ fn get_config_path(app: &AppHandle, filename: &str) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-fn save_config(app: AppHandle, filename: &str, content: &str) -> Result<(), String> {
-    let path = get_config_path(&app, filename)?;
+async fn save_config(app: AppHandle, filename: String, content: String) -> Result<(), String> {
+    let path = get_config_path(&app, &filename)?;
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn load_config(app: AppHandle, filename: &str) -> Result<String, String> {
-    let path = get_config_path(&app, filename)?;
+async fn load_config(app: AppHandle, filename: String) -> Result<String, String> {
+    let path = get_config_path(&app, &filename)?;
     if !path.exists() {
         if filename == "session.json" {
             return Ok("{}".to_string());
@@ -1128,6 +1159,11 @@ async fn launch_electron_browser(app_handle: tauri::AppHandle, url: Option<Strin
 
     // Check if the control server is already running (hidden in the background)
     if check_electron_ping().await {
+        if let Some(ref u) = url {
+            if u == "--background" {
+                return Ok(()); // Already running in background, do not show window!
+            }
+        }
         if let Ok(Ok(mut stream)) = tokio::time::timeout(Duration::from_millis(50), tokio::net::TcpStream::connect("127.0.0.1:30120")).await {
             let _ = stream.write_all(b"GET /show HTTP/1.1\r\nHost: 127.0.0.1:30120\r\nConnection: close\r\n\r\n").await;
         }
@@ -1394,7 +1430,7 @@ fn is_directory(path: String) -> bool {
 }
 
 #[tauri::command]
-fn list_directory(dir_path: String) -> Result<Vec<FileNode>, String> {
+async fn list_directory(dir_path: String) -> Result<Vec<FileNode>, String> {
     let path = std::path::Path::new(&dir_path);
     if !path.exists() {
         return Err("Directory does not exist".to_string());
@@ -1448,12 +1484,12 @@ fn list_directory(dir_path: String) -> Result<Vec<FileNode>, String> {
 }
 
 #[tauri::command]
-fn read_project_file(path: String) -> Result<String, String> {
+async fn read_project_file(path: String) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn write_project_file(path: String, content: String) -> Result<(), String> {
+async fn write_project_file(path: String, content: String) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -1461,7 +1497,7 @@ fn write_project_file(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn init_project_memory(
+async fn init_project_memory(
     path: String,
     arch_content: String,
     dec_content: String,
@@ -1547,7 +1583,7 @@ fn get_git_branch_fallback(workspace_path: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_git_branch(workspace_path: String) -> Result<String, String> {
+async fn get_git_branch(workspace_path: String) -> Result<String, String> {
     let output = crate::hidden_command::new_command("git")
         .args(&["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(&workspace_path)
@@ -1569,7 +1605,7 @@ fn get_git_branch(workspace_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_system_metrics() -> SystemMetrics {
+async fn get_system_metrics() -> SystemMetrics {
     let mut sys = get_system_info().lock().unwrap_or_else(|e| e.into_inner());
     sys.refresh_cpu_usage();
     sys.refresh_memory();
@@ -1713,6 +1749,8 @@ pub fn run() {
             kill_pty,
             kill_all_ptys,
             select_folder,
+            export_profile_to_file,
+            import_profile_from_file,
             save_config,
             load_config,
             check_cli_tool,

@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::mpsc::channel;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use crate::memory::models::HunkSelection;
 use crate::memory::database_worker::{DB_WORKER_SENDER, DatabaseTask, CommitImport, FileOpImport};
 use crate::memory::scheduler::{SCHEDULER_SENDER, SchedulerTask};
@@ -10,10 +10,16 @@ use crate::memory::journal::ActiveJournal;
 // --- High-Level Non-Blocking Tauri Commands (Delegates to Scheduler Queue) ---
 
 pub fn initialize_project(app: &AppHandle, project_path: &str) -> Result<String, String> {
+    let git_path = super::git_provider::resolve_git_binary(app)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let project_id = super::backup_service::get_or_create_project_id(app, project_path)?;
+
     let (resp_tx, resp_rx) = channel();
     let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
     sender.send(SchedulerTask::Initialize {
-        app_handle: app.clone(),
+        git_path,
+        app_data_dir,
+        project_id,
         project_path: project_path.to_string(),
         resp_tx,
     }).map_err(|e| e.to_string())?;
@@ -21,10 +27,16 @@ pub fn initialize_project(app: &AppHandle, project_path: &str) -> Result<String,
 }
 
 pub fn create_checkpoint(app: &AppHandle, project_path: &str, name: &str) -> Result<String, String> {
+    let git_path = super::git_provider::resolve_git_binary(app)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let project_id = super::backup_service::get_or_create_project_id(app, project_path)?;
+
     let (resp_tx, resp_rx) = channel();
     let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
     sender.send(SchedulerTask::CreateCheckpoint {
-        app_handle: app.clone(),
+        git_path,
+        app_data_dir,
+        project_id,
         project_path: project_path.to_string(),
         name: name.to_string(),
         resp_tx,
@@ -39,10 +51,12 @@ pub fn create_snapshot(
     description: Option<String>,
     session_id: Option<String>,
 ) -> Result<String, String> {
+    let git_path = super::git_provider::resolve_git_binary(app)?;
+
     let (resp_tx, resp_rx) = channel();
     let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
     sender.send(SchedulerTask::CreateSnapshot {
-        app_handle: app.clone(),
+        git_path,
         project_path: project_path.to_string(),
         source: source.to_string(),
         description,
@@ -58,10 +72,16 @@ pub fn restore_commit(
     commit_hash: &str,
     files: Option<Vec<String>>,
 ) -> Result<(), String> {
+    let git_path = super::git_provider::resolve_git_binary(app)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let project_id = super::backup_service::get_or_create_project_id(app, project_path)?;
+
     let (resp_tx, resp_rx) = channel();
     let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
     sender.send(SchedulerTask::Restore {
-        app_handle: app.clone(),
+        git_path,
+        app_data_dir,
+        project_id,
         project_path: project_path.to_string(),
         commit_hash: commit_hash.to_string(),
         files,
@@ -136,19 +156,19 @@ pub fn get_diff(
 
 // --- Serialized Queue Execution Logic (Runs on Worker Threads) ---
 
-pub fn initialize_project_sync(app: &AppHandle, project_path: &str) -> Result<String, String> {
+pub fn initialize_project_sync(
+    git_path: &Path,
+    app_data_dir: &Path,
+    project_id: &str,
+    project_path: &str,
+) -> Result<String, String> {
     let _lock = ProjectLock::acquire(project_path, "initialize")?;
-    
-    let git_path = super::git_provider::resolve_git_binary(app)?;
-    super::git_provider::validate_git_version(&git_path)?;
-
-    let _ = super::backup_service::get_or_create_project_id(app, project_path);
 
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
 
     if !git_dir.exists() {
-        super::git_provider::init_repo(&git_path, &git_dir, work_tree)?;
+        super::git_provider::init_repo(git_path, &git_dir, work_tree)?;
     }
 
     // Call DB Worker to initialize schema
@@ -160,8 +180,8 @@ pub fn initialize_project_sync(app: &AppHandle, project_path: &str) -> Result<St
     }).map_err(|e| e.to_string())?;
     db_rx.recv().map_err(|e| e.to_string())??;
 
-    let has_git_history = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "--is-inside-work-tree"]).is_ok()
-        && super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"]).is_ok();
+    let has_git_history = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["rev-parse", "--is-inside-work-tree"]).is_ok()
+        && super::git_provider::execute_git(git_path, &git_dir, work_tree, &["rev-parse", "HEAD"]).is_ok();
 
     if has_git_history {
         // Query DB count via DB Worker
@@ -173,14 +193,14 @@ pub fn initialize_project_sync(app: &AppHandle, project_path: &str) -> Result<St
         let db_commits_count = count_rx.recv().map_err(|e| e.to_string())??;
 
         if db_commits_count == 0 {
-            let log_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["log", "--reverse", "--format=%H"])?;
+            let log_stdout = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["log", "--reverse", "--format=%H"])?;
             let mut commits = Vec::new();
             for hash in log_stdout.lines() {
                 let hash = hash.trim();
                 if hash.is_empty() { continue; }
 
-                let subject = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["log", "-1", "--format=%s", hash]).unwrap_or_else(|_| "Imported state".to_string());
-                let author_time = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["log", "-1", "--format=%aI", hash]).unwrap_or_default();
+                let subject = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["log", "-1", "--format=%s", hash]).unwrap_or_else(|_| "Imported state".to_string());
+                let author_time = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["log", "-1", "--format=%aI", hash]).unwrap_or_default();
                 let source = if subject.contains("AI") || subject.contains("Agent") { "agent" } else if subject.contains("Baseline") || subject.contains("system") { "system" } else { "user" };
 
                 commits.push(CommitImport {
@@ -202,10 +222,10 @@ pub fn initialize_project_sync(app: &AppHandle, project_path: &str) -> Result<St
             }
         }
         
-        let head_hash = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
+        let head_hash = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
         
         // Triggers incremental vault backup sync
-        let _ = super::backup_service::backup_project(app, project_path);
+        let _ = super::backup_service::backup_project(git_path, app_data_dir, project_id, project_path);
 
         return Ok(head_hash);
     }
@@ -243,20 +263,20 @@ pub fn initialize_project_sync(app: &AppHandle, project_path: &str) -> Result<St
     scan_large_files(work_tree, work_tree, &mut exclude_content);
     let _ = std::fs::write(&exclude_path, exclude_content);
 
-    super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
+    super::git_provider::execute_git(git_path, &git_dir, work_tree, &["add", "-A"])?;
     
-    let commit_hash = match super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "-m", "Initial Baseline"]) {
+    let commit_hash = match super::git_provider::execute_git(git_path, &git_dir, work_tree, &["commit", "-m", "Initial Baseline"]) {
         Ok(_) => {
-            super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
+            super::git_provider::execute_git(git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
         }
         Err(_) => {
-            super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", "Initial Baseline"])?;
-            super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
+            super::git_provider::execute_git(git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", "Initial Baseline"])?;
+            super::git_provider::execute_git(git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?
         }
     };
 
     // Parse diff changes using safe null-terminated format
-    let diff_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &[
+    let diff_stdout = super::git_provider::execute_git(git_path, &git_dir, work_tree, &[
         "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--root", "--no-renames", &commit_hash
     ]).unwrap_or_default();
 
@@ -273,44 +293,39 @@ pub fn initialize_project_sync(app: &AppHandle, project_path: &str) -> Result<St
     }).map_err(|e| e.to_string())?;
     chk_rx.recv().map_err(|e| e.to_string())??;
 
-    let _ = super::backup_service::backup_project(app, project_path);
+    let _ = super::backup_service::backup_project(git_path, app_data_dir, project_id, project_path);
 
     Ok(commit_hash)
 }
 
-pub fn create_checkpoint_sync(app: &AppHandle, project_path: &str, name: &str) -> Result<String, String> {
+pub fn create_checkpoint_sync(
+    git_path: &Path,
+    app_data_dir: &Path,
+    project_id: &str,
+    project_path: &str,
+    name: &str,
+) -> Result<String, String> {
     let _lock = ProjectLock::acquire(project_path, "checkpoint")?;
     
-    let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
 
     // Check porcelain and diff cached to prevent staging leaks / empty checkpoint commits
-    let has_untracked = has_unstaged_changes(&git_path, &git_dir, work_tree);
-    let has_staged = has_staged_changes(&git_path, &git_dir, work_tree);
+    let has_untracked = has_unstaged_changes(git_path, &git_dir, work_tree);
+    let has_staged = has_staged_changes(git_path, &git_dir, work_tree);
 
     if !has_untracked && !has_staged {
-        // Record timeline event and return without Git commit
-        let (db_tx, db_rx) = channel();
-        let db_sender = DB_WORKER_SENDER.get().ok_or("DB Worker not active")?;
-        db_sender.send(DatabaseTask::InsertCheckpoint {
-            project_path: project_path.to_string(),
-            commit_hash: "no-changes".to_string(),
-            name: format!("{} (No changes detected)", name),
-            operations: Vec::new(),
-            resp_tx: db_tx,
-        }).map_err(|e| e.to_string())?;
-        db_rx.recv().map_err(|e| e.to_string())??;
+        // No changes — return early without inserting a DB entry
         return Ok("no-changes".to_string());
     }
 
-    super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
-    super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", &format!("Checkpoint: {}", name)])?;
-    let commit_hash = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
+    super::git_provider::execute_git(git_path, &git_dir, work_tree, &["add", "-A"])?;
+    super::git_provider::execute_git(git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", &format!("Checkpoint: {}", name)])?;
+    let commit_hash = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
 
-    // Parse diff using safe null-terminated format
-    let diff_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &[
-        "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--root", "--no-renames", &commit_hash
+    // Parse diff using safe null-terminated format (parent-relative, not --root)
+    let diff_stdout = super::git_provider::execute_git(git_path, &git_dir, work_tree, &[
+        "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--no-renames", &commit_hash
     ]).unwrap_or_default();
 
     let operations = parse_null_separated_diff(&diff_stdout);
@@ -327,13 +342,13 @@ pub fn create_checkpoint_sync(app: &AppHandle, project_path: &str, name: &str) -
     }).map_err(|e| e.to_string())?;
     db_rx.recv().map_err(|e| e.to_string())??;
 
-    let _ = super::backup_service::backup_project(app, project_path);
+    let _ = super::backup_service::backup_project(git_path, app_data_dir, project_id, project_path);
 
     Ok(commit_hash)
 }
 
 pub fn create_snapshot_sync(
-    app: &AppHandle,
+    git_path: &Path,
     project_path: &str,
     source: &str,
     description: Option<String>,
@@ -341,12 +356,11 @@ pub fn create_snapshot_sync(
 ) -> Result<String, String> {
     let _lock = ProjectLock::acquire(project_path, "snapshot")?;
     
-    let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
 
-    let has_untracked = has_unstaged_changes(&git_path, &git_dir, work_tree);
-    let has_staged = has_staged_changes(&git_path, &git_dir, work_tree);
+    let has_untracked = has_unstaged_changes(git_path, &git_dir, work_tree);
+    let has_staged = has_staged_changes(git_path, &git_dir, work_tree);
 
     if !has_untracked && !has_staged {
         return Ok("no-changes".to_string());
@@ -358,9 +372,9 @@ pub fn create_snapshot_sync(
     super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", &desc_str])?;
     let commit_hash = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
 
-    // Parse diff changes using safe null-terminated format
+    // Parse diff changes using safe null-terminated format (parent-relative, not --root)
     let diff_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &[
-        "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--root", "--no-renames", &commit_hash
+        "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--no-renames", &commit_hash
     ]).unwrap_or_default();
 
     let operations = parse_null_separated_diff(&diff_stdout);
@@ -383,41 +397,53 @@ pub fn create_snapshot_sync(
 }
 
 pub fn restore_commit_sync(
-    app: &AppHandle,
+    git_path: &Path,
+    app_data_dir: &Path,
+    project_id: &str,
     project_path: &str,
     commit_hash: &str,
     files: Option<Vec<String>>,
 ) -> Result<(), String> {
+    // Guard: reject invalid "no-changes" pseudo-hashes that were never real git commits
+    if commit_hash == "no-changes" || commit_hash.is_empty() {
+        return Err("Cannot restore to a snapshot with no changes recorded".to_string());
+    }
+
     let _lock = ProjectLock::acquire(project_path, "restore")?;
     
     let journal = ActiveJournal::create(project_path, "restore", Some(commit_hash.to_string()))?;
     journal.update("restore", "PREPARED", Some(commit_hash.to_string()))?;
 
-    let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
 
+    // Verify the commit hash actually exists in the repo before proceeding
+    super::git_provider::execute_git(git_path, &git_dir, work_tree, &["cat-file", "-t", commit_hash])
+        .map_err(|_| format!("Commit {} does not exist in the repository", commit_hash))?;
+
     // 1. Spawns an emergency safety checkpoint before destructive restores
     journal.update("restore", "BACKUP_CREATED", Some(commit_hash.to_string()))?;
-    let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["add", "-A"]);
-    let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", "Emergency Pre-Restore Safety Checkpoint"]);
+    let _ = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["add", "-A"]);
+    let _ = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", "Emergency Pre-Restore Safety Checkpoint"]);
 
     journal.update("restore", "FILES_MODIFIED", Some(commit_hash.to_string()))?;
 
     if let Some(file_list) = files {
         for f in file_list {
-            let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", &f]);
+            super::git_provider::execute_git(git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", &f])
+                .map_err(|e| format!("Failed to restore file {}: {}", f, e))?;
         }
     } else {
-        // Factory Restore: clean working directories and restore exactly
-        let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["clean", "-fdx"]);
-        super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", "."])?;
+        // Factory Restore: clean working directories but PROTECT .nexora (contains DB + repo)
+        // Use -fd (not -fdx) plus explicit -e .nexora to preserve the memory database
+        let _ = super::git_provider::execute_git(git_path, &git_dir, work_tree, &["clean", "-fd", "-e", ".nexora"]);
+        super::git_provider::execute_git(git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", "."])?;
     }
 
     journal.update("restore", "VERIFICATION_RUNNING", Some(commit_hash.to_string()))?;
     
     // Scan integrity on restored project
-    let scan = super::integrity::run_integrity_scan(app, project_path)?;
+    let scan = super::integrity::run_integrity_scan(git_path, app_data_dir, project_id, project_path)?;
     if !scan.issues.is_empty() {
         journal.update("restore", "FAILED", Some(commit_hash.to_string()))?;
         return Err(format!("Restore verification failed: {:?}", scan.issues));

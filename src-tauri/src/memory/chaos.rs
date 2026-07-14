@@ -124,4 +124,85 @@ mod tests {
 
         cleanup_test_project(&temp_dir);
     }
+
+    #[test]
+    fn test_create_snapshot_flow() {
+        if crate::memory::database_worker::DB_WORKER_SENDER.get().is_none() {
+            crate::memory::database_worker::start_db_worker();
+        }
+        if crate::memory::scheduler::SCHEDULER_SENDER.get().is_none() {
+            crate::memory::scheduler::start_scheduler_worker();
+        }
+
+        let temp_dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("snapshot_test_project");
+        cleanup_test_project(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let app_data_dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("snapshot_test_app_data");
+        let _ = fs::remove_dir_all(&app_data_dir);
+        fs::create_dir_all(&app_data_dir).unwrap();
+
+        let git_path = std::path::PathBuf::from("C:\\Git\\cmd\\git.exe");
+        let project_id = "test-proj-uuid".to_string();
+
+        // 1. Initialize project
+        let init_hash = crate::memory::manager::initialize_project_sync(
+            &git_path,
+            &app_data_dir,
+            &project_id,
+            temp_dir.to_str().unwrap(),
+        ).unwrap();
+        assert!(!init_hash.is_empty());
+
+        // 2. Snapshot when clean: should return "no-changes"
+        let snap_hash_1 = crate::memory::manager::create_snapshot_sync(
+            &git_path,
+            temp_dir.to_str().unwrap(),
+            "user",
+            Some("No changes snapshot".to_string()),
+            None,
+        ).unwrap();
+        assert_eq!(snap_hash_1, "no-changes");
+
+        // 3. Make change in project
+        let test_file = temp_dir.join("test_change.txt");
+        fs::write(&test_file, "This is a test change").unwrap();
+
+        // 4. Snapshot when modified: should succeed and return a new hash
+        let snap_hash_2 = crate::memory::manager::create_snapshot_sync(
+            &git_path,
+            temp_dir.to_str().unwrap(),
+            "user",
+            Some("Active test change snapshot".to_string()),
+            None,
+        ).unwrap();
+        assert_ne!(snap_hash_2, "no-changes");
+        assert_ne!(snap_hash_2, init_hash);
+
+        // 5. Query DB via Connection to verify operations was inserted
+        let db_path = temp_dir.join(".nexora").join("memory.db");
+        let conn = Connection::open(db_path).unwrap();
+        
+        let count_commit: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM commits WHERE git_commit_hash = ?1 AND status = 'pending'",
+            params![snap_hash_2],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count_commit, 1);
+
+        let op_file_path: String = conn.query_row(
+            "SELECT file_path FROM operations o JOIN commits c ON o.commit_id = c.id WHERE c.git_commit_hash = ?1",
+            params![snap_hash_2],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(op_file_path, "test_change.txt");
+
+        cleanup_test_project(&temp_dir);
+    }
 }

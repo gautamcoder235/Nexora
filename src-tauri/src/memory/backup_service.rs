@@ -62,9 +62,8 @@ fn compute_file_hash(path: &Path) -> Result<String, String> {
     Ok(hash.to_hex().to_string())
 }
 
-pub fn get_vault_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
-    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    Ok(app_dir.join("RecoveryVault").join("Projects").join(project_id))
+pub fn get_vault_dir(app_data_dir: &Path, project_id: &str) -> PathBuf {
+    app_data_dir.join("RecoveryVault").join("Projects").join(project_id)
 }
 
 pub fn rotate_generations(vault_dir: &Path) -> Result<(), String> {
@@ -105,9 +104,13 @@ pub fn rotate_generations(vault_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String> {
-    let project_id = get_or_create_project_id(app, project_path)?;
-    let vault_dir = get_vault_dir(app, &project_id)?;
+pub fn backup_project(
+    git_path: &Path,
+    app_data_dir: &Path,
+    project_id: &str,
+    project_path: &str,
+) -> Result<(), String> {
+    let vault_dir = get_vault_dir(app_data_dir, project_id);
 
     rotate_generations(&vault_dir)?;
 
@@ -117,7 +120,6 @@ pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String>
     let meta_path = vault_dir.join("metadata.json");
     let temp_meta_path = vault_dir.join("metadata.json.new");
 
-    let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let src_db_path = Path::new(project_path).join(".nexora").join("memory.db");
 
@@ -149,8 +151,13 @@ pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String>
     // Atomic SQLite copy with fsync + rename
     if src_db_path.exists() {
         fs::copy(&src_db_path, &temp_db_path).map_err(|e| format!("Failed to copy DB: {}", e))?;
-        let file = fs::File::open(&temp_db_path).map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| format!("Failed file sync: {}", e))?;
+        {
+            let file = fs::OpenOptions::new()
+                .write(true)
+                .open(&temp_db_path)
+                .map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| format!("Failed file sync: {}", e))?;
+        }
         fs::rename(&temp_db_path, &dest_db_path).map_err(|e| format!("Failed atomic database rename: {}", e))?;
     }
 
@@ -164,7 +171,7 @@ pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String>
     let timestamp = chrono::Local::now().to_rfc3339();
 
     let meta = BackupMetadata {
-        project_id,
+        project_id: project_id.to_string(),
         name,
         original_path: project_path.to_string(),
         timestamp,
@@ -175,14 +182,19 @@ pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String>
     // Atomic metadata copy with fsync + rename
     let meta_content = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
     fs::write(&temp_meta_path, &meta_content).map_err(|e| e.to_string())?;
-    let file = fs::File::open(&temp_meta_path).map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| format!("Failed metadata sync: {}", e))?;
+    {
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .open(&temp_meta_path)
+            .map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| format!("Failed metadata sync: {}", e))?;
+    }
     fs::rename(&temp_meta_path, &meta_path).map_err(|e| format!("Failed atomic metadata rename: {}", e))?;
 
     Ok(())
 }
 
-pub fn verify_backup_integrity(app: &AppHandle, vault_dir: &Path) -> Result<BackupMetadata, String> {
+pub fn verify_backup_integrity(git_path: &Path, vault_dir: &Path) -> Result<BackupMetadata, String> {
     let meta_path = vault_dir.join("metadata.json");
     if !meta_path.exists() {
         return Err("Backup metadata.json missing".to_string());
@@ -204,8 +216,7 @@ pub fn verify_backup_integrity(app: &AppHandle, vault_dir: &Path) -> Result<Back
     }
 
     // Verify commit exists inside bare git repository
-    let git_path = super::git_provider::resolve_git_binary(app)?;
-    let mut rev_cmd = std::process::Command::new(&git_path);
+    let mut rev_cmd = std::process::Command::new(git_path);
     rev_cmd.arg(format!("--git-dir={}", bare_git_dir.to_string_lossy()));
     rev_cmd.arg("cat-file").arg("-e").arg(&meta.repo_git_hash);
     let status = rev_cmd.status().map_err(|e| e.to_string())?;
@@ -216,13 +227,18 @@ pub fn verify_backup_integrity(app: &AppHandle, vault_dir: &Path) -> Result<Back
     Ok(meta)
 }
 
-pub fn restore_project(app: &AppHandle, project_id: &str, target_path: &str) -> Result<(), String> {
-    let vault_dir = get_vault_dir(app, project_id)?;
+pub fn restore_project(
+    git_path: &Path,
+    app_data_dir: &Path,
+    project_id: &str,
+    target_path: &str,
+) -> Result<(), String> {
+    let vault_dir = get_vault_dir(app_data_dir, project_id);
 
     let mut healthy_vault = None;
     let mut errs = Vec::new();
 
-    match verify_backup_integrity(app, &vault_dir) {
+    match verify_backup_integrity(git_path, &vault_dir) {
         Ok(m) => healthy_vault = Some((vault_dir.clone(), m)),
         Err(e) => errs.push(format!("Primary backup check failed: {}", e)),
     }
@@ -231,7 +247,7 @@ pub fn restore_project(app: &AppHandle, project_id: &str, target_path: &str) -> 
         for gen_idx in 1..=3 {
             let gen_dir = vault_dir.join("history").join(format!("gen-{}", gen_idx));
             if gen_dir.exists() {
-                match verify_backup_integrity(app, &gen_dir) {
+                match verify_backup_integrity(git_path, &gen_dir) {
                     Ok(m) => {
                         healthy_vault = Some((gen_dir, m));
                         break;
@@ -260,7 +276,6 @@ pub fn restore_project(app: &AppHandle, project_id: &str, target_path: &str) -> 
     }
     fs::create_dir_all(&git_dir).map_err(|e| e.to_string())?;
 
-    let git_path = super::git_provider::resolve_git_binary(app)?;
     let src_bare_git = src_vault.join("repo.git");
     let bare_git_path_str = src_bare_git.to_string_lossy();
     

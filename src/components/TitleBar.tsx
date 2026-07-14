@@ -65,17 +65,31 @@ export function TitleBar() {
     }
   };
 
+  const settings = useOrchestratorStore((s) => s.settings);
+  const showConfirmDialog = useOrchestratorStore((s) => s.showConfirmDialog);
+
   const handleClose = async () => {
-    if (appWindow) {
-      try {
-        await appWindow.close();
-      } catch (e) {
-        console.error("Failed to close window:", e);
-        // Fallback to exit_app command or window.close()
+    const doClose = async () => {
+      if (appWindow) {
+        try {
+          await appWindow.close();
+        } catch (e) {
+          console.error("Failed to close window:", e);
+          window.close();
+        }
+      } else {
         window.close();
       }
+    };
+
+    if (settings?.confirmBeforeClosing) {
+      showConfirmDialog(
+        "Confirm Close",
+        "Are you sure you want to close Nexora? Any running background agent/terminal sessions will be terminated.",
+        doClose
+      );
     } else {
-      window.close();
+      await doClose();
     }
   };
 

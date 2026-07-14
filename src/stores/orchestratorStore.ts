@@ -559,13 +559,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     const ws = get().workspaces.find(w => w.id === workspaceId);
     if (!ws) return;
 
-    // 1. Terminate all PTY shells of the previous workspace to clean memory
-    try {
-      await invoke("kill_all_ptys");
-    } catch(e) {
-      console.warn("Error cleaning previous PTYs:", e);
-    }
-
+    // 1. Set workspace ID and clean state IMMEDIATELY so React mounts the
+    //    workspace dashboard (including the TitleBar drag region) right away.
     set((state) => ({
       activeWorkspaceId: workspaceId,
       isSidebarVisible: false,
@@ -575,27 +570,37 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       workspaces: state.workspaces.map(w => w.id === workspaceId ? { ...w, lastOpened: Date.now() } : w)
     }));
 
-    // 2. Load the target snapshot layouts
-    await get().loadSnapshot();
-    
-    // Log change
-    EventBus.publish("workspace:changed", { workspaceId });
-    
-    // Notify Electron browser of workspace change to swap tab sessions
-    invoke("notify_workspace_switch", { workspaceId }).catch((err) => {
-      console.error("Failed to notify workspace switch:", err);
-    });
-    
-    get().logActivity('workspace', 'info', `Switched to workspace: ${ws.name}`, '', undefined);
+    // 2. Defer ALL heavy/blocking work so the browser can paint the first frame
+    //    (with the draggable TitleBar) before we hit any IPC or disk I/O.
+    requestAnimationFrame(() => {
+      setTimeout(async () => {
+        // Kill previous workspace PTY sessions in the background
+        try {
+          await invoke("kill_all_ptys");
+        } catch(e) {
+          console.warn("Error cleaning previous PTYs:", e);
+        }
 
-    // 3. Sync memory files and tasks checklists in parallel
-    const workspaceProjects = get().projects.filter(p => p.workspaceId === workspaceId);
-    
-    // DO NOT AWAIT THIS! Let it run in the background so it doesn't block the UI thread 
-    // waiting on synchronous disk writes (which can take 600ms+ due to Windows Defender).
-    Promise.all(workspaceProjects.map(proj => get().initializeProjectMemory(proj.id))).catch(console.error);
-    
-    get().saveSnapshot();
+        // Load the target snapshot layouts (disk I/O + terminal reconnects)
+        await get().loadSnapshot();
+
+        // Log change
+        EventBus.publish("workspace:changed", { workspaceId });
+
+        // Notify browser of workspace change to swap tab sessions
+        invoke("notify_workspace_switch", { workspaceId }).catch((err) => {
+          console.error("Failed to notify workspace switch:", err);
+        });
+
+        get().logActivity('workspace', 'info', `Switched to workspace: ${ws.name}`, '', undefined);
+
+        // Sync memory files and tasks checklists in parallel (fire and forget)
+        const workspaceProjects = get().projects.filter(p => p.workspaceId === workspaceId);
+        Promise.all(workspaceProjects.map(proj => get().initializeProjectMemory(proj.id))).catch(console.error);
+
+        get().saveSnapshot();
+      }, 0);
+    });
   },
 
   deleteWorkspace: async (workspaceId) => {
@@ -1342,15 +1347,20 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       if (snapStr && snapStr !== "{}") {
         const snapshot = JSON.parse(snapStr) as WorkspaceSnapshot;
 
+        const settings = get().settings;
+        const shouldRestoreTabs = settings?.restoreTabsOnStartup ?? true;
+
         // Restore terminal tabs/sessions, but clear history so they start fresh
-        const restoredTerminals = (snapshot.terminals || []).map(t => {
-          // Strip history so it starts completely clean (newly)
-          const { history, ...termWithoutHistory } = t;
-          return {
-            ...termWithoutHistory,
-            status: 'reconnecting' as const
-          };
-        });
+        const restoredTerminals = shouldRestoreTabs 
+          ? (snapshot.terminals || []).map(t => {
+              // Strip history so it starts completely clean (newly)
+              const { history, ...termWithoutHistory } = t;
+              return {
+                ...termWithoutHistory,
+                status: 'reconnecting' as const
+              };
+            })
+          : [];
         const restoredTerminalIds = new Set(restoredTerminals.map((terminal) => terminal.id));
         
         // Restore agent mapping and statuses
@@ -1367,7 +1377,9 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           terminals: restoredTerminals,
           agents: restoredAgents,
           tasks: snapshot.tasks || [],
-          layout: snapshot.layout || { type: 'grid', panels: [] }, // Restore terminal layout panels
+          layout: shouldRestoreTabs 
+            ? (snapshot.layout || { type: 'grid', panels: [] }) 
+            : { type: 'grid', panels: [] }, // Clear layout panels if tab restoration is disabled
           isSidebarVisible: false,
           isTaskCenterVisible: snapshot.isTaskCenterVisible !== undefined ? snapshot.isTaskCenterVisible : true,
           isTaskPanelPinned: snapshot.isTaskPanelPinned !== undefined ? snapshot.isTaskPanelPinned : false,
