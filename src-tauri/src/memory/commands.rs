@@ -49,7 +49,13 @@ pub fn memory_get_diff(app: AppHandle, project_path: String, from_commit: String
 
 #[command]
 pub fn memory_get_history(project_path: String) -> Result<Vec<TimelineEntry>, String> {
-    super::timeline_service::get_timeline_history(&project_path)
+    let (tx, rx) = std::sync::mpsc::channel();
+    let db_sender = super::database_worker::DB_WORKER_SENDER.get().ok_or("DB Worker not active")?;
+    db_sender.send(super::database_worker::DatabaseTask::GetTimeline {
+        project_path,
+        resp_tx: tx,
+    }).map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?
 }
 
 #[command]
@@ -123,4 +129,19 @@ pub fn check_missing_projects(app_handle: AppHandle) -> Result<Vec<MissingProjec
     }
 
     Ok(missing)
+}
+
+#[command]
+pub fn memory_run_integrity_check(app: AppHandle, project_path: String) -> Result<crate::memory::integrity::HealthStatus, String> {
+    super::integrity::run_integrity_scan(&app, &project_path)
+}
+
+#[command]
+pub fn memory_run_repair(app: AppHandle, project_path: String) -> Result<(), String> {
+    super::integrity::execute_repair(&app, &project_path)
+}
+
+#[command]
+pub fn memory_run_maintenance(app: AppHandle, project_path: String) -> Result<(), String> {
+    super::manager::run_git_maintenance(&app, &project_path)
 }

@@ -1,9 +1,144 @@
 use std::path::Path;
+use std::sync::mpsc::channel;
 use tauri::AppHandle;
-use rusqlite::params;
 use crate::memory::models::HunkSelection;
+use crate::memory::database_worker::{DB_WORKER_SENDER, DatabaseTask, CommitImport, FileOpImport};
+use crate::memory::scheduler::{SCHEDULER_SENDER, SchedulerTask};
+use crate::memory::locks::ProjectLock;
+use crate::memory::journal::ActiveJournal;
+
+// --- High-Level Non-Blocking Tauri Commands (Delegates to Scheduler Queue) ---
 
 pub fn initialize_project(app: &AppHandle, project_path: &str) -> Result<String, String> {
+    let (resp_tx, resp_rx) = channel();
+    let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
+    sender.send(SchedulerTask::Initialize {
+        app_handle: app.clone(),
+        project_path: project_path.to_string(),
+        resp_tx,
+    }).map_err(|e| e.to_string())?;
+    resp_rx.recv().map_err(|e| e.to_string())?
+}
+
+pub fn create_checkpoint(app: &AppHandle, project_path: &str, name: &str) -> Result<String, String> {
+    let (resp_tx, resp_rx) = channel();
+    let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
+    sender.send(SchedulerTask::CreateCheckpoint {
+        app_handle: app.clone(),
+        project_path: project_path.to_string(),
+        name: name.to_string(),
+        resp_tx,
+    }).map_err(|e| e.to_string())?;
+    resp_rx.recv().map_err(|e| e.to_string())?
+}
+
+pub fn create_snapshot(
+    app: &AppHandle,
+    project_path: &str,
+    source: &str,
+    description: Option<String>,
+    session_id: Option<String>,
+) -> Result<String, String> {
+    let (resp_tx, resp_rx) = channel();
+    let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
+    sender.send(SchedulerTask::CreateSnapshot {
+        app_handle: app.clone(),
+        project_path: project_path.to_string(),
+        source: source.to_string(),
+        description,
+        session_id,
+        resp_tx,
+    }).map_err(|e| e.to_string())?;
+    resp_rx.recv().map_err(|e| e.to_string())?
+}
+
+pub fn restore_commit(
+    app: &AppHandle,
+    project_path: &str,
+    commit_hash: &str,
+    files: Option<Vec<String>>,
+) -> Result<(), String> {
+    let (resp_tx, resp_rx) = channel();
+    let sender = SCHEDULER_SENDER.get().ok_or("Scheduler worker not started")?;
+    sender.send(SchedulerTask::Restore {
+        app_handle: app.clone(),
+        project_path: project_path.to_string(),
+        commit_hash: commit_hash.to_string(),
+        files,
+        resp_tx,
+    }).map_err(|e| e.to_string())?;
+    resp_rx.recv().map_err(|e| e.to_string())?
+}
+
+// --- High-Level Command API Functions (Passthrough) ---
+
+pub fn review_change(
+    project_path: &str,
+    commit_hash: &str,
+    status: &str,
+) -> Result<(), String> {
+    let (resp_tx, resp_rx) = channel();
+    let sender = DB_WORKER_SENDER.get().ok_or("Database worker not started")?;
+    sender.send(DatabaseTask::UpdateReview {
+        project_path: project_path.to_string(),
+        commit_hash: commit_hash.to_string(),
+        status: status.to_string(),
+        resp_tx,
+    }).map_err(|e| e.to_string())?;
+    resp_rx.recv().map_err(|e| e.to_string())?
+}
+
+pub fn apply_hunks(
+    app: &AppHandle,
+    project_path: &str,
+    commit_hash: &str,
+    approved_hunks: Vec<HunkSelection>,
+) -> Result<(), String> {
+    let _lock = ProjectLock::acquire(project_path, "restore")?;
+    let git_path = super::git_provider::resolve_git_binary(app)?;
+    let git_dir = Path::new(project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(project_path);
+
+    for hunk in approved_hunks {
+        if hunk.approved {
+            let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", &hunk.file_path]);
+        }
+    }
+    Ok(())
+}
+
+pub fn read_commit_version(
+    app: &AppHandle,
+    project_path: &str,
+    commit_hash: &str,
+    file_path: &str,
+) -> Result<String, String> {
+    let git_path = super::git_provider::resolve_git_binary(app)?;
+    let git_dir = Path::new(project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(project_path);
+
+    let show_spec = format!("{}:{}", commit_hash, file_path);
+    super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["show", &show_spec])
+}
+
+pub fn get_diff(
+    app: &AppHandle,
+    project_path: &str,
+    from_commit: &str,
+    to_commit: &str,
+) -> Result<String, String> {
+    let git_path = super::git_provider::resolve_git_binary(app)?;
+    let git_dir = Path::new(project_path).join(".nexora").join("repo");
+    let work_tree = Path::new(project_path);
+
+    super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["diff", from_commit, to_commit])
+}
+
+// --- Serialized Queue Execution Logic (Runs on Worker Threads) ---
+
+pub fn initialize_project_sync(app: &AppHandle, project_path: &str) -> Result<String, String> {
+    let _lock = ProjectLock::acquire(project_path, "initialize")?;
+    
     let git_path = super::git_provider::resolve_git_binary(app)?;
     super::git_provider::validate_git_version(&git_path)?;
 
@@ -16,16 +151,30 @@ pub fn initialize_project(app: &AppHandle, project_path: &str) -> Result<String,
         super::git_provider::init_repo(&git_path, &git_dir, work_tree)?;
     }
 
-    let conn = super::database::open_memory_db(project_path)?;
-    super::database::initialize_db_schema(&conn)?;
+    // Call DB Worker to initialize schema
+    let (db_tx, db_rx) = channel();
+    let db_sender = DB_WORKER_SENDER.get().ok_or("DB Worker not active")?;
+    db_sender.send(DatabaseTask::InitializeSchema {
+        project_path: project_path.to_string(),
+        resp_tx: db_tx,
+    }).map_err(|e| e.to_string())?;
+    db_rx.recv().map_err(|e| e.to_string())??;
 
     let has_git_history = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "--is-inside-work-tree"]).is_ok()
         && super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"]).is_ok();
 
     if has_git_history {
-        let db_commits_count: i64 = conn.query_row("SELECT COUNT(*) FROM commits", [], |r| r.get(0)).unwrap_or(0);
+        // Query DB count via DB Worker
+        let (count_tx, count_rx) = channel();
+        db_sender.send(DatabaseTask::GetDbCommitsCount {
+            project_path: project_path.to_string(),
+            resp_tx: count_tx,
+        }).map_err(|e| e.to_string())?;
+        let db_commits_count = count_rx.recv().map_err(|e| e.to_string())??;
+
         if db_commits_count == 0 {
             let log_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["log", "--reverse", "--format=%H"])?;
+            let mut commits = Vec::new();
             for hash in log_stdout.lines() {
                 let hash = hash.trim();
                 if hash.is_empty() { continue; }
@@ -34,55 +183,29 @@ pub fn initialize_project(app: &AppHandle, project_path: &str) -> Result<String,
                 let author_time = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["log", "-1", "--format=%aI", hash]).unwrap_or_default();
                 let source = if subject.contains("AI") || subject.contains("Agent") { "agent" } else if subject.contains("Baseline") || subject.contains("system") { "system" } else { "user" };
 
-                let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
-                let _ = conn.execute(
-                    "INSERT OR IGNORE INTO commits (id, git_commit_hash, type, source, description, status, timestamp) VALUES (?1,?2,'snapshot',?3,?4,'approved',?5)",
-                    params![commit_id, hash, source, subject, author_time]
-                );
+                commits.push(CommitImport {
+                    hash: hash.to_string(),
+                    source: source.to_string(),
+                    description: subject,
+                    timestamp: author_time,
+                });
+            }
 
-                let diff_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &[
-                    "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", hash
-                ]).unwrap_or_default();
-
-                for line in diff_stdout.lines() {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 2 {
-                        let status = parts[0];
-                        let file_path = parts[1];
-                        let mut operation_type = "created";
-                        let mut old_path: Option<&str> = None;
-
-                        if status.starts_with('M') {
-                            operation_type = "modified";
-                        } else if status.starts_with('D') {
-                            operation_type = "deleted";
-                        } else if status.starts_with('R') {
-                            operation_type = "renamed";
-                            if parts.len() >= 3 {
-                                old_path = Some(parts[1]);
-                            }
-                        }
-
-                        let op_id = format!("op-{}", uuid::Uuid::new_v4());
-                        let _ = conn.execute(
-                            "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
-                            params![op_id, commit_id, file_path, operation_type, old_path]
-                        );
-                    }
-                }
+            if !commits.is_empty() {
+                let (imp_tx, imp_rx) = channel();
+                db_sender.send(DatabaseTask::ImportGitCommits {
+                    project_path: project_path.to_string(),
+                    commits,
+                    resp_tx: imp_tx,
+                }).map_err(|e| e.to_string())?;
+                imp_rx.recv().map_err(|e| e.to_string())??;
             }
         }
+        
         let head_hash = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
-        let _ = conn.execute(
-            "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES ('nexora/main', ?1)",
-            params![head_hash]
-        );
-
-        let app_clone = app.clone();
-        let path_clone = project_path.to_string();
-        tauri::async_runtime::spawn(async move {
-            let _ = super::backup_service::backup_project(&app_clone, &path_clone);
-        });
+        
+        // Triggers incremental vault backup sync
+        let _ = super::backup_service::backup_project(app, project_path);
 
         return Ok(head_hash);
     }
@@ -132,138 +255,102 @@ pub fn initialize_project(app: &AppHandle, project_path: &str) -> Result<String,
         }
     };
 
-    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
-    conn.execute(
-        "INSERT OR IGNORE INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'snapshot','system','Initial Baseline','approved')",
-        params![commit_id, commit_hash]
-    ).map_err(|e| e.to_string())?;
-
-    conn.execute(
-        "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES ('nexora/main', ?1)",
-        params![commit_hash]
-    ).map_err(|e| e.to_string())?;
-
+    // Parse diff changes using safe null-terminated format
     let diff_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &[
-        "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_hash
+        "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--root", "--no-renames", &commit_hash
     ]).unwrap_or_default();
 
-    for line in diff_stdout.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let status = parts[0];
-            let file_path = parts[1];
-            let mut operation_type = "created";
-            let mut old_path: Option<&str> = None;
+    let operations = parse_null_separated_diff(&diff_stdout);
 
-            if status.starts_with('M') {
-                operation_type = "modified";
-            } else if status.starts_with('D') {
-                operation_type = "deleted";
-            } else if status.starts_with('R') {
-                operation_type = "renamed";
-                if parts.len() >= 3 {
-                    old_path = Some(parts[1]);
-                }
-            }
+    // Call DB Worker to commit baseline
+    let (chk_tx, chk_rx) = channel();
+    db_sender.send(DatabaseTask::InsertCheckpoint {
+        project_path: project_path.to_string(),
+        commit_hash: commit_hash.clone(),
+        name: "Initial Baseline".to_string(),
+        operations,
+        resp_tx: chk_tx,
+    }).map_err(|e| e.to_string())?;
+    chk_rx.recv().map_err(|e| e.to_string())??;
 
-            let op_id = format!("op-{}", uuid::Uuid::new_v4());
-            conn.execute(
-                "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
-                params![op_id, commit_id, file_path, operation_type, old_path]
-            ).map_err(|e| e.to_string())?;
-        }
-    }
-
-    let app_clone = app.clone();
-    let path_clone = project_path.to_string();
-    tauri::async_runtime::spawn(async move {
-        let _ = super::backup_service::backup_project(&app_clone, &path_clone);
-    });
+    let _ = super::backup_service::backup_project(app, project_path);
 
     Ok(commit_hash)
 }
 
-pub fn create_checkpoint(app: &AppHandle, project_path: &str, name: &str) -> Result<String, String> {
+pub fn create_checkpoint_sync(app: &AppHandle, project_path: &str, name: &str) -> Result<String, String> {
+    let _lock = ProjectLock::acquire(project_path, "checkpoint")?;
+    
     let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
+
+    // Check porcelain and diff cached to prevent staging leaks / empty checkpoint commits
+    let has_untracked = has_unstaged_changes(&git_path, &git_dir, work_tree);
+    let has_staged = has_staged_changes(&git_path, &git_dir, work_tree);
+
+    if !has_untracked && !has_staged {
+        // Record timeline event and return without Git commit
+        let (db_tx, db_rx) = channel();
+        let db_sender = DB_WORKER_SENDER.get().ok_or("DB Worker not active")?;
+        db_sender.send(DatabaseTask::InsertCheckpoint {
+            project_path: project_path.to_string(),
+            commit_hash: "no-changes".to_string(),
+            name: format!("{} (No changes detected)", name),
+            operations: Vec::new(),
+            resp_tx: db_tx,
+        }).map_err(|e| e.to_string())?;
+        db_rx.recv().map_err(|e| e.to_string())??;
+        return Ok("no-changes".to_string());
+    }
 
     super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
     super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", &format!("Checkpoint: {}", name)])?;
     let commit_hash = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
 
-    let conn = super::database::open_memory_db(project_path)?;
-    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
-    conn.execute(
-        "INSERT INTO commits (id, git_commit_hash, type, source, description, status) VALUES (?1,?2,'checkpoint','user',?3,'approved')",
-        params![commit_id, commit_hash, name]
-    ).map_err(|e| e.to_string())?;
-
+    // Parse diff using safe null-terminated format
     let diff_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &[
-        "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_hash
+        "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--root", "--no-renames", &commit_hash
     ]).unwrap_or_default();
 
-    for line in diff_stdout.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let status = parts[0];
-            let file_path = parts[1];
-            let mut operation_type = "modified";
-            let mut old_path: Option<&str> = None;
+    let operations = parse_null_separated_diff(&diff_stdout);
 
-            if status.starts_with('A') {
-                operation_type = "created";
-            } else if status.starts_with('D') {
-                operation_type = "deleted";
-            } else if status.starts_with('R') {
-                operation_type = "renamed";
-                if parts.len() >= 3 {
-                    old_path = Some(parts[1]);
-                }
-            }
+    // Submit transactions strictly to DB Worker
+    let (db_tx, db_rx) = channel();
+    let db_sender = DB_WORKER_SENDER.get().ok_or("DB Worker not active")?;
+    db_sender.send(DatabaseTask::InsertCheckpoint {
+        project_path: project_path.to_string(),
+        commit_hash: commit_hash.clone(),
+        name: name.to_string(),
+        operations,
+        resp_tx: db_tx,
+    }).map_err(|e| e.to_string())?;
+    db_rx.recv().map_err(|e| e.to_string())??;
 
-            let op_id = format!("op-{}", uuid::Uuid::new_v4());
-            conn.execute(
-                "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
-                params![op_id, commit_id, file_path, operation_type, old_path]
-            ).map_err(|e| e.to_string())?;
-        }
-    }
-
-    let ref_name = format!("nexora/checkpoints/{}", name.replace(" ", "-"));
-    conn.execute(
-        "INSERT OR REPLACE INTO refs (name, commit_hash) VALUES (?1, ?2)",
-        params![ref_name, commit_hash]
-    ).map_err(|e| e.to_string())?;
-
-    let cp_id = format!("cp-{}", uuid::Uuid::new_v4());
-    conn.execute(
-        "INSERT INTO checkpoints (id, commit_id, name) VALUES (?1, ?2, ?3)",
-        params![cp_id, commit_hash, name]
-    ).map_err(|e| e.to_string())?;
-
-    conn.execute("UPDATE commits SET status = 'approved' WHERE status = 'pending'", []).map_err(|e| e.to_string())?;
-    conn.execute("UPDATE reviews SET status = 'approved', review_time = CURRENT_TIMESTAMP WHERE status = 'pending'", []).map_err(|e| e.to_string())?;
-
-    let app_clone = app.clone();
-    let path_clone = project_path.to_string();
-    tauri::async_runtime::spawn(async move {
-        let _ = super::backup_service::backup_project(&app_clone, &path_clone);
-    });
+    let _ = super::backup_service::backup_project(app, project_path);
 
     Ok(commit_hash)
 }
 
-pub fn create_snapshot(
+pub fn create_snapshot_sync(
     app: &AppHandle,
     project_path: &str,
     source: &str,
     description: Option<String>,
     session_id: Option<String>,
 ) -> Result<String, String> {
+    let _lock = ProjectLock::acquire(project_path, "snapshot")?;
+    
     let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
+
+    let has_untracked = has_unstaged_changes(&git_path, &git_dir, work_tree);
+    let has_staged = has_staged_changes(&git_path, &git_dir, work_tree);
+
+    if !has_untracked && !has_staged {
+        return Ok("no-changes".to_string());
+    }
 
     super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["add", "-A"])?;
 
@@ -271,129 +358,118 @@ pub fn create_snapshot(
     super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", &desc_str])?;
     let commit_hash = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["rev-parse", "HEAD"])?;
 
-    let conn = super::database::open_memory_db(project_path)?;
-    let commit_id = format!("commit-{}", uuid::Uuid::new_v4());
-    conn.execute(
-        "INSERT INTO commits (id, session_id, git_commit_hash, type, source, description, status) VALUES (?1,?2,?3,'snapshot',?4,?5,'pending')",
-        params![commit_id, session_id, commit_hash, source, description]
-    ).map_err(|e| e.to_string())?;
-
+    // Parse diff changes using safe null-terminated format
     let diff_stdout = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &[
-        "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_hash
+        "diff-tree", "-z", "--no-commit-id", "--name-status", "-r", "--root", "--no-renames", &commit_hash
     ]).unwrap_or_default();
 
-    for line in diff_stdout.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let status = parts[0];
-            let file_path = parts[1];
-            let mut operation_type = "modified";
-            let mut old_path: Option<&str> = None;
+    let operations = parse_null_separated_diff(&diff_stdout);
 
-            if status.starts_with('A') {
-                operation_type = "created";
-            } else if status.starts_with('D') {
-                operation_type = "deleted";
-            } else if status.starts_with('R') {
-                operation_type = "renamed";
-                if parts.len() >= 3 {
-                    old_path = Some(parts[1]);
-                }
-            }
-
-            let op_id = format!("op-{}", uuid::Uuid::new_v4());
-            conn.execute(
-                "INSERT INTO operations (id, commit_id, file_path, operation_type, old_path) VALUES (?1,?2,?3,?4,?5)",
-                params![op_id, commit_id, file_path, operation_type, old_path]
-            ).map_err(|e| e.to_string())?;
-        }
-    }
+    // Call DB Worker
+    let (db_tx, db_rx) = channel();
+    let db_sender = DB_WORKER_SENDER.get().ok_or("DB Worker not active")?;
+    db_sender.send(DatabaseTask::InsertSnapshot {
+        project_path: project_path.to_string(),
+        commit_hash: commit_hash.clone(),
+        source: source.to_string(),
+        description,
+        session_id,
+        operations,
+        resp_tx: db_tx,
+    }).map_err(|e| e.to_string())?;
+    db_rx.recv().map_err(|e| e.to_string())??;
 
     Ok(commit_hash)
 }
 
-pub fn restore_commit(
+pub fn restore_commit_sync(
     app: &AppHandle,
     project_path: &str,
     commit_hash: &str,
     files: Option<Vec<String>>,
 ) -> Result<(), String> {
+    let _lock = ProjectLock::acquire(project_path, "restore")?;
+    
+    let journal = ActiveJournal::create(project_path, "restore", Some(commit_hash.to_string()))?;
+    journal.update("restore", "PREPARED", Some(commit_hash.to_string()))?;
+
     let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
     let work_tree = Path::new(project_path);
+
+    // 1. Spawns an emergency safety checkpoint before destructive restores
+    journal.update("restore", "BACKUP_CREATED", Some(commit_hash.to_string()))?;
+    let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["add", "-A"]);
+    let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["commit", "--allow-empty", "-m", "Emergency Pre-Restore Safety Checkpoint"]);
+
+    journal.update("restore", "FILES_MODIFIED", Some(commit_hash.to_string()))?;
 
     if let Some(file_list) = files {
         for f in file_list {
             let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", &f]);
         }
     } else {
+        // Factory Restore: clean working directories and restore exactly
+        let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["clean", "-fdx"]);
         super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", "."])?;
     }
-    Ok(())
-}
 
-pub fn review_change(
-    project_path: &str,
-    commit_hash: &str,
-    status: &str,
-) -> Result<(), String> {
-    let conn = super::database::open_memory_db(project_path)?;
+    journal.update("restore", "VERIFICATION_RUNNING", Some(commit_hash.to_string()))?;
     
-    conn.execute(
-        "UPDATE commits SET status = ?1 WHERE git_commit_hash = ?2",
-        params![status, commit_hash]
-    ).map_err(|e| e.to_string())?;
-
-    let review_id = format!("rev-{}", uuid::Uuid::new_v4());
-    let _ = conn.execute(
-        "INSERT OR REPLACE INTO reviews (id, commit_hash, status, reviewed_by, review_time) VALUES (?1, ?2, ?3, 'user', CURRENT_TIMESTAMP)",
-        params![review_id, commit_hash, status]
-    );
-
-    Ok(())
-}
-
-pub fn apply_hunks(
-    app: &AppHandle,
-    project_path: &str,
-    commit_hash: &str,
-    approved_hunks: Vec<HunkSelection>,
-) -> Result<(), String> {
-    let git_path = super::git_provider::resolve_git_binary(app)?;
-    let git_dir = Path::new(project_path).join(".nexora").join("repo");
-    let work_tree = Path::new(project_path);
-
-    for hunk in approved_hunks {
-        if hunk.approved {
-            let _ = super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["checkout", commit_hash, "--", &hunk.file_path]);
-        }
+    // Scan integrity on restored project
+    let scan = super::integrity::run_integrity_scan(app, project_path)?;
+    if !scan.issues.is_empty() {
+        journal.update("restore", "FAILED", Some(commit_hash.to_string()))?;
+        return Err(format!("Restore verification failed: {:?}", scan.issues));
     }
+
+    journal.update("restore", "COMPLETED", Some(commit_hash.to_string()))?;
+    journal.clear();
     Ok(())
 }
 
-pub fn read_commit_version(
-    app: &AppHandle,
-    project_path: &str,
-    commit_hash: &str,
-    file_path: &str,
-) -> Result<String, String> {
-    let git_path = super::git_provider::resolve_git_binary(app)?;
-    let git_dir = Path::new(project_path).join(".nexora").join("repo");
-    let work_tree = Path::new(project_path);
+// --- Helpers ---
 
-    let show_spec = format!("{}:{}", commit_hash, file_path);
-    super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["show", &show_spec])
+fn has_unstaged_changes(git_path: &Path, git_dir: &Path, work_tree: &Path) -> bool {
+    let status_stdout = super::git_provider::execute_git(git_path, git_dir, work_tree, &["status", "--porcelain", "-z"]).unwrap_or_default();
+    !status_stdout.trim().is_empty()
 }
 
-pub fn get_diff(
-    app: &AppHandle,
-    project_path: &str,
-    from_commit: &str,
-    to_commit: &str,
-) -> Result<String, String> {
+fn has_staged_changes(git_path: &Path, git_dir: &Path, work_tree: &Path) -> bool {
+    let diff_stdout = super::git_provider::execute_git(git_path, git_dir, work_tree, &["diff", "--cached", "--name-only", "-z"]).unwrap_or_default();
+    !diff_stdout.trim().is_empty()
+}
+
+fn parse_null_separated_diff(diff_stdout: &str) -> Vec<FileOpImport> {
+    let mut operations = Vec::new();
+    let parts: Vec<&str> = diff_stdout.split('\0').filter(|s| !s.trim().is_empty()).collect();
+    
+    let mut i = 0;
+    while i + 1 < parts.len() {
+        let status = parts[i].trim();
+        let file_path = parts[i + 1].trim();
+        
+        let operation_type = if status.starts_with('A') {
+            "created"
+        } else if status.starts_with('D') {
+            "deleted"
+        } else {
+            "modified"
+        };
+        
+        operations.push(FileOpImport {
+            file_path: file_path.to_string(),
+            operation_type: operation_type.to_string(),
+            old_path: None,
+        });
+        i += 2;
+    }
+    operations
+}
+
+pub fn run_git_maintenance(app: &AppHandle, project_path: &str) -> Result<(), String> {
+    let _lock = ProjectLock::acquire(project_path, "maintenance")?;
     let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
-    let work_tree = Path::new(project_path);
-
-    super::git_provider::execute_git(&git_path, &git_dir, work_tree, &["diff", from_commit, to_commit])
+    super::git_provider::run_gc_auto(&git_path, &git_dir)
 }

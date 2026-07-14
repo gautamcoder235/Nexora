@@ -149,3 +149,15 @@ pub fn verify_git_bundle(git_path: &Path, temp_git_dir: &Path, bundle_path: &str
         Err("Failed to initialize temporary git validation repository".to_string())
     }
 }
+
+pub fn run_gc_auto(git_path: &Path, git_dir: &Path) -> Result<(), String> {
+    let mut cmd = Command::new(git_path);
+    cmd.arg(format!("--git-dir={}", git_dir.to_string_lossy()));
+    cmd.arg("gc").arg("--auto");
+    let status = cmd.status().map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Git gc --auto failed".to_string())
+    }
+}

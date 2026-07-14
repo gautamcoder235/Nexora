@@ -1604,6 +1604,10 @@ pub fn run() {
         
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Initialize Memory Core workers
+            memory::database_worker::start_db_worker();
+            memory::scheduler::start_scheduler_worker();
+
             let app_handle = app.handle().clone();
             
             // Manage DbState with None connection synchronously to prevent Tauri command panics on missing state
@@ -1732,6 +1736,9 @@ pub fn run() {
             memory::commands::memory_read_version,
             memory::commands::memory_create_checkpoint,
             memory::commands::memory_is_initialized,
+            memory::commands::memory_run_integrity_check,
+            memory::commands::memory_run_repair,
+            memory::commands::memory_run_maintenance,
             ucte::ucte_create_snapshot,
             ucte::ucte_get_snapshot_diff,
             ucte::ucte_get_changes,

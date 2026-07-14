@@ -51,7 +51,7 @@ pub struct BackupMetadata {
     pub name: String,
     pub original_path: String,
     pub timestamp: String,
-    pub repo_bundle_hash: String,
+    pub repo_git_hash: String,
     pub memory_db_hash: String,
 }
 

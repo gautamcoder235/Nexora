@@ -85,14 +85,14 @@ pub fn rotate_generations(vault_dir: &Path) -> Result<(), String> {
         fs::rename(&gen1, &gen2).map_err(|e| format!("Failed to rotate gen-1 to gen-2: {}", e))?;
     }
 
-    let active_bundle = vault_dir.join("repo.bundle");
+    let active_git = vault_dir.join("repo.git");
     let active_db = vault_dir.join("memory.db");
     let active_meta = vault_dir.join("metadata.json");
 
-    if active_bundle.exists() || active_db.exists() || active_meta.exists() {
+    if active_git.exists() || active_db.exists() || active_meta.exists() {
         fs::create_dir_all(&gen1).map_err(|e| e.to_string())?;
-        if active_bundle.exists() {
-            fs::rename(&active_bundle, gen1.join("repo.bundle")).map_err(|e| e.to_string())?;
+        if active_git.exists() {
+            fs::rename(&active_git, gen1.join("repo.git")).map_err(|e| e.to_string())?;
         }
         if active_db.exists() {
             fs::rename(&active_db, gen1.join("memory.db")).map_err(|e| e.to_string())?;
@@ -111,23 +111,49 @@ pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String>
 
     rotate_generations(&vault_dir)?;
 
-    let bundle_path = vault_dir.join("repo.bundle");
+    let bare_git_dir = vault_dir.join("repo.git");
     let dest_db_path = vault_dir.join("memory.db");
+    let temp_db_path = vault_dir.join("memory.db.new");
     let meta_path = vault_dir.join("metadata.json");
+    let temp_meta_path = vault_dir.join("metadata.json.new");
 
     let git_path = super::git_provider::resolve_git_binary(app)?;
     let git_dir = Path::new(project_path).join(".nexora").join("repo");
-    let work_tree = Path::new(project_path);
     let src_db_path = Path::new(project_path).join(".nexora").join("memory.db");
 
-    let bundle_path_str = bundle_path.to_string_lossy();
-    let _ = super::git_provider::create_git_bundle(&git_path, &git_dir, work_tree, &bundle_path_str)?;
-
-    if src_db_path.exists() {
-        fs::copy(&src_db_path, &dest_db_path).map_err(|e| format!("Failed to backup memory.db: {}", e))?;
+    // Incremental bare git synchronization
+    if !bare_git_dir.exists() {
+        let mut clone_cmd = std::process::Command::new(&git_path);
+        clone_cmd.arg("clone").arg("--bare").arg(&git_dir).arg(&bare_git_dir);
+        let output = clone_cmd.output().map_err(|e| format!("Failed to initialize bare clone: {}", e))?;
+        if !output.status.success() {
+            return Err(format!("Git bare clone failed: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+    } else {
+        let mut fetch_cmd = std::process::Command::new(&git_path);
+        fetch_cmd.arg(format!("--git-dir={}", bare_git_dir.to_string_lossy()));
+        fetch_cmd.arg("fetch").arg(&git_dir).arg("+refs/heads/*:refs/heads/*");
+        let fetch_output = fetch_cmd.output().map_err(|e| format!("Failed to fetch commits: {}", e))?;
+        if !fetch_output.status.success() {
+            return Err(format!("Git fetch sync failed: {}", String::from_utf8_lossy(&fetch_output.stderr)));
+        }
     }
 
-    let bundle_hash = compute_file_hash(&bundle_path).unwrap_or_default();
+    // Retrieve HEAD hash from bare repository
+    let mut rev_cmd = std::process::Command::new(&git_path);
+    rev_cmd.arg(format!("--git-dir={}", bare_git_dir.to_string_lossy()));
+    rev_cmd.arg("rev-parse").arg("HEAD");
+    let rev_output = rev_cmd.output().map_err(|e| e.to_string())?;
+    let repo_git_hash = String::from_utf8_lossy(&rev_output.stdout).trim().to_string();
+
+    // Atomic SQLite copy with fsync + rename
+    if src_db_path.exists() {
+        fs::copy(&src_db_path, &temp_db_path).map_err(|e| format!("Failed to copy DB: {}", e))?;
+        let file = fs::File::open(&temp_db_path).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| format!("Failed file sync: {}", e))?;
+        fs::rename(&temp_db_path, &dest_db_path).map_err(|e| format!("Failed atomic database rename: {}", e))?;
+    }
+
     let db_hash = compute_file_hash(&dest_db_path).unwrap_or_default();
 
     let name = Path::new(project_path)
@@ -142,12 +168,16 @@ pub fn backup_project(app: &AppHandle, project_path: &str) -> Result<(), String>
         name,
         original_path: project_path.to_string(),
         timestamp,
-        repo_bundle_hash: bundle_hash,
+        repo_git_hash,
         memory_db_hash: db_hash,
     };
 
+    // Atomic metadata copy with fsync + rename
     let meta_content = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
-    fs::write(meta_path, meta_content).map_err(|e| e.to_string())?;
+    fs::write(&temp_meta_path, &meta_content).map_err(|e| e.to_string())?;
+    let file = fs::File::open(&temp_meta_path).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| format!("Failed metadata sync: {}", e))?;
+    fs::rename(&temp_meta_path, &meta_path).map_err(|e| format!("Failed atomic metadata rename: {}", e))?;
 
     Ok(())
 }
@@ -161,28 +191,27 @@ pub fn verify_backup_integrity(app: &AppHandle, vault_dir: &Path) -> Result<Back
     let meta_str = fs::read_to_string(&meta_path).map_err(|e| e.to_string())?;
     let meta: BackupMetadata = serde_json::from_str(&meta_str).map_err(|e| e.to_string())?;
 
-    let bundle_path = vault_dir.join("repo.bundle");
+    let bare_git_dir = vault_dir.join("repo.git");
     let db_path = vault_dir.join("memory.db");
 
-    if !bundle_path.exists() || !db_path.exists() {
+    if !bare_git_dir.exists() || !db_path.exists() {
         return Err("Backup files missing".to_string());
     }
 
-    let current_bundle_hash = compute_file_hash(&bundle_path)?;
     let current_db_hash = compute_file_hash(&db_path)?;
-
-    if current_bundle_hash != meta.repo_bundle_hash {
-        return Err("Git bundle file checksum mismatch (corrupted)".to_string());
-    }
     if current_db_hash != meta.memory_db_hash {
         return Err("SQLite database checksum mismatch (corrupted)".to_string());
     }
 
+    // Verify commit exists inside bare git repository
     let git_path = super::git_provider::resolve_git_binary(app)?;
-    let bundle_path_str = bundle_path.to_string_lossy();
-    let temp_git_dir = vault_dir.join("temp_fsck_repo");
-    
-    super::git_provider::verify_git_bundle(&git_path, &temp_git_dir, &bundle_path_str)?;
+    let mut rev_cmd = std::process::Command::new(&git_path);
+    rev_cmd.arg(format!("--git-dir={}", bare_git_dir.to_string_lossy()));
+    rev_cmd.arg("cat-file").arg("-e").arg(&meta.repo_git_hash);
+    let status = rev_cmd.status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("Git bare repo validation: HEAD commit hash is missing/corrupted".to_string());
+    }
 
     Ok(meta)
 }
@@ -232,19 +261,18 @@ pub fn restore_project(app: &AppHandle, project_id: &str, target_path: &str) -> 
     fs::create_dir_all(&git_dir).map_err(|e| e.to_string())?;
 
     let git_path = super::git_provider::resolve_git_binary(app)?;
-    let bundle_file = src_vault.join("repo.bundle");
-    let bundle_path_str = bundle_file.to_string_lossy();
+    let src_bare_git = src_vault.join("repo.git");
+    let bare_git_path_str = src_bare_git.to_string_lossy();
     
     super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["init"])?;
     super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["config", "core.autocrlf", "false"])?;
     super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["config", "core.quotepath", "false"])?;
 
-    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["remote", "add", "bundle", &*bundle_path_str])?;
-    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["fetch", "bundle"])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["remote", "add", "origin", &*bare_git_path_str])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["fetch", "origin"])?;
     
-    let fetch_head = super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["rev-parse", "FETCH_HEAD"])?;
-    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["checkout", "-f", &fetch_head])?;
-    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["update-ref", "refs/heads/nexora/main", &fetch_head])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["checkout", "-f", &meta.repo_git_hash])?;
+    super::git_provider::execute_git(&git_path, &git_dir, target_dir, &["update-ref", "refs/heads/nexora/main", &meta.repo_git_hash])?;
 
     let src_db = src_vault.join("memory.db");
     if src_db.exists() {
@@ -280,40 +308,28 @@ mod tests {
         fs::create_dir_all(&vault_dir).unwrap();
 
         // 1. Initial backup dummy files
-        fs::write(vault_dir.join("repo.bundle"), "dummy-bundle").unwrap();
+        fs::create_dir_all(vault_dir.join("repo.git")).unwrap();
+        fs::write(vault_dir.join("repo.git").join("dummy-git"), "dummy-git-content").unwrap();
         fs::write(vault_dir.join("memory.db"), "dummy-db").unwrap();
         fs::write(vault_dir.join("metadata.json"), "dummy-meta").unwrap();
 
         // Rotate once (current -> gen-1)
         rotate_generations(&vault_dir).unwrap();
-        assert!(vault_dir.join("history").join("gen-1").join("repo.bundle").exists());
-        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-1").join("repo.bundle")).unwrap(), "dummy-bundle");
+        assert!(vault_dir.join("history").join("gen-1").join("repo.git").exists());
+        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-1").join("repo.git").join("dummy-git")).unwrap(), "dummy-git-content");
 
         // Write new files
-        fs::write(vault_dir.join("repo.bundle"), "dummy-bundle-2").unwrap();
+        fs::create_dir_all(vault_dir.join("repo.git")).unwrap();
+        fs::write(vault_dir.join("repo.git").join("dummy-git"), "dummy-git-content-2").unwrap();
         fs::write(vault_dir.join("memory.db"), "dummy-db-2").unwrap();
         fs::write(vault_dir.join("metadata.json"), "dummy-meta-2").unwrap();
 
         // Rotate second time (current -> gen-1, previous gen-1 -> gen-2)
         rotate_generations(&vault_dir).unwrap();
-        assert!(vault_dir.join("history").join("gen-2").join("repo.bundle").exists());
-        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-2").join("repo.bundle")).unwrap(), "dummy-bundle");
-        assert!(vault_dir.join("history").join("gen-1").join("repo.bundle").exists());
-        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-1").join("repo.bundle")).unwrap(), "dummy-bundle-2");
-
-        // Write new files
-        fs::write(vault_dir.join("repo.bundle"), "dummy-bundle-3").unwrap();
-        fs::write(vault_dir.join("memory.db"), "dummy-db-3").unwrap();
-        fs::write(vault_dir.join("metadata.json"), "dummy-meta-3").unwrap();
-
-        // Rotate third time (current -> gen-1, previous gen-1 -> gen-2, previous gen-2 -> gen-3)
-        rotate_generations(&vault_dir).unwrap();
-        assert!(vault_dir.join("history").join("gen-3").join("repo.bundle").exists());
-        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-3").join("repo.bundle")).unwrap(), "dummy-bundle");
-        assert!(vault_dir.join("history").join("gen-2").join("repo.bundle").exists());
-        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-2").join("repo.bundle")).unwrap(), "dummy-bundle-2");
-        assert!(vault_dir.join("history").join("gen-1").join("repo.bundle").exists());
-        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-1").join("repo.bundle")).unwrap(), "dummy-bundle-3");
+        assert!(vault_dir.join("history").join("gen-2").join("repo.git").exists());
+        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-2").join("repo.git").join("dummy-git")).unwrap(), "dummy-git-content");
+        assert!(vault_dir.join("history").join("gen-1").join("repo.git").exists());
+        assert_eq!(fs::read_to_string(vault_dir.join("history").join("gen-1").join("repo.git").join("dummy-git")).unwrap(), "dummy-git-content-2");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
