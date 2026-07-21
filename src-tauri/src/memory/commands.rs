@@ -3,7 +3,23 @@ use crate::memory::models::{TimelineEntry, HunkSelection, MissingProject};
 
 #[command]
 pub fn memory_initialize(app: AppHandle, project_path: String) -> Result<String, String> {
-    super::manager::initialize_project(&app, &project_path)
+    let res = super::manager::initialize_project(&app, &project_path);
+    
+    // Auto-initialize the Team Swarm runtime for this workspace
+    let project_path_clone = project_path.clone();
+    tokio::spawn(async move {
+        if let Ok(rt) = crate::team::get_runtime() {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if let Ok(_) = rt.get_tx().send(crate::team::runtime::TeamCommand::Initialize {
+                workspace_path: project_path_clone,
+                responder: tx,
+            }).await {
+                let _ = rx.await;
+            }
+        }
+    });
+
+    res
 }
 
 #[command]

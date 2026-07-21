@@ -14,6 +14,7 @@ use sysinfo::System;
 pub mod database;
 pub mod drivers;
 pub mod ucte;
+pub mod team;
 
 #[derive(Serialize, Clone, Default)]
 pub struct BackendMetrics {
@@ -1645,6 +1646,7 @@ pub fn run() {
             memory::scheduler::start_scheduler_worker();
 
             let app_handle = app.handle().clone();
+            team::initialize_team_runtime(app_handle.clone());
             
             // Manage DbState with None connection synchronously to prevent Tauri command panics on missing state
             app_handle.manage(database::DbState(std::sync::Mutex::new(None)));
@@ -1787,7 +1789,30 @@ pub fn run() {
             drivers::has_session_record,
             drivers::cleanup_agent_state,
             drivers::register_terminal_pid,
-            drivers::update_session_heartbeat
+            drivers::update_session_heartbeat,
+            team::get_team_nodes,
+            team::get_team_edges,
+            team::get_team_tasks,
+            team::get_team_messages,
+            team::send_directive,
+            team::pause_agent,
+            team::resume_agent,
+            team::kill_agent,
+            team::force_validation,
+            team::force_review,
+            team::rollback_task,
+            team::perform_team_action,
+            team::initialize_default_templates,
+            team::get_templates,
+            team::expand_template,
+            team::sort_and_validate_tasks,
+            team::get_swarm_artifacts,
+            team::promote_swarm_artifact,
+            team::add_swarm_artifact,
+            team::index_workspace,
+            team::get_symbols,
+            team::get_repo_map,
+            team::clear_all_messages
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

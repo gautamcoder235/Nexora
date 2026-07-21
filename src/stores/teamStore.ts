@@ -5,6 +5,7 @@ import { TeamNode, TeamEdge } from '../types/team';
 import { KanbanTask, TaskState } from '../types/task';
 import { AgentMessage, AgentRole } from '../types/agent';
 import { SystemEvent } from '../types/events';
+import { eventBus } from '../services/team/EventBus';
 
 interface TeamStoreState {
   nodes: TeamNode[];
@@ -131,8 +132,22 @@ export const useTeamStore = create<TeamStoreState>()(
       validationProfile: null,
 
       fetchState: async () => {
-        if (get().nodes.length === 0) {
-          set({ nodes: DEFAULT_NODES, edges: DEFAULT_EDGES });
+        try {
+          const nodes = await invoke<TeamNode[]>('get_team_nodes');
+          const edges = await invoke<TeamEdge[]>('get_team_edges');
+          const tasks = await invoke<KanbanTask[]>('get_team_tasks');
+          const messages = await invoke<AgentMessage[]>('get_team_messages');
+          
+          if (nodes && nodes.length > 0) {
+            set({ nodes, edges, tasks, messages });
+          } else if (get().nodes.length === 0) {
+            set({ nodes: DEFAULT_NODES, edges: DEFAULT_EDGES });
+          }
+        } catch (e) {
+          console.debug('Failed to fetch team state from backend. Keeping defaults.', e);
+          if (get().nodes.length === 0) {
+            set({ nodes: DEFAULT_NODES, edges: DEFAULT_EDGES });
+          }
         }
       },
 
@@ -140,33 +155,42 @@ export const useTeamStore = create<TeamStoreState>()(
 
       setAddAgentOpen: (open) => set({ isAddAgentOpen: open }),
 
-      addCustomAgent: (name, role, cliCommand, connections) => {
-        const id = `agent-${Date.now()}`;
-        const newNode: TeamNode = {
-          id,
-          label: name,
-          role,
-          status: 'idle',
-          lockedFiles: [],
-          currentTaskDescription: 'Standby',
-          cliCommand: cliCommand || undefined,
-          promptContext: [`SYSTEM: You are a custom ${role} agent.`]
-        };
+      addCustomAgent: async (name, role, cliCommand, connections) => {
+        try {
+          await invoke('perform_team_action', {
+            actionType: 'Spawn',
+            payload: { name, role, cliCommand, connections }
+          });
+        } catch (e) {
+          console.debug('Failed to spawn agent:', e);
+          
+          const id = `agent-${Date.now()}`;
+          const newNode: TeamNode = {
+            id,
+            label: name,
+            role,
+            status: 'idle',
+            lockedFiles: [],
+            currentTaskDescription: 'Standby',
+            cliCommand: cliCommand || undefined,
+            promptContext: [`SYSTEM: You are a custom ${role} agent.`]
+          };
 
-        const newEdges: TeamEdge[] = connections.map((connId) => ({
-          id: `e-${id}-${connId}`,
-          source: id,
-          target: connId,
-          messageCount: 0,
-          reviewRequests: 0,
-          taskTransfers: 0,
-          isActive: false
-        }));
+          const newEdges: TeamEdge[] = connections.map((connId) => ({
+            id: `e-${id}-${connId}`,
+            source: id,
+            target: connId,
+            messageCount: 0,
+            reviewRequests: 0,
+            taskTransfers: 0,
+            isActive: false
+          }));
 
-        set((state) => ({
-          nodes: [...state.nodes, newNode],
-          edges: [...state.edges, ...newEdges]
-        }));
+          set((state) => ({
+            nodes: [...state.nodes, newNode],
+            edges: [...state.edges, ...newEdges]
+          }));
+        }
       },
 
       updateAgentProperties: (agentId, updates) => {
@@ -176,17 +200,22 @@ export const useTeamStore = create<TeamStoreState>()(
       },
 
       sendDirective: async (agentId, content) => {
-        const userMsg: AgentMessage = {
-          id: `m-user-${Date.now()}`,
-          sender: 'user',
-          content,
-          timestamp: new Date(),
-          blockId: null
-        };
+        try {
+          await invoke('send_directive', { agentId, content });
+        } catch (e) {
+          console.debug('Failed to send directive backend call. Falling back locally.', e);
+          const userMsg: AgentMessage = {
+            id: `m-user-${Date.now()}`,
+            sender: 'user',
+            content,
+            timestamp: new Date(),
+            blockId: null
+          };
 
-        set((state) => ({
-          messages: [...state.messages, userMsg]
-        }));
+          set((state) => ({
+            messages: [...state.messages, userMsg]
+          }));
+        }
 
         const targetNode = agentId
           ? get().nodes.find((n) => n.id === agentId)
@@ -269,32 +298,88 @@ export const useTeamStore = create<TeamStoreState>()(
       },
 
       pauseAgent: async (agentId) => {
-        set((state) => ({
-          nodes: state.nodes.map((n) => (n.id === agentId ? { ...n, status: 'paused' } : n))
-        }));
+        try {
+          await invoke('pause_agent', { agentId });
+        } catch (e) {
+          console.debug('Failed to pause agent on backend. Fallback locally.', e);
+          set((state) => ({
+            nodes: state.nodes.map((n) => (n.id === agentId ? { ...n, status: 'paused' } : n))
+          }));
+        }
       },
 
       resumeAgent: async (agentId) => {
-        set((state) => ({
-          nodes: state.nodes.map((n) => (n.id === agentId ? { ...n, status: 'running' } : n))
-        }));
+        try {
+          await invoke('resume_agent', { agentId });
+        } catch (e) {
+          console.debug('Failed to resume agent on backend. Fallback locally.', e);
+          set((state) => ({
+            nodes: state.nodes.map((n) => (n.id === agentId ? { ...n, status: 'running' } : n))
+          }));
+        }
       },
 
       releaseLocks: async (agentId) => {
-        set((state) => ({
-          nodes: state.nodes.map((n) => (n.id === agentId ? { ...n, lockedFiles: [] } : n))
-        }));
+        try {
+          await invoke('perform_team_action', {
+            actionType: 'ReleaseLocks',
+            payload: { agentId }
+          });
+        } catch (e) {
+          console.debug('Failed to release locks on backend. Fallback locally.', e);
+          set((state) => ({
+            nodes: state.nodes.map((n) => (n.id === agentId ? { ...n, lockedFiles: [] } : n))
+          }));
+        }
       },
 
-      clearAllMessages: async () => { set({ messages: [] }); },
+      clearAllMessages: async () => {
+        try {
+          await invoke('clear_all_messages');
+        } catch (e) {
+          console.debug('Failed to clear messages on backend. Fallback locally.', e);
+          set({ messages: [] });
+        }
+      },
 
       setTeamPanelVisible: (visible) => set({ isTeamPanelVisible: visible }),
 
       setTeamPanelHeight: (height) => set({ teamPanelHeight: height }),
 
       // Stub methods implementations
-      startExecutionPolling: () => () => {},
-      initializeListeners: () => () => {},
+      startExecutionPolling: () => {
+        const interval = setInterval(() => {
+          get().fetchState();
+        }, 2000);
+        return () => clearInterval(interval);
+      },
+      initializeListeners: () => {
+        const unsubAgent = eventBus.on('team://agent', () => {
+          get().fetchState();
+        });
+        const unsubTask = eventBus.on('team://task', () => {
+          get().fetchState();
+        });
+        const unsubMsg = eventBus.on('team://message', () => {
+          get().fetchState();
+        });
+        const unsubWorkspace = eventBus.on('team://workspace', () => {
+          get().fetchState();
+        });
+        const unsubRuntime = eventBus.on('team://runtime', () => {
+          get().fetchState();
+        });
+
+        get().fetchState();
+
+        return () => {
+          unsubAgent();
+          unsubTask();
+          unsubMsg();
+          unsubWorkspace();
+          unsubRuntime();
+        };
+      },
       loadExecutions: async () => {},
       selectExecution: () => {},
       setLaunchPanelOpen: () => {},
@@ -310,10 +395,22 @@ export const useTeamStore = create<TeamStoreState>()(
       updateTaskState: async () => {},
       quarantineAction: async () => {},
       pauseTeam: async () => {
-        set({ isTeamPaused: true });
+        try {
+          await invoke('perform_team_action', { actionType: 'PauseSwarm', payload: {} });
+          set({ isTeamPaused: true });
+        } catch (e) {
+          console.debug(e);
+          set({ isTeamPaused: true });
+        }
       },
       resumeTeam: async () => {
-        set({ isTeamPaused: false });
+        try {
+          await invoke('perform_team_action', { actionType: 'ResumeSwarm', payload: {} });
+          set({ isTeamPaused: false });
+        } catch (e) {
+          console.debug(e);
+          set({ isTeamPaused: false });
+        }
       }
     }),
     {
