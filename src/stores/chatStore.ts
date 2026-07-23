@@ -161,10 +161,11 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingMessageId: assistantMsgId 
       });
       
-      const { selectedModelId, apiKey } = get();
+      const { selectedModelId, selectedProviderId } = get();
+      const activeApiKey = get().apiKey || loadApiKeyForProvider(selectedProviderId);
 
-      // Check if real API key is available for cloud streaming
-      if (apiKey && apiKey.trim().length > 0) {
+      // Check if API key is available (or Ollama local provider)
+      if ((activeApiKey && activeApiKey.trim().length > 0) || selectedProviderId === 'ollama') {
         try {
           // Build messages array — support multimodal (images) for Vision-capable models
           const conversationMessages = kernel.getConversation(activeSessionId)?.messages || [];
@@ -176,15 +177,10 @@ export const useChatStore = create<ChatState>((set, get) => {
               const hasImageAttachments = m.attachments?.some((a: any) => a.isImage && a.base64);
               
               if (hasImageAttachments) {
-                // Build multimodal content parts (OpenAI Vision format)
                 const contentParts: any[] = [];
-                
-                // Add text content
                 if (m.content) {
                   contentParts.push({ type: 'text', text: m.content });
                 }
-                
-                // Add image parts
                 for (const att of (m.attachments || [])) {
                   if (att.isImage && att.base64) {
                     const mimeType = att.type || 'image/png';
@@ -197,7 +193,6 @@ export const useChatStore = create<ChatState>((set, get) => {
                     });
                   }
                 }
-                
                 apiMessages.push({ role: m.role, content: contentParts });
               } else {
                 apiMessages.push({ role: m.role, content: m.content });
@@ -205,21 +200,80 @@ export const useChatStore = create<ChatState>((set, get) => {
             }
           }
 
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
+          // Determine endpoint, headers, and body for provider
+          let endpoint = 'https://api.openai.com/v1/chat/completions';
+          let headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${activeApiKey}`
+          };
+          let bodyPayload: any = {
+            model: selectedModelId,
+            messages: apiMessages,
+            stream: true
+          };
+
+          if (selectedProviderId === 'deepseek') {
+            endpoint = 'https://api.deepseek.com/chat/completions';
+          } else if (selectedProviderId === 'google') {
+            endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+          } else if (selectedProviderId === 'ollama') {
+            endpoint = 'http://localhost:11434/v1/chat/completions';
+            headers = { 'Content-Type': 'application/json' };
+          } else if (selectedProviderId === 'anthropic') {
+            endpoint = 'https://api.anthropic.com/v1/messages';
+            headers = {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              model: selectedModelId,
-              messages: apiMessages,
+              'x-api-key': activeApiKey,
+              'anthropic-version': '2023-06-01',
+              'dangerously-allow-browser': 'true'
+            };
+            const anthropicMessages = apiMessages.filter(m => m.role !== 'system').map(m => ({
+              role: m.role,
+              content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map((c: any) => {
+                if (c.type === 'text') return { type: 'text', text: c.text };
+                if (c.type === 'image_url' && c.image_url?.url) {
+                  const matches = (c.image_url.url as string).match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+                  if (matches) {
+                    return {
+                      type: 'image',
+                      source: { type: 'base64', media_type: matches[1], data: matches[2] }
+                    };
+                  }
+                }
+                return c;
+              }) : m.content)
+            }));
+            const anthropicModel = selectedModelId === 'claude-sonnet-4' ? 'claude-3-5-sonnet-20241022' : selectedModelId === 'claude-opus-4' ? 'claude-3-opus-20240229' : selectedModelId;
+            bodyPayload = {
+              model: anthropicModel,
+              max_tokens: 4096,
+              messages: anthropicMessages,
               stream: true
-            })
+            };
+          }
+
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(bodyPayload)
           });
 
           if (!response.ok || !response.body) {
-            throw new Error(`API HTTP Error: ${response.statusText}`);
+            const errorText = await response.text().catch(() => '');
+            let errorMsg = errorText;
+            try {
+              const errJson = JSON.parse(errorText);
+              errorMsg = errJson.error?.message || errJson.message || errorText;
+            } catch {}
+
+            kernel.updateStreamingMessage(activeSessionId, assistantMsgId, {
+              type: 'content',
+              content: `### ❌ API Connection Error (${response.status} ${response.statusText})\n\n${errorMsg ? `\`\`\`\n${errorMsg}\n\`\`\`` : 'Failed to establish connection to AI provider endpoint.'}\n\nPlease check your **${selectedProviderId.toUpperCase()}** API key in **Settings ⚙️ → AI Runtime → API Keys**.`
+            });
+            kernel.updateStreamingMessage(activeSessionId, assistantMsgId, { type: 'done', content: '' });
+            kernel.transition(activeSessionId, 'idle');
+            set({ isStreaming: false, streamingMessageId: null });
+            return;
           }
 
           const reader = response.body.getReader();
@@ -241,7 +295,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                 if (data === '[DONE]') continue;
                 try {
                   const parsed = JSON.parse(data);
-                  const text = parsed.choices?.[0]?.delta?.content || '';
+                  const text = parsed.choices?.[0]?.delta?.content || parsed.delta?.text || '';
                   if (text) {
                     kernel.updateStreamingMessage(activeSessionId, assistantMsgId, {
                       type: 'content',
@@ -263,7 +317,14 @@ export const useChatStore = create<ChatState>((set, get) => {
           set({ isStreaming: false, streamingMessageId: null });
           return;
         } catch (err: any) {
-          console.warn('[chatStore] Live LLM API stream failed. Falling back to local tool execution runner.', err);
+          console.warn('[chatStore] Live LLM API stream network error:', err);
+          kernel.updateStreamingMessage(activeSessionId, assistantMsgId, {
+            type: 'content',
+            content: `### ⚠️ Network Error\n\nFailed to connect to **${selectedProviderId}** endpoint: ${err?.message || 'Network request failed.'}\n\nPlease check your internet connection and API key in Settings.`
+          });
+          kernel.updateStreamingMessage(activeSessionId, assistantMsgId, { type: 'done', content: '' });
+          set({ isStreaming: false, streamingMessageId: null });
+          return;
         }
       }
 
