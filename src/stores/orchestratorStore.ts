@@ -85,9 +85,10 @@ interface OrchestratorState {
   // Settings
   settings: AppSettings;
   isSettingsModalOpen: boolean;
+  settingsCategory: string | null;
   
   // Actions
-  setSettingsModalOpen: (isOpen: boolean) => void;
+  setSettingsModalOpen: (isOpen: boolean, category?: string) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
   resetSettings: () => void;
   
@@ -251,10 +252,11 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 
   settings: DEFAULT_APP_SETTINGS,
   isSettingsModalOpen: false,
+  settingsCategory: null,
 
   setAgentPanelPinned: (pinned) => { set({ isAgentPanelPinned: pinned }); get().saveSnapshot(); },
   setTaskPanelPinned: (pinned) => { set({ isTaskPanelPinned: pinned }); get().saveSnapshot(); },
-  setSettingsModalOpen: (isOpen) => set({ isSettingsModalOpen: isOpen }),
+  setSettingsModalOpen: (isOpen: boolean, category?: string) => set({ isSettingsModalOpen: isOpen, settingsCategory: category || null }),
   updateSettings: (updates) => {
     set((state) => {
       const merged = deepMerge(state.settings, updates);

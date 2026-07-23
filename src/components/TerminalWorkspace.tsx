@@ -470,12 +470,12 @@ export const TerminalWorkspace: React.FC = () => {
         </div>
 
         {/* Action Controls & Layout Toggles */}
-        <div className="flex items-center gap-1 bg-[var(--bg-secondary)] border border-[var(--border-glass)] rounded-md">
+        <div className="flex items-center gap-1 bg-[var(--bg-secondary)] border border-[var(--border-glass)] p-0.5 rounded-md">
           {/* Refresh Controls */}
           <button
             onClick={() => setGlobalRefreshKey(prev => prev + 1)}
             title="Refresh All Terminals"
-            className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass)] cursor-pointer transition-colors"
+            className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] cursor-pointer transition-colors"
           >
             <RefreshCw size={11.5} />
           </button>
@@ -485,8 +485,8 @@ export const TerminalWorkspace: React.FC = () => {
             title={isTaskCenterVisible ? "Hide Task Board" : "Show Task Board"}
             className={`p-1 rounded cursor-pointer transition-all ${
               isTaskCenterVisible 
-                ? 'bg-[var(--border-glass-hover)] text-[var(--accent-primary)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass)]'
+                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
             }`}
           >
             <ClipboardList size={11.5} />
@@ -501,8 +501,8 @@ export const TerminalWorkspace: React.FC = () => {
             title="Grid Layout"
             className={`p-1 rounded transition-all cursor-pointer ${
               layout.type === 'grid' 
-                ? 'bg-[var(--border-glass-hover)] text-[var(--text-primary)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
             }`}
           >
             <LayoutGrid size={11.5} />
@@ -512,8 +512,8 @@ export const TerminalWorkspace: React.FC = () => {
             title="Vertical Splits"
             className={`p-1 rounded transition-all cursor-pointer ${
               layout.type === 'vertical' 
-                ? 'bg-[var(--border-glass-hover)] text-[var(--text-primary)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
             }`}
           >
             <Columns2 size={11.5} />
@@ -523,8 +523,8 @@ export const TerminalWorkspace: React.FC = () => {
             title="Horizontal Splits"
             className={`p-1 rounded transition-all cursor-pointer ${
               layout.type === 'horizontal' 
-                ? 'bg-[var(--border-glass-hover)] text-[var(--text-primary)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
             }`}
           >
             <Rows2 size={11.5} />

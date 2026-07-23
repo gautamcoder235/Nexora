@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -24,15 +23,19 @@ pub async fn start_ipc_server(app_handle: AppHandle) {
     let pipe_name = r"\\.\pipe\nexora-ipc";
     println!("[IPC Server] Starting Windows Named Pipe server on {}", pipe_name);
 
+    let mut is_first = true;
     loop {
         use tokio::net::windows::named_pipe::ServerOptions;
         
         let server_result = ServerOptions::new()
-            .first_pipe_instance(true)
+            .first_pipe_instance(is_first)
             .create(pipe_name);
             
-        let mut server = match server_result {
-            Ok(s) => s,
+        let server = match server_result {
+            Ok(s) => {
+                is_first = false;
+                s
+            },
             Err(e) => {
                 eprintln!("[IPC Server] Failed to create Named Pipe: {}", e);
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -103,57 +106,34 @@ pub async fn start_ipc_server(app_handle: AppHandle) {
 }
 
 async fn handle_request(raw_line: &str, _app: &AppHandle) -> IpcResponse {
-    let request: IpcRequest = match serde_json::from_str(raw_line) {
-        Ok(req) => req,
-        Err(e) => {
-            return IpcResponse {
-                jsonrpc: "2.0".to_string(),
-                result: None,
-                error: Some(serde_json::json!({
-                    "code": -32700,
-                    "message": format!("Parse error: {}", e)
-                })),
-                id: 0,
+    let parsed: Result<IpcRequest, _> = serde_json::from_str(raw_line);
+    match parsed {
+        Ok(req) => {
+            let result = match req.method.as_str() {
+                "ping" => Some(serde_json::json!({ "status": "pong", "version": "0.1.0" })),
+                "status" => Some(serde_json::json!({ "status": "running", "active_ptys": crate::get_active_pty_count() })),
+                "doctor" => Some(serde_json::json!({ "status": "healthy", "ipc": "connected" })),
+                _ => None,
             };
-        }
-    };
-
-    let result = match request.method.as_str() {
-        "chat/send" => {
-            let prompt = request.params.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
-            serde_json::json!({
-                "status": "success",
-                "reply": format!(
-                    "Hello from Nexora Desktop Application!\nReceived prompt: '{}'\nSystem Status: Idle, ready to orchestrate workspace commands.",
-                    prompt
-                )
-            })
-        }
-        "workspace/open" => {
-            let path = request.params.get("path").and_then(|p| p.as_str()).unwrap_or(".");
-            serde_json::json!({
-                "status": "success",
-                "path_opened": path,
-                "session_id": "0190a6e7-1339-78b1-bbfa-6b9432658b10"
-            })
-        }
-        _ => {
-            return IpcResponse {
-                jsonrpc: "2.0".to_string(),
-                result: None,
-                error: Some(serde_json::json!({
-                    "code": -32601,
-                    "message": "Method not found"
-                })),
-                id: request.id,
+            
+            let error = if result.is_none() {
+                Some(serde_json::json!({ "code": -32601, "message": "Method not found" }))
+            } else {
+                None
             };
-        }
-    };
 
-    IpcResponse {
-        jsonrpc: "2.0".to_string(),
-        result: Some(result),
-        error: None,
-        id: request.id,
+            IpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result,
+                error,
+                id: req.id,
+            }
+        },
+        Err(e) => IpcResponse {
+            jsonrpc: "2.0".to_string(),
+            result: None,
+            error: Some(serde_json::json!({ "code": -32700, "message": format!("Parse error: {}", e) })),
+            id: 0,
+        }
     }
 }

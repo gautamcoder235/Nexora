@@ -18,7 +18,8 @@ interface BrowserState {
   setActiveTab: (id: string) => void;
   navigateTab: (id: string, url: string) => void;
   setBrowserState: (state: Partial<BrowserState>) => void;
-  toggleBrowserPanel: () => void;
+  openBrowserPanel: (url?: string) => void;
+  toggleBrowserPanel: (url?: string) => void;
   toggleBrowserPanelPinned: () => void;
   setBrowserPanelWidth: (width: number) => void;
   toggleElementPicker: () => void;
@@ -155,26 +156,34 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   },
 
   setBrowserState: (newState) => {
+    const wasVisible = get().isBrowserPanelVisible;
     set(newState);
+    if (newState.isBrowserPanelVisible && !wasVisible) {
+      get().openBrowserPanel();
+    }
   },
 
-  toggleBrowserPanel: () => {
-    const { isBrowserPanelVisible, isElectronConnected } = get();
-    if (isBrowserPanelVisible) {
-      // Collapse UI panel and close Electron app
-      set({ isBrowserPanelVisible: false });
-      invoke("close_electron_browser").catch((err) => {
-        console.error("Failed to close electron browser:", err);
-      });
-    } else {
-      // Expand UI panel and ensure Electron window is launched/shown
-      set({ isBrowserPanelVisible: true });
-      
-      invoke("launch_electron_browser").then(() => {
-        // If already connected (pre-warmed), we don't need to poll
+  openBrowserPanel: (url?: string) => {
+    const { isElectronConnected, activeTabId, tabs } = get();
+    let targetUrl = url;
+
+    if (targetUrl) {
+      if (activeTabId && tabs.some((t) => t.id === activeTabId)) {
+        get().navigateTab(activeTabId, targetUrl);
+      } else {
+        get().addTab(targetUrl);
+      }
+    } else if (tabs.length === 0) {
+      get().addTab("http://localhost:3000");
+    }
+
+    // Keep extra in-app panel hidden — separate Electron browser window is used exclusively
+    set({ isBrowserPanelVisible: false });
+
+    invoke("launch_electron_browser", { url: targetUrl || undefined })
+      .then(() => {
         if (isElectronConnected) return;
 
-        // Rapidly poll the ping endpoint every 100ms for up to 2 seconds to establish connection instantly
         let attempts = 0;
         const interval = setInterval(async () => {
           attempts++;
@@ -190,9 +199,23 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
             }
           } catch (_) {}
         }, 100);
-      }).catch((err) => {
+      })
+      .catch((err) => {
         console.error("Failed to launch electron browser:", err);
       });
+  },
+
+  toggleBrowserPanel: (url?: string) => {
+    const { isElectronConnected } = get();
+    if (isElectronConnected && !url) {
+      // Close the separate Electron browser window
+      set({ isElectronConnected: false, isBrowserPanelVisible: false });
+      invoke("close_electron_browser").catch((err) => {
+        console.error("Failed to close electron browser:", err);
+      });
+    } else {
+      // Launch / focus the separate Electron browser window
+      get().openBrowserPanel(url);
     }
   },
 

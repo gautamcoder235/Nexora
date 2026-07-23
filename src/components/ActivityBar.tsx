@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { FolderPlus, FolderOpen, Plus, Trash2, Settings, Box, Zap, Globe, Bot, ClipboardList, LogOut, Edit2, GitPullRequest, Users } from "lucide-react";
+import { FolderPlus, FolderOpen, Plus, Trash2, Settings, Box, Zap, Globe, Bot, ClipboardList, LogOut, Edit2, GitPullRequest, Users, Sparkles } from "lucide-react";
 import { useOrchestratorStore } from "../stores/orchestratorStore";
 
 import { useTeamStore } from "../stores/teamStore";
 import { useBrowserStore } from "../stores/browserStore";
 import { useChangesetStore } from "../stores/changesetStore";
+import { useChatStore } from "../stores/chatStore";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -33,6 +34,9 @@ export const ActivityBar: React.FC = () => {
 
   const { isTeamPanelVisible, setTeamPanelVisible, nodes } = useTeamStore();
   const teamRunningCount = nodes.filter(n => n.status === "running").length;
+
+  const isChatPanelVisible = useChatStore(s => s.isChatPanelVisible);
+  const setChatPanelVisible = useChatStore(s => s.setChatPanelVisible);
 
   const [wsName, setWsName] = useState("");
   const [projName, setProjName] = useState("");
@@ -346,7 +350,6 @@ export const ActivityBar: React.FC = () => {
             </button>
 
 
-
             {/* Nexora Team Toggle */}
             <button
               onClick={() => setTeamPanelVisible(!isTeamPanelVisible)}
@@ -365,6 +368,19 @@ export const ActivityBar: React.FC = () => {
               )}
             </button>
 
+            {/* AI Chat Panel Toggle */}
+            <button
+              onClick={() => setChatPanelVisible(!isChatPanelVisible)}
+              className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
+                isChatPanelVisible
+                  ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.3)] shadow-lg shadow-[rgba(var(--accent-primary-rgb),0.15)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
+              }`}
+              title="Toggle AI Chat Panel (Runtime Kernel)"
+            >
+              <Sparkles size={20} className={isChatPanelVisible ? "text-[var(--accent-primary)] animate-pulse" : ""} />
+            </button>
+
             {/* Web Browser Panel Toggle */}
             <button
               onClick={() => useBrowserStore.getState().toggleBrowserPanel()}
@@ -376,13 +392,13 @@ export const ActivityBar: React.FC = () => {
                 }
               }}
               className={`relative w-9 h-9 rounded-xl activity-bar-btn flex items-center justify-center transition-all hover:scale-105 ${
-                useBrowserStore((s) => s.isBrowserPanelVisible)
+                useBrowserStore((s) => s.isElectronConnected)
                   ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.2)]'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--border-glass)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
-              title={useBrowserStore((s) => s.isBrowserPanelVisible) ? "Close Web Browser" : "Open Web Browser"}
+              title={useBrowserStore((s) => s.isElectronConnected) ? "Focus Web Browser Window" : "Open Web Browser"}
             >
-              <Globe size={20} />
+              <Globe size={20} className={useBrowserStore((s) => s.isElectronConnected) ? "text-[var(--accent-primary)]" : ""} />
             </button>
 
             {/* File Explorer Toggle */}

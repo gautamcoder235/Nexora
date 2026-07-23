@@ -17,6 +17,8 @@ import { useOrchestratorStore } from "./stores/orchestratorStore";
 import { useTeamStore } from "./stores/teamStore";
 import { useBrowserStore } from "./stores/browserStore";
 import { useChangesetStore } from "./stores/changesetStore";
+import { useChatStore } from "./stores/chatStore";
+import ChatPanel from "./components/chat/ChatPanel";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { PerformanceOverlay } from "./components/PerformanceOverlay";
 import { AnalyticsService } from "./services/analytics";
@@ -26,6 +28,7 @@ import { CustomDialog } from "./components/CustomDialog";
 import { SettingsModal } from "./components/SettingsModal";
 import { EventBus } from "./core/events";
 import { DEFAULT_APP_SETTINGS } from "./types";
+import { AIKernel } from "./core/ai/kernel/AIKernel";
 import { useShallow } from 'zustand/react/shallow';
 import { useDragPanel } from "./hooks/useDragPanel";
 
@@ -92,6 +95,7 @@ function App() {
   const initStore = useOrchestratorStore(s => s.initStore);
   const showConfirmDialog = useOrchestratorStore(s => s.showConfirmDialog);
   const activeWorkspaceId = useOrchestratorStore(s => s.activeWorkspaceId);
+  const isChatPanelVisible = useChatStore(s => s.isChatPanelVisible);
   const workspaces = useOrchestratorStore(useShallow(s => s.workspaces));
   const settings = useOrchestratorStore(useShallow(s => s.settings));
   const settingsShortcut = settings?.shortcuts?.openSettings || "Ctrl+,";
@@ -184,6 +188,7 @@ function App() {
   const setTaskPanelPinned = useOrchestratorStore(s => s.setTaskPanelPinned);
   const setSidebarWidth = useOrchestratorStore(s => s.setSidebarWidth);
   const setTopPanelHeight = useOrchestratorStore(s => s.setTopPanelHeight);
+  const isChatPanelPinned = useChatStore(s => s.isChatPanelPinned);
 
   const { 
     isReviewCenterOpen, 
@@ -1576,15 +1581,119 @@ function App() {
             </div>
           )}
 
-          {/* Bottom Panel (Terminal Workspace / Web Browser split) */}
+          {/* Bottom Panel (Terminal Workspace / Web Browser / Chat Panel split) */}
           <div className="flex-1 min-w-0 min-h-0 flex flex-row gap-1 relative overflow-hidden">
+            {/* AI Chat Panel (Floating Overlay Mode when Unpinned) */}
+            {isChatPanelVisible && !isChatPanelPinned && (() => {
+              const chatPanelPosition = AIKernel.getInstance().getConfig().chatPanelPosition || 'right';
+              return (
+                <>
+                  {/* Click outside overlay to close unpinned chat panel */}
+                  <div 
+                    className="absolute inset-0 z-35 bg-black/10 cursor-default"
+                    onClick={() => useChatStore.getState().setChatPanelVisible(false)}
+                  />
+                  <div 
+                    className={`!absolute top-0 bottom-0 ${chatPanelPosition === 'left' ? 'left-0 animate-in slide-in-from-left-4' : 'right-0 animate-in slide-in-from-right-4'} w-[420px] max-w-[calc(100vw-64px)] z-40 flex flex-col glass-panel-elevated bg-[#0D0D10]/98 border border-border-glass shadow-2xl overflow-hidden duration-200`}
+                    style={{
+                      borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
+                        : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
+                        : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
+                        : settings?.appearance?.theme?.cornerRadius === 'large' ? '16px'
+                        : 'var(--radius-lg, 16px)'
+                    }}
+                  >
+                    <ChatPanel />
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* Docked AI Chat Panel (Left Docking) */}
+            {isChatPanelVisible && isChatPanelPinned && (AIKernel.getInstance().getConfig().chatPanelPosition === 'left') && (
+              <div
+                className="relative z-10 flex-shrink-0 w-[420px] h-full overflow-hidden glass-panel-elevated bg-[#0D0D10]/98 border border-border-glass transition-[width] duration-300 ease-out"
+                style={{
+                  borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
+                    : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
+                    : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
+                    : settings?.appearance?.theme?.cornerRadius === 'large' ? '16px'
+                    : 'var(--radius-lg, 16px)'
+                }}
+              >
+                <ChatPanel />
+              </div>
+            )}
+
             <div className="flex-1 min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
               <React.Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 font-mono text-xs">Loading terminal workspace...</div>}>
                 <TerminalWorkspace />
               </React.Suspense>
             </div>
 
+            {/* Docked AI Chat Panel (Right Docking) */}
+            {isChatPanelVisible && isChatPanelPinned && (AIKernel.getInstance().getConfig().chatPanelPosition !== 'left') && (
+              <div
+                className="relative z-10 flex-shrink-0 w-[420px] h-full overflow-hidden glass-panel-elevated bg-[#0D0D10]/98 border border-border-glass transition-[width] duration-300 ease-out"
+                style={{
+                  borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
+                    : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
+                    : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
+                    : settings?.appearance?.theme?.cornerRadius === 'large' ? '16px'
+                    : 'var(--radius-lg, 16px)'
+                }}
+              >
+                <ChatPanel />
+              </div>
+            )}
 
+
+
+            {/* Embedded Web Browser Panel */}
+            {isBrowserPanelVisible && activeWs && (
+              <>
+                {/* Resizer Handle */}
+                <div
+                  onMouseDown={startBrowserResize}
+                  onDoubleClick={toggleBrowserPanelPinned}
+                  className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-35"
+                  style={{
+                    right: isBrowserPanelPinned
+                      ? `calc(var(--browser-panel-width) - 4px)`
+                      : `calc(min(var(--browser-panel-width), 100%) - 4px)`
+                  }}
+                  title="Drag to resize browser panel, Double-click to toggle pin"
+                >
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
+                  </div>
+                </div>
+
+                {/* Backdrop overlay for unpinned browser panel */}
+                {!isBrowserPanelPinned && (
+                  <div 
+                    className="absolute inset-0 z-20 bg-black/20 cursor-default"
+                    onClick={() => toggleBrowserPanel()}
+                  />
+                )}
+
+                {/* Browser Panel Container */}
+                <div
+                  className={`${
+                    isBrowserPanelPinned
+                      ? 'relative z-10 flex-shrink-0'
+                      : '!absolute right-0 top-0 bottom-0 z-30 shadow-2xl'
+                  } h-full overflow-hidden glass-panel bg-[#08080a] backdrop-blur-xl border border-border-glass rounded-lg ${
+                    isBrowserDragging ? '' : 'transition-[width] duration-300 ease-out'
+                  }`}
+                  style={{ width: 'var(--browser-panel-width)', maxWidth: '100%' }}
+                >
+                  <BrowserPanel />
+                </div>
+              </>
+            )}
 
             {/* Backdrop overlay for unpinned review center panel */}
             {isReviewCenterOpen && (

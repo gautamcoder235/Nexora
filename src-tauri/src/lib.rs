@@ -15,6 +15,7 @@ pub mod database;
 pub mod drivers;
 pub mod ucte;
 pub mod team;
+pub mod terminal;
 
 #[derive(Serialize, Clone, Default)]
 pub struct BackendMetrics {
@@ -1721,6 +1722,11 @@ pub fn run() {
 
                 let db_dur = start_db.elapsed().as_millis() as u64;
                 record_perf_timing("Database Initialization", db_dur);
+
+                let handle_ipc = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    terminal::ipc_server::start_ipc_server(handle_ipc).await;
+                });
             });
 
             Ok(())

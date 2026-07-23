@@ -3,13 +3,15 @@ import { useOrchestratorStore } from '../stores/orchestratorStore';
 import { invoke } from '@tauri-apps/api/core';
 import { 
   X, Save, RotateCcw, Monitor, Terminal, Zap, FileCode2, Package, Plus, Cpu, Keyboard, 
-  Palette, Pipette, Type, Layers, Eye, ShieldAlert, Accessibility, SplitSquareVertical, 
+  Palette, Pipette, Type, Layers, Eye, EyeOff, ShieldAlert, Accessibility, SplitSquareVertical, 
   ArrowLeftRight, Download, Upload, Search, AlertTriangle, Check, RefreshCw, ChevronDown, ChevronRight,
-  FolderOpen
+  FolderOpen, Sparkles, KeyRound
 } from 'lucide-react';
 import { AppSettings, DEFAULT_APP_SETTINGS, CustomCLI } from '../types';
 import { deepMerge } from '../utils/object';
 import { PluginRegistry } from '../plugins';
+import { AIKernel } from '../core/ai';
+import { useChatStore } from '../stores/chatStore';
 import { AgentPlugin } from '../plugins/types';
 import { CliEditorCard } from './CliEditorCard';
 import { AgentRegistryPanel } from './AgentRegistryPanel';
@@ -198,6 +200,7 @@ export const SettingsModal: React.FC = () => {
     isSettingsModalOpen, 
     setSettingsModalOpen, 
     settings, 
+    settingsCategory,
     updateSettings, 
     resetSettings,
     showAlertDialog,
@@ -212,6 +215,21 @@ export const SettingsModal: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAppearanceExpanded, setIsAppearanceExpanded] = useState(true);
   const [highlightedOptionId, setHighlightedOptionId] = useState<string | null>(null);
+
+  const [aiProviderId, setAiProviderId] = useState<string>(() => AIKernel.getInstance().getConfig().defaultProviderId || 'openai');
+  const [aiModelId, setAiModelId] = useState<string>(() => AIKernel.getInstance().getConfig().defaultModelId || 'gpt-4o');
+  const [aiChatPos, setAiChatPos] = useState<'left' | 'right'>(() => AIKernel.getInstance().getConfig().chatPanelPosition || 'right');
+
+  // API Key state — synced with chatStore
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
+    const storedKeys: Record<string, string> = {};
+    try {
+      const saved = localStorage.getItem('nexora_api_keys');
+      if (saved) Object.assign(storedKeys, JSON.parse(saved));
+    } catch {}
+    return storedKeys;
+  });
+  const [showApiKey, setShowApiKey] = useState(false);
 
   // CLI check states
   const [installedStatuses, setInstalledStatuses] = useState<Record<string, boolean>>({});
@@ -229,8 +247,14 @@ export const SettingsModal: React.FC = () => {
   React.useEffect(() => {
     if (isSettingsModalOpen) {
       setRawLocalSettings(deepMerge(DEFAULT_APP_SETTINGS, settings || {}));
+      setAiProviderId(AIKernel.getInstance().getConfig().defaultProviderId || 'openai');
+      setAiModelId(AIKernel.getInstance().getConfig().defaultModelId || 'gpt-4o');
+      setAiChatPos(AIKernel.getInstance().getConfig().chatPanelPosition || 'right');
+      if (settingsCategory) {
+        setActiveCategory(settingsCategory);
+      }
     }
-  }, [isSettingsModalOpen, settings]);
+  }, [isSettingsModalOpen, settings, settingsCategory]);
 
   const handleSave = () => {
     updateSettings(localSettings);
@@ -488,6 +512,7 @@ export const SettingsModal: React.FC = () => {
       label: 'General Settings',
       categories: [
         { id: 'shell', label: 'Shell Configuration', icon: <FileCode2 size={13} /> },
+        { id: 'ai_runtime', label: 'AI Runtime Kernel', icon: <Sparkles size={13} /> },
         { id: 'clis', label: 'Custom & Agent CLIs', icon: <Package size={13} /> },
         { id: 'registry', label: 'Agent Registry DB', icon: <Cpu size={13} /> },
         { id: 'performance', label: 'Performance & RAM', icon: <Zap size={13} /> },
@@ -864,6 +889,314 @@ export const SettingsModal: React.FC = () => {
                     onChange={(e) => updateLocalNested('confirmBeforeClosing', e.target.checked)}
                     className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
                   />
+                </div>
+              </div>
+            )}
+
+            {/* AI RUNTIME KERNEL CATEGORY */}
+            {activeCategory === 'ai_runtime' && (
+              <div className="space-y-6 max-w-2xl animate-in fade-in duration-200">
+                <div className="border-b border-border-glass pb-4">
+                  <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles size={16} className="text-accent-primary" />
+                    AI Runtime Kernel Configuration
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-sans mt-0.5">
+                    Configure intelligence providers, resource budgets, tool permission policies, and observation loops.
+                  </p>
+                </div>
+
+                {/* Section: Default LLM Provider & Model */}
+                <div className="space-y-4 bg-[#09090b]/80 p-4 border border-border-glass rounded-xl">
+                  <div className="text-xs font-semibold text-accent-primary uppercase tracking-wider flex items-center gap-2">
+                    <Cpu size={14} />
+                    Default Intelligence Provider & Model
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 font-sans">
+                    {(() => {
+                      const PROVIDER_MODELS_MAP: Record<string, Array<{ id: string; name: string }>> = {
+                        openai: [
+                          { id: 'gpt-4o', name: 'gpt-4o (OpenAI)' },
+                          { id: 'gpt-4o-mini', name: 'gpt-4o-mini (OpenAI)' },
+                          { id: 'o3', name: 'o3 (OpenAI)' },
+                        ],
+                        anthropic: [
+                          { id: 'claude-sonnet-4', name: 'claude-sonnet-4 (Anthropic)' },
+                          { id: 'claude-opus-4', name: 'claude-opus-4 (Anthropic)' },
+                        ],
+                        google: [
+                          { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro (Google)' },
+                          { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash (Google)' },
+                        ],
+                        deepseek: [
+                          { id: 'deepseek-chat', name: 'deepseek-chat (DeepSeek)' },
+                          { id: 'deepseek-reasoner', name: 'deepseek-reasoner (DeepSeek)' },
+                        ],
+                        ollama: [
+                          { id: 'llama3', name: 'llama3 (Ollama Local)' },
+                          { id: 'qwen2.5-coder', name: 'qwen2.5-coder (Ollama Local)' },
+                        ]
+                      };
+
+                      const currentModels = PROVIDER_MODELS_MAP[aiProviderId] || PROVIDER_MODELS_MAP.openai;
+
+                      return (
+                        <>
+                          <div className="space-y-1.5">
+                            <label className="text-xs text-zinc-400 font-medium block">Default Provider</label>
+                            <select
+                              value={aiProviderId}
+                              onChange={(e) => {
+                                const newProvider = e.target.value;
+                                const models = PROVIDER_MODELS_MAP[newProvider] || [];
+                                const firstModel = models[0]?.id || 'gpt-4o';
+                                setAiProviderId(newProvider);
+                                setAiModelId(firstModel);
+                                AIKernel.getInstance().updateConfig({ defaultProviderId: newProvider, defaultModelId: firstModel });
+                                useChatStore.getState().switchModel(firstModel, newProvider);
+                              }}
+                              className="glass-input w-full font-mono text-xs py-1.5 cursor-pointer"
+                            >
+                              <option value="openai" className="bg-[#0f0f15]">OpenAI</option>
+                              <option value="anthropic" className="bg-[#0f0f15]">Anthropic</option>
+                              <option value="google" className="bg-[#0f0f15]">Google (Gemini)</option>
+                              <option value="deepseek" className="bg-[#0f0f15]">DeepSeek</option>
+                              <option value="ollama" className="bg-[#0f0f15]">Ollama (Local)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs text-zinc-400 font-medium block">Default Model</label>
+                            <select
+                              value={aiModelId}
+                              onChange={(e) => {
+                                const newModel = e.target.value;
+                                setAiModelId(newModel);
+                                AIKernel.getInstance().updateConfig({ defaultModelId: newModel });
+                                useChatStore.getState().switchModel(newModel, aiProviderId);
+                              }}
+                              className="glass-input w-full font-mono text-xs py-1.5 cursor-pointer"
+                            >
+                              {currentModels.map(m => (
+                                <option key={m.id} value={m.id} className="bg-[#0f0f15]">
+                                  {m.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5 col-span-2 mt-2 pt-2 border-t border-[#1e1e28]">
+                            <label className="text-xs text-zinc-400 font-medium block">Chat Panel Docking Position</label>
+                            <select
+                              value={aiChatPos}
+                              onChange={(e) => {
+                                const newPos = e.target.value as 'left' | 'right';
+                                setAiChatPos(newPos);
+                                AIKernel.getInstance().updateConfig({ chatPanelPosition: newPos });
+                                useChatStore.setState({}); // trigger re-render
+                              }}
+                              className="glass-input w-full font-mono text-xs py-1.5 cursor-pointer"
+                            >
+                              <option value="right" className="bg-[#0f0f15]">Right Side (Default)</option>
+                              <option value="left" className="bg-[#0f0f15]">Left Side</option>
+                            </select>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Section: API Keys */}
+                <div className="space-y-4 bg-[#09090b]/80 p-4 border border-border-glass rounded-xl">
+                  <div className="text-xs font-semibold text-accent-primary uppercase tracking-wider flex items-center gap-2">
+                    <KeyRound size={14} />
+                    API Keys
+                  </div>
+                  <p className="text-[10px] text-zinc-500 font-sans -mt-2">
+                    Enter your API key for the selected provider. Keys are stored locally and never transmitted to any server except the provider's API endpoint.
+                  </p>
+
+                  {/* Provider key cards */}
+                  {[
+                    { id: 'openai', name: 'OpenAI', placeholder: 'sk-...', link: 'https://platform.openai.com/api-keys' },
+                    { id: 'anthropic', name: 'Anthropic', placeholder: 'sk-ant-...', link: 'https://console.anthropic.com/' },
+                    { id: 'google', name: 'Google (Gemini)', placeholder: 'AIza...', link: 'https://aistudio.google.com/apikey' },
+                    { id: 'deepseek', name: 'DeepSeek', placeholder: 'sk-...', link: 'https://platform.deepseek.com/' },
+                  ].map((provider) => {
+                    const currentKey = apiKeys[provider.id] || '';
+                    const isActive = aiProviderId === provider.id;
+                    const isConfigured = currentKey.trim().length > 0;
+                    
+                    return (
+                      <div 
+                        key={provider.id}
+                        className={`p-3 rounded-lg border transition-all ${
+                          isActive 
+                            ? 'bg-[rgba(var(--accent-primary-rgb),0.06)] border-[rgba(var(--accent-primary-rgb),0.25)]'
+                            : 'bg-[#0c0c12] border-[#1e1e28]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-semibold ${isActive ? 'text-[var(--accent-primary)]' : 'text-zinc-300'}`}>
+                              {provider.name}
+                            </span>
+                            {isActive && (
+                              <span className="text-[8px] uppercase tracking-wider bg-[rgba(var(--accent-primary-rgb),0.15)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.3)] px-1.5 py-0.5 rounded-full font-bold">
+                                Active
+                              </span>
+                            )}
+                            {isConfigured && (
+                              <span className="text-[8px] uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded-full font-bold">
+                                Configured
+                              </span>
+                            )}
+                          </div>
+                          <a 
+                            href={provider.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[9px] text-zinc-500 hover:text-[var(--accent-primary)] transition-colors cursor-pointer"
+                          >
+                            Get Key →
+                          </a>
+                        </div>
+                        
+                        <div className="relative flex items-center gap-1.5">
+                          <input
+                            type={showApiKey ? 'text' : 'password'}
+                            value={currentKey}
+                            onChange={(e) => {
+                              const newKey = e.target.value;
+                              const updated = { ...apiKeys, [provider.id]: newKey };
+                              setApiKeys(updated);
+                              // Persist to localStorage
+                              try { localStorage.setItem('nexora_api_keys', JSON.stringify(updated)); } catch {}
+                              // Sync active provider key to chatStore
+                              if (provider.id === aiProviderId) {
+                                useChatStore.getState().setApiKey(newKey);
+                              }
+                            }}
+                            placeholder={provider.placeholder}
+                            className="flex-1 glass-input font-mono text-xs py-1.5 pr-8"
+                            spellCheck={false}
+                            autoComplete="off"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                            className="absolute right-2 p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+                            title={showApiKey ? 'Hide Key' : 'Show Key'}
+                          >
+                            {showApiKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Ollama note */}
+                  <div className="p-3 rounded-lg bg-[#0c0c12] border border-[#1e1e28]">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs font-semibold ${aiProviderId === 'ollama' ? 'text-[var(--accent-primary)]' : 'text-zinc-300'}`}>
+                        Ollama (Local)
+                      </span>
+                      {aiProviderId === 'ollama' && (
+                        <span className="text-[8px] uppercase tracking-wider bg-[rgba(var(--accent-primary-rgb),0.15)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.3)] px-1.5 py-0.5 rounded-full font-bold">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-500 font-sans">
+                      No API key needed — runs locally via <span className="font-mono text-zinc-400">ollama serve</span>. Install from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-primary)] hover:underline cursor-pointer">ollama.com</a>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Section: Resource Budgets */}
+                <div className="space-y-4 bg-[#09090b]/80 p-4 border border-border-glass rounded-xl">
+                  <div className="text-xs font-semibold text-accent-primary uppercase tracking-wider flex items-center gap-2">
+                    <Zap size={14} />
+                    Resource Budget Limits
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 font-sans">
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-zinc-300 font-medium block">Max Concurrent PTY Sessions</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={32}
+                        value={AIKernel.getInstance().getConfig().resourceBudget.maxPtySessions}
+                        onChange={(e) => AIKernel.getInstance().updateConfig({
+                          resourceBudget: { ...AIKernel.getInstance().getConfig().resourceBudget, maxPtySessions: parseInt(e.target.value) || 8 }
+                        })}
+                        className="glass-input w-full text-xs font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-zinc-300 font-medium block">Max Tokens Per Turn</label>
+                      <input
+                        type="number"
+                        step={1000}
+                        value={AIKernel.getInstance().getConfig().resourceBudget.maxTokensPerTurn}
+                        onChange={(e) => AIKernel.getInstance().updateConfig({
+                          resourceBudget: { ...AIKernel.getInstance().getConfig().resourceBudget, maxTokensPerTurn: parseInt(e.target.value) || 128000 }
+                        })}
+                        className="glass-input w-full text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section: Safety & Quality Controls */}
+                <div className="space-y-3 bg-[#09090b]/80 p-4 border border-border-glass rounded-xl font-sans">
+                  <div className="text-xs font-semibold text-accent-primary uppercase tracking-wider flex items-center gap-2 mb-1">
+                    <ShieldAlert size={14} />
+                    Autonomous Behavior & Safety Policies
+                  </div>
+
+                  <div className="flex items-center justify-between py-2 border-b border-[#232329]/30">
+                    <div>
+                      <label className="text-xs text-zinc-300 font-medium block">Auto-Approve Read & Safe Tools</label>
+                      <p className="text-[10px] text-zinc-500">Allow workspace reads, searches, and non-destructive tool calls without prompting.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={AIKernel.getInstance().getConfig().autoApproveSafeTools}
+                      onChange={(e) => AIKernel.getInstance().updateConfig({ autoApproveSafeTools: e.target.checked })}
+                      className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between py-2 border-b border-[#232329]/30">
+                    <div>
+                      <label className="text-xs text-zinc-300 font-medium block">Enable Supervised Observation Loop</label>
+                      <p className="text-[10px] text-zinc-500">Continuously monitor subagent execution and auto-correct output until goals complete.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={AIKernel.getInstance().getConfig().observationLoopEnabled}
+                      onChange={(e) => AIKernel.getInstance().updateConfig({ observationLoopEnabled: e.target.checked })}
+                      className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <label className="text-xs text-zinc-300 font-medium block">Enable Reflection Quality Gates</label>
+                      <p className="text-[10px] text-zinc-500">Automatically run tests and lint checks on generated code before marking tasks finished.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={AIKernel.getInstance().getConfig().reflectionEnabled}
+                      onChange={(e) => AIKernel.getInstance().updateConfig({ reflectionEnabled: e.target.checked })}
+                      className="w-4 h-4 rounded accent-accent-primary cursor-pointer"
+                    />
+                  </div>
                 </div>
               </div>
             )}

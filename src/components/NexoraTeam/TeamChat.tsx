@@ -73,58 +73,70 @@ export const TeamChat: React.FC = () => {
 
       {/* Messages Feed */}
       <div ref={feedRef} className="flex-1 p-4 overflow-y-auto space-y-3 min-h-0 select-text">
-        <AnimatePresence initial={false}>
-          {messages.map((msg) => {
-            const isUser = msg.sender === 'user';
-            const isSystem = msg.sender === 'system';
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500 font-sans select-none">
+            <div className="w-12 h-12 rounded-2xl bg-[#121218] border border-[#1B1B22] flex items-center justify-center mb-3 shadow-inner">
+              <MessageSquare className="w-6 h-6 text-[#7C5CFF]/60" />
+            </div>
+            <span className="text-xs font-semibold text-zinc-300 mb-1">Swarm Communication Log</span>
+            <p className="text-[10px] text-zinc-500 max-w-[220px] leading-relaxed">
+              No directives dispatched yet. Select an agent or broadcast default instructions to begin monitoring live team telemetry.
+            </p>
+          </div>
+        ) : (
+          <AnimatePresence initial={false}>
+            {messages.map((msg) => {
+              const isUser = msg.sender === 'user';
+              const isSystem = msg.sender === 'system';
 
-            return (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.15 }}
-                className={`p-3.5 rounded-xl border text-xs leading-relaxed flex gap-3 items-start ${getMessageStyle(
-                  msg.sender
-                )}`}
-              >
-                {/* Sender Icon */}
-                {!isSystem && (
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 border ${
-                    isUser 
-                      ? 'bg-[#7C5CFF]/20 text-[#7C5CFF] border-[#7C5CFF]/30' 
-                      : 'bg-[#0D0D10] text-zinc-400 border-[#1B1B22]'
-                  }`}>
-                    {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
-                  </div>
-                )}
-
-                {/* Message Body */}
-                <div className="flex-1 min-w-0">
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className={`p-3.5 rounded-xl border text-xs leading-relaxed flex gap-3 items-start ${getMessageStyle(
+                    msg.sender
+                  )}`}
+                >
+                  {/* Sender Icon */}
                   {!isSystem && (
-                    <div className="flex justify-between items-center mb-1 select-none">
-                      <span className="font-semibold text-zinc-200">
-                        {isUser ? 'Operator Directive' : msg.senderName || 'Agent Telemetry'}
-                      </span>
-                      <span className="text-[9px] text-zinc-500 font-mono">
-                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </span>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 border ${
+                      isUser 
+                        ? 'bg-[#7C5CFF]/20 text-[#7C5CFF] border-[#7C5CFF]/30' 
+                        : 'bg-[#0D0D10] text-zinc-400 border-[#1B1B22]'
+                    }`}>
+                      {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
                     </div>
                   )}
-                  <div className="whitespace-pre-wrap text-zinc-300 selection:bg-[#7C5CFF]/30">{msg.content}</div>
-                  
-                  {/* Associated block reference */}
-                  {msg.blockId && (
-                    <div className="mt-2 pt-2 border-t border-[#1B1B22] flex items-center gap-1 text-[9px] text-[#22C55E] font-mono select-none">
-                      <ShieldCheck className="w-3 h-3" /> 
-                      <span>Log verification block: {msg.blockId}</span>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+
+                  {/* Message Body */}
+                  <div className="flex-1 min-w-0">
+                    {!isSystem && (
+                      <div className="flex justify-between items-center mb-1 select-none">
+                        <span className="font-semibold text-zinc-200">
+                          {isUser ? 'Operator Directive' : msg.senderName || 'Agent Telemetry'}
+                        </span>
+                        <span className="text-[9px] text-zinc-500 font-mono">
+                          {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="whitespace-pre-wrap text-zinc-300 selection:bg-[#7C5CFF]/30">{msg.content}</div>
+                    
+                    {/* Associated block reference */}
+                    {msg.blockId && (
+                      <div className="mt-2 pt-2 border-t border-[#1B1B22] flex items-center gap-1 text-[9px] text-[#22C55E] font-mono select-none">
+                        <ShieldCheck className="w-3 h-3" /> 
+                        <span>Log verification block: {msg.blockId}</span>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        )}
       </div>
 
       {/* Input Action Form */}

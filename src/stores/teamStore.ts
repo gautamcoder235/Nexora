@@ -389,11 +389,61 @@ export const useTeamStore = create<TeamStoreState>()(
       rejectExecution: async () => {},
       loadDrafts: async () => {},
       discardDraft: async () => {},
-      sendSwarmCommand: async () => {},
-      rollbackTask: async () => {},
-      forceValidation: async () => {},
-      updateTaskState: async () => {},
-      quarantineAction: async () => {},
+      sendSwarmCommand: async (command: any) => {
+        try {
+          await invoke('perform_team_action', { actionType: 'SwarmCommand', payload: command });
+        } catch (e) {
+          console.debug('sendSwarmCommand failed:', e);
+        }
+      },
+      rollbackTask: async (taskId: string) => {
+        try {
+          await invoke('rollback_task', { taskId });
+        } catch (e) {
+          console.debug('rollback_task failed, falling back to local state:', e);
+        }
+        set((state) => ({
+          tasks: state.tasks.map((t) => (t.id === taskId ? { ...t, state: 'backlog' as TaskState } : t))
+        }));
+      },
+      forceValidation: async (taskId: string) => {
+        try {
+          await invoke('force_validation', { taskId });
+        } catch (e) {
+          console.debug('force_validation failed, falling back to local state:', e);
+        }
+        set((state) => ({
+          tasks: state.tasks.map((t) => (t.id === taskId ? { ...t, state: 'in_review' as TaskState } : t))
+        }));
+      },
+      updateTaskState: async (taskId: string, newState: TaskState) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) => (t.id === taskId ? { ...t, state: newState } : t))
+        }));
+        try {
+          await invoke('perform_team_action', {
+            actionType: 'UpdateTaskState',
+            payload: { taskId, newState }
+          });
+        } catch (e) {
+          console.debug('Backend updateTaskState failed:', e);
+        }
+      },
+      quarantineAction: async (taskId: string, action: 'clone' | 'apply' | 'discard') => {
+        try {
+          await invoke('perform_team_action', {
+            actionType: 'QuarantineAction',
+            payload: { taskId, action }
+          });
+        } catch (e) {
+          console.debug('Backend quarantineAction failed:', e);
+        }
+        if (action === 'discard') {
+          set((state) => ({
+            tasks: state.tasks.filter((t) => t.id !== taskId)
+          }));
+        }
+      },
       pauseTeam: async () => {
         try {
           await invoke('perform_team_action', { actionType: 'PauseSwarm', payload: {} });

@@ -257,22 +257,22 @@ const ReactFlowGraph: React.FC = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Node placement resolver
+  // Node placement resolver with safe non-overlapping vertical spacing
   const getNodePosition = (role: string, index: number, total: number) => {
     if (role === 'coordinator') {
-      return { x: 50, y: 140 };
+      return { x: 50, y: 160 };
     }
     if (role === 'reviewer') {
-      return { x: 600, y: 140 };
+      return { x: 640, y: 160 };
     }
     
-    // Workers vertical distribution
-    const step = 90; // Constant vertical step to prevent card overlap
-    const midY = 140; // The Y of coordinator and reviewer
-    const startY = midY - ((total - 1) * step) / 2; // Center the workers vertically around midY
+    // Workers vertical distribution with 120px step to prevent card overlap
+    const step = 120;
+    const midY = 160;
+    const startY = midY - ((total - 1) * step) / 2;
     return {
-      x: 320,
-      y: startY + index * step,
+      x: 340,
+      y: Math.max(40, startY + index * step),
     };
   };
 
@@ -280,7 +280,53 @@ const ReactFlowGraph: React.FC = () => {
     const workers = storeNodes.filter(n => n.role !== 'coordinator' && n.role !== 'reviewer');
     const totalWorkers = workers.length || 1;
 
-    const flowNodes: Node[] = storeNodes.map((n) => {
+    setNodes((prevNodes) => {
+      const prevMap = new Map(prevNodes.map(pn => [pn.id, pn.position]));
+
+      return storeNodes.map((n) => {
+        let position = prevMap.get(n.id);
+        if (!position) {
+          if (n.role === 'coordinator' || n.role === 'reviewer') {
+            position = getNodePosition(n.role, 0, 1);
+          } else {
+            const workerIndex = workers.findIndex(w => w.id === n.id);
+            position = getNodePosition(n.role, workerIndex, totalWorkers);
+          }
+        }
+
+        return {
+          id: n.id,
+          type: 'agentNode',
+          position,
+          data: {
+            node: n,
+            isInspected: activeInspectId === n.id,
+          },
+        };
+      });
+    });
+
+    const flowEdges: Edge[] = storeEdges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      type: 'customEdge',
+      data: { edge: e },
+      animated: e.isActive,
+    }));
+
+    setEdges(flowEdges);
+  }, [storeNodes, storeEdges, activeInspectId, setNodes, setEdges]);
+
+  const onNodeClick = (_: any, node: Node) => {
+    selectInspectNode(node.id);
+  };
+
+  const autoAlignGraph = () => {
+    const workers = storeNodes.filter(n => n.role !== 'coordinator' && n.role !== 'reviewer');
+    const totalWorkers = workers.length || 1;
+
+    const alignedNodes: Node[] = storeNodes.map((n) => {
       let position = { x: 0, y: 0 };
       if (n.role === 'coordinator' || n.role === 'reviewer') {
         position = getNodePosition(n.role, 0, 1);
@@ -300,24 +346,11 @@ const ReactFlowGraph: React.FC = () => {
       };
     });
 
-    const flowEdges: Edge[] = storeEdges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      type: 'customEdge',
-      data: { edge: e },
-      animated: e.isActive,
-    }));
-
-    setNodes(flowNodes);
-    setEdges(flowEdges);
-  }, [storeNodes, storeEdges, activeInspectId, setNodes, setEdges]);
-
-  const onNodeClick = (_: any, node: Node) => {
-    selectInspectNode(node.id);
+    setNodes(alignedNodes);
+    setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 50);
   };
 
-  // Auto-center the nodes in the viewport whenever nodes load/change
+  // Auto-center the nodes in the viewport whenever nodes count changes
   useEffect(() => {
     if (nodes.length > 0) {
       const timer = setTimeout(() => {
@@ -339,6 +372,8 @@ const ReactFlowGraph: React.FC = () => {
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
         fitView
         className="font-sans"
@@ -360,18 +395,19 @@ const ReactFlowGraph: React.FC = () => {
       {/* Floating utility controls */}
       <div className="absolute bottom-4 right-4 z-10 flex gap-2">
         <button
-          onClick={() => fitView({ padding: 0.2 })}
+          onClick={autoAlignGraph}
+          className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg bg-[#121218] border border-[#1B1B22] text-xs font-mono text-zinc-400 hover:text-white hover:border-zinc-700 transition-all shadow-md active:scale-95"
+          title="Auto align nodes into clean hierarchical columns"
+        >
+          <RefreshCw className="w-3.5 h-3.5 text-[#7C5CFF]" />
+          <span>Auto Align</span>
+        </button>
+        <button
+          onClick={() => fitView({ padding: 0.2, duration: 250 })}
           className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#121218] border border-[#1B1B22] text-zinc-400 hover:text-white transition-colors"
           title="Fit view"
         >
           <Maximize2 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => fitView({ padding: 0.2 })}
-          className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#121218] border border-[#1B1B22] text-zinc-400 hover:text-white transition-colors"
-          title="Recenter visualizer"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
