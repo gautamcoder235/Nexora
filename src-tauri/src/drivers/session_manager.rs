@@ -228,8 +228,8 @@ impl SessionManager {
         }
         
         // 2. Active if PID process is still alive (mitigates PID reuse by verifying lock timestamp)
-        let mut sys = sysinfo::System::new();
-        sys.refresh_all();
+        let mut sys = Box::new(sysinfo::System::new());
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         let sys_pid = sysinfo::Pid::from(lock_info.pid as usize);
         if sys.process(sys_pid).is_some() {
             return true;
@@ -292,8 +292,8 @@ impl SessionManager {
             return false;
         }
         
-        let mut sys = sysinfo::System::new();
-        sys.refresh_all();
+        let mut sys = Box::new(sysinfo::System::new());
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         
         if let Ok(entries) = fs::read_dir(locks_dir) {
             for entry in entries.flatten() {
@@ -343,8 +343,8 @@ impl SessionManager {
             return;
         }
         
-        let mut sys = sysinfo::System::new();
-        sys.refresh_all();
+        let mut sys = Box::new(sysinfo::System::new());
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         
         if let Ok(entries) = fs::read_dir(locks_dir) {
             for entry in entries.flatten() {

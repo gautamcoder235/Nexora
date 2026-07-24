@@ -46,6 +46,11 @@ pub fn record_perf_timing(key: &str, duration_ms: u64) {
 
 pub fn update_pty_heartbeat(session_id: &str, project_path: Option<String>, task_id: Option<String>) {
     if let Ok(mut map) = PTY_LAST_OUTPUT.lock() {
+        if let Some((last_time, _, _)) = map.get(session_id) {
+            if last_time.elapsed() < Duration::from_millis(1000) {
+                return; // Skip locking & updating if output was recorded < 1 second ago
+            }
+        }
         map.insert(session_id.to_string(), (Instant::now(), project_path, task_id));
     }
 }
@@ -141,7 +146,7 @@ fn create_raw_pty_session(_app: AppHandle, shell_type: &str) -> Result<PtySessio
 
     let (shell_cmd, final_args) = match shell_type {
         "powershell" => {
-            let ps_script = r#"function prompt { $val = if ($global:LastExitCode -ne $null) { $global:LastExitCode } else { 0 }; [Console]::Write("`e]133;D;$val`a"); [Console]::Write("`e]133;A`a"); $orig = "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> "; [Console]::Write("`e]133;B`a"); return $orig }"#;
+            let ps_script = r#"function prompt { "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> " }"#;
             ("powershell.exe".to_string(), vec!["-NoExit".to_string(), "-Command".to_string(), ps_script.to_string()])
         }
         "cmd" => {
@@ -308,31 +313,14 @@ fn start_pty_event_loop(
     let thread_task_id = task_id.clone();
     std::thread::spawn(move || {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut buffer = [0u8; 65536];
+            // Allocate read buffer on heap instead of stack to prevent stack buffer overrun (0xc0000409)
+            let mut buffer = vec![0u8; 16384];
             let mut backpressure_events = 0;
 
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break, // EOF, PTY closed
                     Ok(n) => {
-                        // Hook up PTY output logs directly to logs/builder.log
-                        if let (Some(ref p_path), Some(ref t_id)) = (&thread_project_path, &thread_task_id) {
-                            let log_file_path = std::path::Path::new(p_path)
-                                .join(".nexora")
-                                .join("tasks")
-                                .join(t_id)
-                                .join("logs")
-                                .join("builder.log");
-                            if let Ok(mut file) = std::fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(log_file_path)
-                            {
-                                use std::io::Write;
-                                let _ = file.write_all(&buffer[..n]);
-                            }
-                        }
-
                         // Update PTY Heartbeat
                         update_pty_heartbeat(&thread_session_id, thread_project_path.clone(), thread_task_id.clone());
 
@@ -386,55 +374,52 @@ fn start_pty_event_loop(
         let mut last_second_reset = Instant::now();
         let mut bytes_this_sec = 0;
         let mut events_this_sec = 0;
-        let mut events_per_sec = 0;
-        let mut bytes_per_sec = 0;
 
         let mut emit_durations = Vec::new();
 
         loop {
-            // Update per-second metrics
+            // Update per-second metrics and sync to global state ONCE per second (not 60Hz!)
             if last_second_reset.elapsed().as_millis() >= 1000 {
-                events_per_sec = events_this_sec;
-                bytes_per_sec = bytes_this_sec;
+                let events_per_sec = events_this_sec;
+                let bytes_per_sec = bytes_this_sec;
                 events_this_sec = 0;
                 bytes_this_sec = 0;
                 last_second_reset = Instant::now();
-                emit_durations.clear(); // Reset max/avg window every second
-            }
 
-            // Sync metrics to global state
-            {
-                let mut metrics = TERMINAL_METRICS.lock().unwrap_or_else(|e| e.into_inner());
-                let m = metrics
-                    .entry(session_id_clone.clone())
-                    .or_insert_with(BackendMetrics::default);
-                m.pending_bytes = buffer.len();
-                m.oldest_pending_age_ms = if buffer.is_empty() {
-                    0
-                } else {
-                    first_chunk_arrival
-                        .map(|t| t.elapsed().as_millis() as u64)
-                        .unwrap_or(0)
-                };
-                m.events_per_second = events_per_sec;
-                m.bytes_per_second = bytes_per_sec;
+                {
+                    let mut metrics = TERMINAL_METRICS.lock().unwrap_or_else(|e| e.into_inner());
+                    let m = metrics
+                        .entry(session_id_clone.clone())
+                        .or_insert_with(BackendMetrics::default);
+                    m.pending_bytes = buffer.len();
+                    m.oldest_pending_age_ms = if buffer.is_empty() {
+                        0
+                    } else {
+                        first_chunk_arrival
+                            .map(|t| t.elapsed().as_millis() as u64)
+                            .unwrap_or(0)
+                    };
+                    m.events_per_second = events_per_sec;
+                    m.bytes_per_second = bytes_per_sec;
 
-                if !emit_durations.is_empty() {
-                    let sum: u128 = emit_durations
-                        .iter()
-                        .map(|d: &Duration| d.as_micros())
-                        .sum();
-                    m.emit_avg_ms = (sum as f64 / emit_durations.len() as f64) / 1000.0;
-                    m.emit_max_ms = (emit_durations
-                        .iter()
-                        .map(|d: &Duration| d.as_micros())
-                        .max()
-                        .unwrap_or(0) as f64)
-                        / 1000.0;
-                } else {
-                    m.emit_avg_ms = 0.0;
-                    m.emit_max_ms = 0.0;
+                    if !emit_durations.is_empty() {
+                        let sum: u128 = emit_durations
+                            .iter()
+                            .map(|d: &Duration| d.as_micros())
+                            .sum();
+                        m.emit_avg_ms = (sum as f64 / emit_durations.len() as f64) / 1000.0;
+                        m.emit_max_ms = (emit_durations
+                            .iter()
+                            .map(|d: &Duration| d.as_micros())
+                            .max()
+                            .unwrap_or(0) as f64)
+                            / 1000.0;
+                    } else {
+                        m.emit_avg_ms = 0.0;
+                        m.emit_max_ms = 0.0;
+                    }
                 }
+                emit_durations.clear(); // Reset max/avg window every second
             }
 
             tokio::select! {
@@ -619,13 +604,27 @@ pub fn spawn_pty_internal(
 
         let (shell_cmd, final_args) = if cfg!(target_os = "windows") {
             if let Some(cmd) = command {
-                let mut wrapped_args = vec!["/c".to_string(), cmd];
-                if let Some(a) = args {
-                    wrapped_args.extend(a);
-                }
-                ("cmd.exe".to_string(), wrapped_args)
+                // Use powershell.exe -NoExit -ExecutionPolicy Bypass -Command to run custom commands.
+                // PowerShell natively resolves .ps1 scripts (e.g. opencode.ps1), .cmd, .exe, and npm global tools
+                // while correctly handling ConPTY capability sequences without leaking raw text.
+                let mut ps_args = vec![
+                    "-NoExit".to_string(),
+                    "-ExecutionPolicy".to_string(), "Bypass".to_string(),
+                    "-Command".to_string(),
+                ];
+                let full_cmd = if let Some(ref a) = args {
+                    if a.is_empty() {
+                        cmd
+                    } else {
+                        format!("{} {}", cmd, a.join(" "))
+                    }
+                } else {
+                    cmd
+                };
+                ps_args.push(full_cmd);
+                ("powershell.exe".to_string(), ps_args)
             } else {
-                let ps_script = r#"function prompt { $val = if ($global:LastExitCode -ne $null) { $global:LastExitCode } else { 0 }; [Console]::Write("`e]133;D;$val`a"); [Console]::Write("`e]133;A`a"); $orig = "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> "; [Console]::Write("`e]133;B`a"); return $orig }"#;
+                let ps_script = r#"function prompt { "PS $($ExecutionContext.SessionState.Path.CurrentLocation)> " }"#;
                 ("powershell.exe".to_string(), vec!["-NoExit".to_string(), "-Command".to_string(), ps_script.to_string()])
             }
         } else {
@@ -746,7 +745,7 @@ fn emit_buffer(app: &AppHandle, session_id: &str, buffer: &mut Vec<u8>) -> Optio
     }
 
     let start = Instant::now();
-    let max_chunk_size = 256 * 1024; // 256KB limit per payload
+    let max_chunk_size = 32 * 1024; // 32KB limit per payload (prevents Tokio async task stack overflow)
 
     let chunk_len = std::cmp::min(buffer.len(), max_chunk_size);
 
@@ -822,8 +821,10 @@ fn get_pty_process_info(session_id: String) -> Result<serde_json::Value, String>
         })),
     };
 
-    let mut sys = sysinfo::System::new();
-    sys.refresh_all();
+    // Box sysinfo::System on heap to avoid stack frame overflow (0xc0000409)
+    let mut sys = Box::new(sysinfo::System::new());
+    // Only refresh processes — do NOT run refresh_all() which scans disks/networks/sensors
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut children = Vec::new();
     let mut has_active_child = false;
@@ -1621,6 +1622,53 @@ async fn get_system_metrics() -> SystemMetrics {
 
 
 #[tauri::command]
+async fn curl_get(url: String) -> Result<String, String> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::process::Command::new("curl")
+            .args(&["-s", "-L", &url])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Request timed out after 10 seconds.".to_string())?
+    .map_err(|e| format!("Failed to execute curl: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8(output.stdout)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+    } else {
+        Err(format!("curl error: {}", String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
+#[tauri::command]
+async fn curl_post(url: String, headers: Vec<(String, String)>, body: String) -> Result<String, String> {
+    let mut cmd = tokio::process::Command::new("curl");
+    cmd.args(&["-s", "-X", "POST", &url]);
+    
+    for (k, v) in headers {
+        cmd.arg("-H").arg(format!("{}: {}", k, v));
+    }
+    
+    cmd.arg("-d").arg(&body);
+    
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        cmd.output(),
+    )
+    .await
+    .map_err(|_| "Request timed out after 60 seconds.".to_string())?
+    .map_err(|e| format!("Failed to execute curl: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8(output.stdout)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+    } else {
+        Err(format!("curl error: {}", String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
+#[tauri::command]
 fn exit_app(app_handle: AppHandle) {
     app_handle.exit(0);
 }
@@ -1732,6 +1780,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            curl_get,
+            curl_post,
             exit_app,
             get_perf_timings,
             memory::commands::backup_project_command,

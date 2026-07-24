@@ -26,9 +26,9 @@ export const DiffSummaryView: React.FC<DiffSummaryViewProps> = ({ changes }) => 
   if (changes.length === 0) return null;
 
   return (
-    <div className="w-full bg-[#08080a]/80 border border-[#22222e] rounded-xl overflow-hidden my-2 select-none">
+    <div className="w-full bg-[var(--bg-secondary)]/80 border border-[var(--border-glass)] rounded-xl overflow-hidden my-2 select-none">
       {/* Header Summary */}
-      <div className="flex items-center justify-between p-2.5 border-b border-[#22222e] bg-[#141419]/60 font-sans">
+      <div className="flex items-center justify-between p-2.5 border-b border-[var(--border-glass)] bg-[var(--bg-tertiary)]/60 font-sans">
         <div className="flex items-center space-x-3">
           <span className="text-xs font-semibold text-zinc-200">Changes Summary</span>
           <div className="flex items-center space-x-2 text-[10px] font-mono">
@@ -61,7 +61,7 @@ export const DiffSummaryView: React.FC<DiffSummaryViewProps> = ({ changes }) => 
           const isExpanded = expandedFile === change.path;
           
           return (
-            <div key={change.path} className="border-b border-[#1b1b24] last:border-0">
+            <div key={change.path} className="border-b border-[var(--border-glass)] last:border-0">
               <button
                 className="w-full flex items-center justify-between p-2 hover:bg-[var(--border-glass)] transition-colors group cursor-pointer"
                 onClick={() => setExpandedFile(isExpanded ? null : change.path)}
@@ -96,7 +96,7 @@ export const DiffSummaryView: React.FC<DiffSummaryViewProps> = ({ changes }) => 
 
               {/* Diff Preview */}
               {isExpanded && change.diffSnippet && (
-                <div className="p-2.5 bg-black/50 text-[10px] font-mono overflow-x-auto border-t border-[#1b1b24]">
+                <div className="p-2.5 bg-black/50 text-[10px] font-mono overflow-x-auto border-t border-[var(--border-glass)]">
                   <pre className="text-zinc-400 whitespace-pre-wrap leading-relaxed">
                     {change.diffSnippet.split('\n').map((line, i) => (
                       <div key={i} className={`

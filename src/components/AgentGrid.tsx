@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Cpu, Play, Square, Trash2, AlertCircle, GripVertical, MoreVertical, Edit2, Copy, RotateCcw, FileText, Trash, Bot } from "lucide-react";
+import { Cpu, Play, Square, Trash2, AlertCircle, GripVertical, MoreVertical, Edit2, Copy, RotateCcw, FileText, Trash, Bot, CheckSquare, Clock } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -307,21 +307,18 @@ const SortableAgentCard: React.FC<SortableAgentCardProps> = React.memo(({
         )}
 
 
-        {/* METRICS ROW */}
-        <div className={`grid grid-cols-3 gap-1 text-center bg-[var(--bg-tertiary)]/20 border border-[var(--border-glass)] rounded-md flex-shrink-0 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)] ${compact ? "p-1" : "p-1.5"}`}>
-          <div className="flex flex-col gap-0.5 min-w-0">
+        {/* METRICS ROW (2 Columns: Tasks & Activity) */}
+        <div className={`grid grid-cols-2 gap-1 text-center bg-[var(--bg-tertiary)]/40 border border-[var(--border-glass)] rounded-lg flex-shrink-0 select-none ${compact ? "py-1 px-1.5" : "py-1.5 px-2"}`}>
+          <div className="flex flex-col gap-0.5 justify-center min-w-0 px-1">
             <span className="text-[8px] uppercase font-bold text-[var(--text-muted)] font-mono tracking-wider truncate">Tasks</span>
-            <span className={`font-semibold text-[var(--text-secondary)] truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>{tasksCount}</span>
-          </div>
-          <div className="flex flex-col gap-0.5 border-x border-[var(--border-glass)] min-w-0">
-            <span className="text-[8px] uppercase font-bold text-[var(--text-muted)] font-mono tracking-wider truncate">Tokens</span>
-            <span className={`font-semibold text-[var(--text-secondary)] truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>
-              {isRunning ? "12K" : "84K"}
+            <span className={`font-bold font-mono text-[var(--text-primary)] truncate ${compact ? "text-[10.5px]" : "text-[12px]"}`}>
+              {tasksCount}
             </span>
           </div>
-          <div className="flex flex-col gap-0.5 min-w-0">
+
+          <div className="flex flex-col gap-0.5 justify-center border-l border-[var(--border-glass)] min-w-0 px-1">
             <span className="text-[8px] uppercase font-bold text-[var(--text-muted)] font-mono tracking-wider truncate">Activity</span>
-            <span className={`font-semibold text-[var(--text-secondary)] truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>
+            <span className={`font-bold font-mono ${isRunning ? 'text-emerald-400 font-semibold' : 'text-[var(--text-primary)]'} truncate ${compact ? "text-[10.5px]" : "text-[12px]"}`}>
               {isRunning ? formatRuntime(runtimeSeconds) : formatLastActiveHours(agent.lastActive)}
             </span>
           </div>

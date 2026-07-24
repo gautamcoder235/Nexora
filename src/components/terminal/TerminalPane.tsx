@@ -28,13 +28,19 @@ interface TerminalPaneProps {
   dragFileType?: 'image' | 'file' | null;
 }
 
+// Global limit on active WebGL contexts across all terminal panes.
+// Chromium/WebView2 enforces a hard limit of 8-16 WebGL contexts per document.
+// Exceeding this limit crashes the GPU process and turns the entire app pitch black.
+let activeWebglContextCount = 0;
+const MAX_WEBGL_CONTEXTS = 4;
+
 export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey, dragFileType = null }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const isAnimatingRef = useRef<boolean>(isAnimating);
 
-  const [isBlackout, setIsBlackout] = useState(true); // Always start fully blacked out
+  const [isBlackout, setIsBlackout] = useState(false);
   const isBlackoutRef = useRef(isBlackout);
   const blackoutTimerRef = useRef<any>(null);
 
@@ -130,94 +136,45 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     };
   }, [isAnimating]);
 
-  useEffect(() => {
-    let t1: any = null;
-    let t2: any = null;
+const fitTerminalToContainer = (term: Terminal | null, fitAddon: FitAddon | null, container: HTMLDivElement | null) => {
+  if (!term || !fitAddon || !container || container.clientWidth <= 10 || container.clientHeight <= 10) return;
+  try {
+    const core = (term as any)._core;
+    const renderService = core?._renderService;
+    const cellWidth = renderService?.dimensions?.css?.cell?.width || renderService?.dimensions?.device?.cell?.width;
+    const cellHeight = renderService?.dimensions?.css?.cell?.height || renderService?.dimensions?.device?.cell?.height;
     
+    if (cellWidth && cellHeight && cellWidth > 0 && cellHeight > 0) {
+      const availWidth = Math.max(0, container.clientWidth - 8);
+      const cols = Math.max(2, Math.floor(availWidth / cellWidth));
+      const rows = Math.max(2, Math.floor(container.clientHeight / cellHeight));
+      if (term.cols !== cols || term.rows !== rows) {
+        term.resize(cols, rows);
+      }
+    } else {
+      fitAddon.fit();
+    }
+  } catch (e) {
+    try { fitAddon.fit(); } catch (err) {}
+  }
+};
+
+  useEffect(() => {
     if (refreshKey && refreshKey > 0) {
       startBlackout();
-      // Allow DOM to process the blackout first, then trigger fit, then restore
-      t1 = setTimeout(() => {
-        if (termRef.current) {
-          try {
-            // Force a backend redraw by faking a tiny resize oscillation 
-            // to guarantee the kernel dispatches a SIGWINCH to the CLI.
-            // This forces interactive CLIs to completely reprint their layout from scratch.
-            termRef.current.clear();
-            const currentRows = termRef.current.rows;
-            const currentCols = termRef.current.cols;
-            
-            invoke('resize_pty', { 
-              sessionId: paneId, 
-              rows: currentRows, 
-              cols: Math.max(2, currentCols - 1) 
-            }).then(() => {
-              t2 = setTimeout(() => {
-                invoke('resize_pty', { 
-                  sessionId: paneId, 
-                  rows: currentRows, 
-                  cols: currentCols 
-                }).catch(() => {});
-              }, 50);
-            }).catch(() => {});
-
-          } catch (e) {
-            console.error('Manual redraw signal failed:', e);
-          }
-        }
-        
-        if (fitAddonRef.current) {
-          try {
-            fitAddonRef.current.fit();
-          } catch (e) {
-            console.error('Manual fit failed:', e);
-          }
-        }
+      const t = setTimeout(() => {
+        fitTerminalToContainer(termRef.current, fitAddonRef.current, containerRef.current);
         endBlackoutAfterDelay(800);
       }, 40);
+      return () => clearTimeout(t);
     }
-    
-    return () => {
-      if (t1) clearTimeout(t1);
-      if (t2) clearTimeout(t2);
-    };
   }, [refreshKey, paneId]);
 
-  // Auto-refresh ONCE at startup. Many heavy TUIs boot faster than the frontend finishes
-  // flexbox layout animations. This forces the PTY to redraw its static boundaries exactly 
-  // right before the initial blackout lifts, guaranteeing perfect layout synchronization.
   useEffect(() => {
-    let t1: any = null;
-    let t2: any = null;
-    
-    t1 = setTimeout(() => {
-      if (termRef.current) {
-        try {
-          const currentRows = termRef.current.rows;
-          const currentCols = termRef.current.cols;
-          
-          // Dispatch fake SIGWINCH via slight oscillation
-          invoke('resize_pty', { 
-            sessionId: paneId, 
-            rows: currentRows, 
-            cols: Math.max(2, currentCols - 1) 
-          }).then(() => {
-            t2 = setTimeout(() => {
-              invoke('resize_pty', { 
-                sessionId: paneId, 
-                rows: currentRows, 
-                cols: currentCols 
-              }).catch(() => {});
-            }, 50);
-          }).catch(() => {});
-        } catch (e) {}
-      }
-    }, 700);
-
-    return () => {
-      if (t1) clearTimeout(t1);
-      if (t2) clearTimeout(t2);
-    };
+    const t = setTimeout(() => {
+      fitTerminalToContainer(termRef.current, fitAddonRef.current, containerRef.current);
+    }, 150);
+    return () => clearTimeout(t);
   }, [paneId]);
 
   // Sync the ref synchronously during render to prevent layout reflow race conditions
@@ -303,6 +260,18 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
 
     term.open(containerRef.current);
 
+    // Register OSC 133 handler to silently consume shell integration sequences
+    // PowerShell/Bash/Zsh emit OSC 133 (semantic prompt markers: A=prompt start,
+    // B=prompt end, C=command start, D=command end) which xterm.js doesn't 
+    // recognize natively, causing raw text display like "e]133;D;0e]133;A".
+    // This handler absorbs them silently so they don't pollute the terminal output.
+    const parser = (term as any)._core?._inputHandler?._parser;
+    if (parser && typeof parser.registerOscHandler === 'function') {
+      parser.registerOscHandler(133, () => true); // Silently consume OSC 133
+    } else if (typeof (term as any).parser?.registerOscHandler === 'function') {
+      (term as any).parser.registerOscHandler(133, () => true);
+    }
+
     // Helper to safely check if WebGL2 is supported by the environment
     const isWebGL2Supported = () => {
       try {
@@ -319,14 +288,16 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
     // MUST be called AFTER term.open() according to xterm.js spec!
     const useGpu = settings?.appearance?.terminal?.hardwareAcceleration ?? settings?.hardwareAcceleration ?? true;
-    if (useGpu && isWebGL2Supported()) {
+    if (useGpu && activeWebglContextCount < MAX_WEBGL_CONTEXTS && isWebGL2Supported()) {
       try {
         const webglAddon = new WebglAddon();
         activeWebglAddon = webglAddon;
+        activeWebglContextCount++;
         
         // Safely handle WebGL context loss
         webglAddon.onContextLoss(() => {
-          console.warn('WebGL context lost. Disposing and falling back to Canvas renderer.');
+          console.warn('WebGL context lost. Falling back to Canvas renderer.');
+          activeWebglContextCount = Math.max(0, activeWebglContextCount - 1);
           // Defer to avoid crashing xterm's internal event dispatcher during the event
           setTimeout(() => {
             try { webglAddon.dispose(); } catch (e) {}
@@ -344,6 +315,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
         term.loadAddon(webglAddon);
       } catch (e) {
         console.warn('WebGL renderer initialization failed:', e);
+        activeWebglContextCount = Math.max(0, activeWebglContextCount - 1);
         try {
           const canvasAddon = new CanvasAddon();
           activeCanvasAddon = canvasAddon;
@@ -354,7 +326,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       }
     } else {
       // If WebGL2 is not supported, fallback cleanly without attempting initialization
-      console.warn('WebGL2 not supported. Falling back to Canvas renderer.');
       try {
         const canvasAddon = new CanvasAddon();
         activeCanvasAddon = canvasAddon;
@@ -370,7 +341,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     setTimeout(() => {
       requestAnimationFrame(() => {
         try {
-          fitAddon.fit();
+          fitTerminalToContainer(term, fitAddon, containerRef.current);
           invoke('resize_pty', {
             sessionId: paneId,
             rows: term.rows,
@@ -588,45 +559,39 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     registerListeners();
 
     // Resize observer
-    let resizeFrame: number | null = null;
     let resizeTimeout: any = null;
     let lastWidth = 0;
     let lastHeight = 0;
     const resizeObserver = new ResizeObserver((entries) => {
       if (entries.length === 0) return;
       const { width, height } = entries[0].contentRect;
-      if (Math.abs(width - lastWidth) < 1 && Math.abs(height - lastHeight) < 1) {
+      if (width <= 10 || height <= 10) {
+        return; // Ignore collapsed/hidden elements (prevents PTY crash on fullscreen toggle)
+      }
+      if (Math.abs(width - lastWidth) < 2 && Math.abs(height - lastHeight) < 2) {
         return; // Ignore subpixel flex layout shifts that don't change actual size
       }
       lastWidth = width;
       lastHeight = height;
 
-      // 2. Debounce normal resize events to save rendering time
-      if (resizeTimeout) clearTimeout(resizeTimeout);
-      
-      // Instantly hide the canvas during any resize event
+      // Smooth blackout mask during layout shifts / drag resizes / pane closures
       startBlackout();
 
-      // Jitter the timeout randomly to stagger mass GPU texture reallocations
-      // preventing Chromium GPU crashes when 15+ terminals resize simultaneously.
-      const staggerJitter = 40 + Math.random() * 80;
+      // Debounce resize events by 150ms during dragging.
+      // Zero resize_pty calls are sent while the mouse is actively dragging,
+      // preventing Bun/PTY TUI crashes (bun.report) from SIGWINCH storms.
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+
       resizeTimeout = setTimeout(() => {
-        if (resizeFrame) cancelAnimationFrame(resizeFrame);
-        resizeFrame = requestAnimationFrame((now) => {
-          terminalMetricsCollector.recordFrame(paneId, now);
-          if (containerRef.current) {
-            try {
-              fitAddon.fit();
-              // After fitting to the new idle size, start the 800ms blackout countdown!
-              if (!isAnimatingRef.current) {
-                endBlackoutAfterDelay(800);
-              }
-            } catch (e) {}
-          }
-          resizeFrame = null;
-        });
+        if (containerRef.current) {
+          try {
+            fitTerminalToContainer(term, fitAddon, containerRef.current);
+          } catch (e) {}
+        }
         resizeTimeout = null;
-      }, staggerJitter);
+        // Smoothly fade out the blackout mask after resizing completes
+        endBlackoutAfterDelay(200);
+      }, 150);
     });
     resizeObserver.observe(containerRef.current);
 
@@ -639,7 +604,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       disposed = true;
       bufferManager.unsubscribe(paneId);
       if (coalesceFrameId !== null) cancelAnimationFrame(coalesceFrameId);
-      if (resizeFrame) cancelAnimationFrame(resizeFrame);
       onDataDisposable.dispose();
       if (ptyResizeTimeout) clearTimeout(ptyResizeTimeout);
       onResizeDisposable.dispose();

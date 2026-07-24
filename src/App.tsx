@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal, GitBranch } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { TitleBar } from "./components/TitleBar";
@@ -235,6 +235,39 @@ function App() {
   const [showRenameWsModal, setShowRenameWsModal] = useState(false);
   const [renameWsId, setRenameWsId] = useState<string | null>(null);
   const [renameWsName, setRenameWsName] = useState("");
+
+  const [chatPanelWidth, setChatPanelWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('nexora_chat_width');
+      if (saved) return Math.min(Math.max(340, parseInt(saved, 10)), 850);
+    } catch {}
+    return 440;
+  });
+  const [isChatDragging, setIsChatDragging] = useState(false);
+
+  const startChatResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsChatDragging(true);
+    const startX = e.clientX;
+    const startWidth = chatPanelWidth;
+    const isLeft = AIKernel.getInstance().getConfig().chatPanelPosition === 'left';
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.min(Math.max(340, startWidth + (isLeft ? deltaX : -deltaX)), 850);
+      setChatPanelWidth(newWidth);
+      try { localStorage.setItem('nexora_chat_width', newWidth.toString()); } catch {}
+    };
+
+    const onMouseUp = () => {
+      setIsChatDragging(false);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [chatPanelWidth]);
 
   const workspaceInputRef = useRef<HTMLInputElement>(null);
   const [showBrowseAllModal, setShowBrowseAllModal] = useState(false);
@@ -1362,11 +1395,7 @@ function App() {
             )}
             
             {/* Drag handle button */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-              <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-            </div>
+            <div className="w-1 h-8 rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] group-active:bg-[var(--accent-primary)] transition-colors z-10" />
           </div>
         )}
 
@@ -1558,11 +1587,7 @@ function App() {
               title="Drag to resize top panel, Double-click to collapse"
             >
               {/* Drag handle button */}
-              <div className="h-1.5 w-6 rounded glass-panel transition-all duration-150 flex justify-center items-center gap-[2px] px-1 shadow-md">
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-              </div>
+              <div className="h-1 w-8 rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] group-active:bg-[var(--accent-primary)] transition-colors z-10" />
             </div>
           )}
 
@@ -1586,6 +1611,7 @@ function App() {
             {/* AI Chat Panel (Floating Overlay Mode when Unpinned) */}
             {isChatPanelVisible && !isChatPanelPinned && (() => {
               const chatPanelPosition = AIKernel.getInstance().getConfig().chatPanelPosition || 'right';
+              const isLeft = chatPanelPosition === 'left';
               return (
                 <>
                   {/* Click outside overlay to close unpinned chat panel */}
@@ -1594,8 +1620,9 @@ function App() {
                     onClick={() => useChatStore.getState().setChatPanelVisible(false)}
                   />
                   <div 
-                    className={`!absolute top-0 bottom-0 ${chatPanelPosition === 'left' ? 'left-0 animate-in slide-in-from-left-4' : 'right-0 animate-in slide-in-from-right-4'} w-[420px] max-w-[calc(100vw-64px)] z-40 flex flex-col glass-panel-elevated bg-[#0D0D10]/98 border border-border-glass shadow-2xl overflow-hidden duration-200`}
+                    className={`!absolute top-0 bottom-0 ${isLeft ? 'left-0 animate-in slide-in-from-left-4' : 'right-0 animate-in slide-in-from-right-4'} max-w-[calc(100vw-64px)] z-40 flex flex-col glass-panel-elevated bg-[var(--bg-primary)]/95 border border-[var(--border-glass)] shadow-2xl overflow-hidden ${isChatDragging ? '' : 'transition-[width] duration-200 ease-out'}`}
                     style={{
+                      width: `${chatPanelWidth}px`,
                       borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
                         : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
                         : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
@@ -1603,6 +1630,17 @@ function App() {
                         : 'var(--radius-lg, 16px)'
                     }}
                   >
+                    {/* Resizer Handle inside floating panel */}
+                    <div
+                      onMouseDown={startChatResize}
+                      className={`absolute top-0 bottom-0 ${isLeft ? 'right-0 cursor-e-resize' : 'left-0 cursor-w-resize'} w-2.5 z-50 transition-colors select-none flex flex-col justify-center items-center group`}
+                      title="Drag to resize floating chat panel"
+                    >
+                      {/* Vertical divider line */}
+                      <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-[1px] h-full transition-colors duration-150 ${isChatDragging ? 'bg-[var(--accent-primary)] shadow-[0_0_6px_var(--accent-primary)]' : 'bg-transparent group-hover:bg-[var(--accent-primary)]/50'}`} />
+                      <div className="w-1 h-8 rounded-full bg-zinc-700/60 group-hover:bg-[var(--accent-primary)] transition-colors z-10" />
+                    </div>
+
                     <ChatPanel />
                   </div>
                 </>
@@ -1611,18 +1649,31 @@ function App() {
 
             {/* Docked AI Chat Panel (Left Docking) */}
             {isChatPanelVisible && isChatPanelPinned && (AIKernel.getInstance().getConfig().chatPanelPosition === 'left') && (
-              <div
-                className="relative z-10 flex-shrink-0 w-[420px] h-full overflow-hidden glass-panel-elevated bg-[#0D0D10]/98 border border-border-glass transition-[width] duration-300 ease-out"
-                style={{
-                  borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
-                    : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
-                    : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
-                    : settings?.appearance?.theme?.cornerRadius === 'large' ? '16px'
-                    : 'var(--radius-lg, 16px)'
-                }}
-              >
-                <ChatPanel />
-              </div>
+              <>
+                <div
+                  className={`relative z-10 flex-shrink-0 h-full overflow-hidden glass-panel-elevated bg-[var(--bg-primary)]/95 border border-[var(--border-glass)] ${isChatDragging ? '' : 'transition-[width] duration-200 ease-out'}`}
+                  style={{
+                    width: `${chatPanelWidth}px`,
+                    borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
+                      : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
+                      : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
+                      : settings?.appearance?.theme?.cornerRadius === 'large' ? '16px'
+                      : 'var(--radius-lg, 16px)'
+                  }}
+                >
+                  <ChatPanel />
+                </div>
+                {/* Resizer Handle */}
+                <div
+                  onMouseDown={startChatResize}
+                  className="relative z-20 w-2.5 h-full cursor-col-resize transition-colors select-none flex flex-col justify-center items-center group flex-shrink-0"
+                  title="Drag to resize chat panel"
+                >
+                  {/* Vertical divider line */}
+                  <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-[1px] h-full transition-colors duration-150 ${isChatDragging ? 'bg-[var(--accent-primary)] shadow-[0_0_6px_var(--accent-primary)]' : 'bg-transparent group-hover:bg-[var(--accent-primary)]/50'}`} />
+                  <div className="w-1 h-8 rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] transition-colors z-10" />
+                </div>
+              </>
             )}
 
             <div className="flex-1 min-h-0 flex flex-col glass-panel px-2 pb-2 pt-1 overflow-hidden">
@@ -1633,18 +1684,32 @@ function App() {
 
             {/* Docked AI Chat Panel (Right Docking) */}
             {isChatPanelVisible && isChatPanelPinned && (AIKernel.getInstance().getConfig().chatPanelPosition !== 'left') && (
-              <div
-                className="relative z-10 flex-shrink-0 w-[420px] h-full overflow-hidden glass-panel-elevated bg-[#0D0D10]/98 border border-border-glass transition-[width] duration-300 ease-out"
-                style={{
-                  borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
-                    : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
-                    : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
-                    : settings?.appearance?.theme?.cornerRadius === 'large' ? '16px'
-                    : 'var(--radius-lg, 16px)'
-                }}
-              >
-                <ChatPanel />
-              </div>
+              <>
+                {/* Resizer Handle */}
+                <div
+                  onMouseDown={startChatResize}
+                  className="relative z-20 w-2.5 h-full cursor-col-resize transition-colors select-none flex flex-col justify-center items-center group flex-shrink-0"
+                  title="Drag to resize chat panel"
+                >
+                  {/* Vertical divider line */}
+                  <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-[1px] h-full transition-colors duration-150 ${isChatDragging ? 'bg-[var(--accent-primary)] shadow-[0_0_6px_var(--accent-primary)]' : 'bg-transparent group-hover:bg-[var(--accent-primary)]/50'}`} />
+                  <div className="w-1 h-8 rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] transition-colors z-10" />
+                </div>
+
+                <div
+                  className={`relative z-10 flex-shrink-0 h-full overflow-hidden glass-panel-elevated bg-[var(--bg-primary)]/95 border border-[var(--border-glass)] ${isChatDragging ? '' : 'transition-[width] duration-200 ease-out'}`}
+                  style={{
+                    width: `${chatPanelWidth}px`,
+                    borderRadius: settings?.appearance?.theme?.cornerRadius === 'sharp' ? '0px'
+                      : settings?.appearance?.theme?.cornerRadius === 'small' ? '8px'
+                      : settings?.appearance?.theme?.cornerRadius === 'medium' ? '12px'
+                      : settings?.appearance?.theme?.cornerRadius === 'large' ? '16px'
+                      : 'var(--radius-lg, 16px)'
+                  }}
+                >
+                  <ChatPanel />
+                </div>
+              </>
             )}
 
 
@@ -1664,11 +1729,7 @@ function App() {
                   }}
                   title="Drag to resize browser panel, Double-click to toggle pin"
                 >
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                  </div>
+                  <div className="w-1 h-8 rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] group-active:bg-[var(--accent-primary)] transition-colors z-10" />
                 </div>
 
                 {/* Backdrop overlay for unpinned browser panel */}
@@ -1712,11 +1773,7 @@ function App() {
                   className="absolute top-0 bottom-0 w-2 bg-transparent cursor-col-resize flex items-center justify-center group select-none z-45"
                   style={{ right: 'calc(min(var(--review-panel-width), 100%) - 4px)' }}
                 >
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 rounded glass-panel group-hover:border-accent-primary/50 group-active:border-accent-primary/80 transition-all duration-150 flex flex-col justify-center items-center gap-[2px] py-1 shadow-md">
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                    <div className="w-[2px] h-[2px] rounded-full bg-zinc-500 group-hover:bg-accent-primary" />
-                  </div>
+                  <div className="w-1 h-8 rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] group-active:bg-[var(--accent-primary)] transition-colors z-10" />
                 </div>
 
                 <div

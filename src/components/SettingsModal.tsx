@@ -216,8 +216,28 @@ export const SettingsModal: React.FC = () => {
   const [isAppearanceExpanded, setIsAppearanceExpanded] = useState(true);
   const [highlightedOptionId, setHighlightedOptionId] = useState<string | null>(null);
 
-  const [aiProviderId, setAiProviderId] = useState<string>(() => AIKernel.getInstance().getConfig().defaultProviderId || 'openai');
-  const [aiModelId, setAiModelId] = useState<string>(() => AIKernel.getInstance().getConfig().defaultModelId || 'gpt-4o');
+  const [aiProviderId, setAiProviderId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('nexora_selected_model');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.providerId) return parsed.providerId;
+      }
+    } catch {}
+    return AIKernel.getInstance().getConfig().defaultProviderId || 'openai';
+  });
+
+  const [aiModelId, setAiModelId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('nexora_selected_model');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.modelId) return parsed.modelId;
+      }
+    } catch {}
+    return AIKernel.getInstance().getConfig().defaultModelId || 'gpt-4o';
+  });
+
   const [aiChatPos, setAiChatPos] = useState<'left' | 'right'>(() => AIKernel.getInstance().getConfig().chatPanelPosition || 'right');
 
   // API Key state — synced with chatStore
@@ -919,15 +939,17 @@ export const SettingsModal: React.FC = () => {
                         openai: [
                           { id: 'gpt-4o', name: 'gpt-4o (OpenAI)' },
                           { id: 'gpt-4o-mini', name: 'gpt-4o-mini (OpenAI)' },
-                          { id: 'o3', name: 'o3 (OpenAI)' },
+                          { id: 'o3-mini', name: 'o3-mini (OpenAI)' },
                         ],
                         anthropic: [
-                          { id: 'claude-sonnet-4', name: 'claude-sonnet-4 (Anthropic)' },
-                          { id: 'claude-opus-4', name: 'claude-opus-4 (Anthropic)' },
+                          { id: 'claude-3-5-sonnet-20241022', name: 'claude-3-5-sonnet (Anthropic)' },
+                          { id: 'claude-3-5-haiku-20241022', name: 'claude-3-5-haiku (Anthropic)' },
+                          { id: 'claude-3-opus-20240229', name: 'claude-3-opus (Anthropic)' },
                         ],
                         google: [
-                          { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro (Google)' },
-                          { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash (Google)' },
+                          { id: 'gemini-1.5-flash', name: 'gemini-1.5-flash (Google)' },
+                          { id: 'gemini-1.5-pro', name: 'gemini-1.5-pro (Google)' },
+                          { id: 'gemini-2.0-flash-exp', name: 'gemini-2.0-flash-exp (Google)' },
                         ],
                         deepseek: [
                           { id: 'deepseek-chat', name: 'deepseek-chat (DeepSeek)' },
@@ -936,6 +958,9 @@ export const SettingsModal: React.FC = () => {
                         ollama: [
                           { id: 'llama3', name: 'llama3 (Ollama Local)' },
                           { id: 'qwen2.5-coder', name: 'qwen2.5-coder (Ollama Local)' },
+                        ],
+                        lmstudio: [
+                          { id: 'local-model', name: 'local-model (LM Studio)' },
                         ]
                       };
 
@@ -963,6 +988,7 @@ export const SettingsModal: React.FC = () => {
                               <option value="google" className="bg-[#0f0f15]">Google (Gemini)</option>
                               <option value="deepseek" className="bg-[#0f0f15]">DeepSeek</option>
                               <option value="ollama" className="bg-[#0f0f15]">Ollama (Local)</option>
+                              <option value="lmstudio" className="bg-[#0f0f15]">LM Studio (Local)</option>
                             </select>
                           </div>
 
@@ -1111,6 +1137,23 @@ export const SettingsModal: React.FC = () => {
                     </div>
                     <p className="text-[10px] text-zinc-500 font-sans">
                       No API key needed — runs locally via <span className="font-mono text-zinc-400">ollama serve</span>. Install from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-primary)] hover:underline cursor-pointer">ollama.com</a>
+                    </p>
+                  </div>
+
+                  {/* LM Studio note */}
+                  <div className="p-3 rounded-lg bg-[#0c0c12] border border-[#1e1e28]">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs font-semibold ${aiProviderId === 'lmstudio' ? 'text-[var(--accent-primary)]' : 'text-zinc-300'}`}>
+                        LM Studio (Local)
+                      </span>
+                      {aiProviderId === 'lmstudio' && (
+                        <span className="text-[8px] uppercase tracking-wider bg-[rgba(var(--accent-primary-rgb),0.15)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.3)] px-1.5 py-0.5 rounded-full font-bold">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-500 font-sans">
+                      No API key needed — connects to local OpenAI-compatible server at <span className="font-mono text-zinc-400">http://localhost:1234/v1</span>. Enable Local Server in <a href="https://lmstudio.ai" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-primary)] hover:underline cursor-pointer">LM Studio</a>
                     </p>
                   </div>
                 </div>

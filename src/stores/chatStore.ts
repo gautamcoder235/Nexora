@@ -1,9 +1,185 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { AIKernel } from '../core/ai/kernel/AIKernel';
 import type { ConversationSession, ConversationMessage, ConversationPhase, ToolProposal, ToolResult } from '../core/ai/protocol';
 import { EventBus } from '../core/events';
 import { useBrowserStore } from './browserStore';
 import { useOrchestratorStore } from './orchestratorStore';
+
+// ─── Shared Action Executor ──────────────────────────────────────────────────
+// Parses user message for actionable intents and executes workspace actions.
+// Used by both LLM streaming paths and the no-API-key fallback engine.
+const WORD_TO_NUM: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10
+};
+
+function resolveActiveProjectId(): string {
+  const orchestrator = useOrchestratorStore.getState();
+  const activeWsId = orchestrator.activeWorkspaceId;
+  // Try to find a project linked to the active workspace
+  if (activeWsId) {
+    const wsProject = orchestrator.projects.find(p => p.workspaceId === activeWsId);
+    if (wsProject) return wsProject.id;
+  }
+  // Fallback: first project available
+  if (orchestrator.projects.length > 0) return orchestrator.projects[0].id;
+  // Last resort: use workspace root path to create an ad-hoc context
+  return 'default-project';
+}
+
+function parseTerminalCount(text: string): number {
+  // First look for any digit: "4 opencode terminal" -> 4
+  const digitMatch = text.match(/(\d+)/);
+  if (digitMatch) {
+    const val = parseInt(digitMatch[1], 10);
+    if (val >= 1 && val <= 16) return val;
+  }
+
+  // Look for any number word: "four opencode terminal" -> 4
+  const wordMatch = text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/i);
+  if (wordMatch) {
+    return WORD_TO_NUM[wordMatch[1].toLowerCase()] || 1;
+  }
+
+  return 1;
+}
+
+// Known CLI tools that can be spawned as agent terminals
+const KNOWN_CLI_TOOLS: Record<string, { command: string; args: string[]; name: string }> = {
+  'opencode': { command: 'npx', args: ['-y', 'opencode'], name: 'OpenCode CLI' },
+  'claude code': { command: 'npx', args: ['-y', '@anthropic-ai/claude-code'], name: 'Claude Code CLI' },
+  'claude': { command: 'npx', args: ['-y', '@anthropic-ai/claude-code'], name: 'Claude Code CLI' },
+  'gemini': { command: 'gemini', args: [], name: 'Gemini CLI' },
+  'aider': { command: 'aider', args: ['--auto-commit'], name: 'Aider' },
+  'codex': { command: 'codex', args: [], name: 'Codex CLI' },
+  'agy': { command: 'agy', args: [], name: 'Antigravity CLI' },
+};
+
+// Extract a URL from user message (e.g., "open google.com in browser")
+function extractUrlFromMessage(text: string): string | undefined {
+  // Match full URLs: https://... or http://...
+  const fullUrlMatch = text.match(/https?:\/\/[^\s,)"']+/i);
+  if (fullUrlMatch) return fullUrlMatch[0];
+  // Match domain-like patterns: google.com, github.com/user/repo
+  const domainMatch = text.match(/\b([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s,)"']*)?)\b/);
+  if (domainMatch) return `https://${domainMatch[1]}`;
+  return undefined;
+}
+
+// Detect which CLI tool the user wants from their message
+function detectCliTool(text: string): { command: string; args: string[]; name: string } | null {
+  const lc = text.toLowerCase();
+  // Check longer names first to avoid 'claude' matching before 'claude code'
+  const sortedEntries = Object.entries(KNOWN_CLI_TOOLS).sort((a, b) => b[0].length - a[0].length);
+  for (const [name, tool] of sortedEntries) {
+    if (lc.includes(name)) return tool;
+  }
+  return null;
+}
+
+interface ActionResult {
+  browser: boolean;
+  browserUrl?: string;
+  terminals: number;
+  terminalTool?: string;
+  terminalsKilled: number;
+}
+
+async function executeWorkspaceActions(userMessage: string): Promise<ActionResult> {
+  const lc = userMessage.toLowerCase();
+  const result: ActionResult = { browser: false, terminals: 0, terminalsKilled: 0 };
+
+  // ─── 🌐 Browser Actions ─────────────────────────────────────────────
+  const browserOpenIntent = 
+    lc.includes('open browser') || lc.includes('launch browser') || lc.includes('start browser') ||
+    lc.includes('open the browser') || lc.includes('show browser') ||
+    (lc.includes('browser') && (lc.includes('open') || lc.includes('launch') || lc.includes('toggle') || lc.includes('show'))) ||
+    // URL-based intents: "open google.com", "go to github.com"
+    (lc.match(/\b(open|go to|navigate|visit|browse)\b/) && lc.match(/\b[a-z0-9-]+\.[a-z]{2,}\b/));
+  
+  if (browserOpenIntent) {
+    try {
+      const url = extractUrlFromMessage(userMessage);
+      useBrowserStore.getState().openBrowserPanel(url);
+      result.browser = true;
+      result.browserUrl = url;
+      console.log(`[ActionExecutor] Browser panel opened${url ? ` with URL: ${url}` : ''}`);
+    } catch (e) {
+      console.warn('[ActionExecutor] Failed to open browser:', e);
+    }
+  }
+
+  // ─── 💻 Terminal Open Actions ───────────────────────────────────────
+  const hasTerminalKeyword = lc.includes('terminal') || lc.includes('shell') || lc.includes('pty') || lc.includes('console');
+  const hasOpenVerb = lc.includes('open') || lc.includes('spawn') || lc.includes('create') || 
+                      lc.includes('start') || lc.includes('launch') || lc.includes('new') || lc.includes('run');
+
+  if (hasTerminalKeyword && hasOpenVerb) {
+    const count = parseTerminalCount(lc);
+    const detectedTool = detectCliTool(lc);
+
+    try {
+      const orchestrator = useOrchestratorStore.getState();
+      const projectId = resolveActiveProjectId();
+
+      for (let i = 0; i < count; i++) {
+        if (detectedTool) {
+          // Auto-create an agent profile so the terminal is properly tracked
+          const agentName = `${detectedTool.name} ${count > 1 ? `#${i + 1}` : ''}`;
+          await orchestrator.createAgent({
+            name: agentName.trim(),
+            groupId: 'Chat Spawned',
+            cliCommand: detectedTool.command,
+            arguments: [...detectedTool.args],
+            env: {},
+            projectId,
+            taskId: null,
+            capabilities: { coding: true, review: false, testing: false, planning: false }
+          });
+          // Get the newly created agent's ID (it's the first in the array after createAgent prepends it)
+          const newAgent = orchestrator.agents[0];
+          if (newAgent) {
+            await orchestrator.spawnTerminal(projectId, newAgent.id);
+          } else {
+            await orchestrator.spawnTerminal(projectId, undefined, detectedTool.command, detectedTool.args);
+          }
+        } else {
+          await orchestrator.spawnTerminal(projectId);
+        }
+      }
+      result.terminals = count;
+      result.terminalTool = detectedTool?.name;
+      console.log(`[ActionExecutor] Spawned ${count} ${detectedTool ? detectedTool.name : 'shell'} terminal(s) for project ${projectId}`);
+    } catch (e) {
+      console.warn('[ActionExecutor] Failed to spawn terminals:', e);
+    }
+  }
+
+  // ─── 🗑️ Terminal Kill/Close Actions ─────────────────────────────────
+  const hasCloseVerb = lc.includes('close') || lc.includes('kill') || lc.includes('stop') || lc.includes('terminate') || lc.includes('exit');
+  if (hasTerminalKeyword && hasCloseVerb && !hasOpenVerb) {
+    try {
+      const orchestrator = useOrchestratorStore.getState();
+      const terminals = orchestrator.terminals;
+      if (terminals.length > 0) {
+        // Kill the most recent terminal, or all if "all" is mentioned
+        const killAll = lc.includes('all');
+        const toKill = killAll ? [...terminals] : [terminals[terminals.length - 1]];
+        for (const term of toKill) {
+          await orchestrator.killTerminal(term.id);
+        }
+        result.terminalsKilled = toKill.length;
+        console.log(`[ActionExecutor] Killed ${toKill.length} terminal(s)`);
+      }
+    } catch (e) {
+      console.warn('[ActionExecutor] Failed to kill terminals:', e);
+    }
+  }
+
+  return result;
+}
+// ─── End Shared Action Executor ──────────────────────────────────────────────
 
 interface ChatState {
   // Sessions
@@ -45,7 +221,7 @@ interface ChatState {
   getActivePhase: () => ConversationPhase;
 }
 
-const loadApiKeyForProvider = (providerId: string): string => {
+export const loadApiKeyForProvider = (providerId: string): string => {
   try {
     const saved = localStorage.getItem('nexora_api_keys');
     if (saved) {
@@ -54,6 +230,143 @@ const loadApiKeyForProvider = (providerId: string): string => {
     }
   } catch {}
   return '';
+};
+
+export const fetchModelsForProvider = async (
+  providerId: string,
+  apiKey?: string
+): Promise<Array<{ id: string; name: string }>> => {
+  const key = apiKey || loadApiKeyForProvider(providerId);
+
+  try {
+    if (providerId === 'google' && key) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      if (res.ok) {
+        const data = await res.json();
+        const models = (data.models || [])
+          .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+          .map((m: any) => {
+            const cleanId = m.name.replace(/^models\//, '');
+            return {
+              id: cleanId,
+              name: m.displayName || cleanId,
+            };
+          });
+        if (models.length > 0) return models;
+      }
+    }
+
+    if (providerId === 'openai' && key) {
+      const res = await fetch('https://api.openai.com/v1/models', {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const chatModels = (data.data || [])
+          .filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o1') || m.id.startsWith('o3'))
+          .map((m: any) => ({ id: m.id, name: m.id }))
+          .sort((a: any, b: any) => a.id.localeCompare(b.id));
+        if (chatModels.length > 0) return chatModels;
+      }
+    }
+
+    if (providerId === 'deepseek' && key) {
+      const res = await fetch('https://api.deepseek.com/models', {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const models = (data.data || []).map((m: any) => ({ id: m.id, name: m.id }));
+        if (models.length > 0) return models;
+      }
+    }
+
+    if (providerId === 'ollama') {
+      let raw = '';
+      try { raw = await invoke<string>('curl_get', { url: 'http://localhost:11434/api/tags' }); } catch {
+        try { raw = await invoke<string>('curl_get', { url: 'http://127.0.0.1:11434/api/tags' }); } catch {
+          const res = await fetch('http://localhost:11434/api/tags').catch(() => null);
+          if (res && res.ok) raw = await res.text();
+        }
+      }
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          const models = (data.models || []).map((m: any) => ({ id: m.name, name: `${m.name} (Local)` }));
+          if (models.length > 0) return models;
+        } catch {}
+      }
+    }
+
+    if (providerId === 'lmstudio') {
+      let raw = '';
+      try { raw = await invoke<string>('curl_get', { url: 'http://localhost:1234/v1/models' }); } catch {
+        try { raw = await invoke<string>('curl_get', { url: 'http://127.0.0.1:1234/v1/models' }); } catch {
+          const res = await fetch('http://localhost:1234/v1/models').catch(() => null);
+          if (res && res.ok) raw = await res.text();
+        }
+      }
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          const models = (data.data || data.models || []).map((m: any) => ({ id: m.id || m.name, name: `${m.id || m.name} (LM Studio)` }));
+          if (models.length > 0) return models;
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn(`[ModelFetcher] Failed to fetch live models for ${providerId}:`, err);
+  }
+
+  // Fallback defaults with valid model IDs
+  const DEFAULTS: Record<string, Array<{ id: string; name: string }>> = {
+    google: [
+      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+      { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash (Experimental)' },
+    ],
+    openai: [
+      { id: 'gpt-4o', name: 'GPT-4o' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+      { id: 'o3-mini', name: 'o3-mini' },
+    ],
+    anthropic: [
+      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+      { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
+      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
+    ],
+    deepseek: [
+      { id: 'deepseek-chat', name: 'DeepSeek V3' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek R1' },
+    ],
+    ollama: [
+      { id: 'llama3', name: 'Llama 3' },
+      { id: 'qwen2.5-coder', name: 'Qwen 2.5 Coder' },
+    ],
+    lmstudio: [
+      { id: 'local-model', name: 'LM Studio Loaded Model' },
+    ]
+  };
+
+  return DEFAULTS[providerId] || DEFAULTS.openai;
+};
+
+const loadInitialSelectedModel = (): { modelId: string; providerId: string } => {
+  try {
+    const saved = localStorage.getItem('nexora_selected_model');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.modelId && parsed.providerId) {
+        return { modelId: parsed.modelId, providerId: parsed.providerId };
+      }
+    }
+  } catch {}
+
+  const kernelConfig = AIKernel.getInstance().getConfig();
+  return {
+    modelId: kernelConfig.defaultModelId || 'gpt-4o',
+    providerId: kernelConfig.defaultProviderId || 'openai'
+  };
 };
 
 export const useChatStore = create<ChatState>((set, get) => {
@@ -83,6 +396,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     set({ sessions: kernel.getAllConversations() });
   });
 
+  const initialModel = loadInitialSelectedModel();
+
   return {
     sessions: kernel.getAllConversations(),
     activeSessionId: null,
@@ -93,11 +408,11 @@ export const useChatStore = create<ChatState>((set, get) => {
     inputValue: '',
     mentionQuery: null,
     isMentionPickerOpen: false,
-    selectedModelId: 'gpt-4o',
-    selectedProviderId: 'openai',
+    selectedModelId: initialModel.modelId,
+    selectedProviderId: initialModel.providerId,
     isChatPanelVisible: false,
     isChatPanelPinned: false,
-    apiKey: loadApiKeyForProvider('openai'),
+    apiKey: loadApiKeyForProvider(initialModel.providerId),
     
     createSession: (workspaceId: string) => {
       const session = kernel.createConversation(workspaceId);
@@ -164,15 +479,59 @@ export const useChatStore = create<ChatState>((set, get) => {
       const { selectedModelId, selectedProviderId } = get();
       const activeApiKey = get().apiKey || loadApiKeyForProvider(selectedProviderId);
 
-      // Check if API key is available (or Ollama local provider)
-      if ((activeApiKey && activeApiKey.trim().length > 0) || selectedProviderId === 'ollama') {
+      // Check if API key is available (or local providers: Ollama / LM Studio)
+      if ((activeApiKey && activeApiKey.trim().length > 0) || selectedProviderId === 'ollama' || selectedProviderId === 'lmstudio') {
+        let endpoint = 'https://api.openai.com/v1/chat/completions';
+        let headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${activeApiKey}`
+        };
+        let bodyPayload: any = {};
+
         try {
           // Build messages array — support multimodal (images) for Vision-capable models
           const conversationMessages = kernel.getConversation(activeSessionId)?.messages || [];
-          const apiMessages: any[] = [];
+          
+          // ─── Dynamic Workspace Context ─────────────────────────────────
+          const orchestrator = useOrchestratorStore.getState();
+          const activeProject = orchestrator.projects.find(p => p.workspaceId === orchestrator.activeWorkspaceId) || orchestrator.projects[0];
+          const workspacePath = activeProject?.path || orchestrator.workspaces.find(w => w.id === orchestrator.activeWorkspaceId)?.rootPath || '';
+          const terminalCount = orchestrator.terminals.length;
+          const agentCount = orchestrator.agents.filter(a => a.status === 'running').length;
+
+          const NEXORA_SYSTEM_PROMPT = `<identity>Nexora Assistant — AI coding & workspace assistant in Nexora IDE.</identity>
+
+<workspace>
+Project: ${activeProject?.name || 'Unknown'} | Path: ${workspacePath || 'N/A'}
+Active terminals: ${terminalCount} | Running agents: ${agentCount}
+</workspace>
+
+<capabilities>
+You have REAL runtime control. Actions execute automatically before you respond — confirm them concisely.
+- Terminal: open/spawn [N] [tool] terminals (opencode, claude, aider, gemini, codex, agy)
+- Browser: open browser, navigate to [URL] (e.g. "open google.com")
+- Kill: close/kill terminal(s), close all terminals
+</capabilities>
+
+<rules>
+1. Identify as "Nexora Assistant" when asked
+2. Respond in markdown, be concise and precise
+3. When actions were executed, confirm briefly — never suggest CLI commands for already-completed actions
+4. For coding questions: provide accurate, well-structured solutions
+</rules>`;
+
+          const apiMessages: any[] = [
+            { role: 'system', content: NEXORA_SYSTEM_PROMPT }
+          ];
           
           for (const m of conversationMessages) {
+            // Do not send the newly created empty assistant placeholder message to the LLM API
+            if (m.id === assistantMsgId) continue;
+            
             if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
+              // Skip empty assistant messages from prompt history
+              if (m.role === 'assistant' && (!m.content || m.content.trim() === '')) continue;
+
               // Check if this user message has image attachments
               const hasImageAttachments = m.attachments?.some((a: any) => a.isImage && a.base64);
               
@@ -200,14 +559,47 @@ export const useChatStore = create<ChatState>((set, get) => {
             }
           }
 
+          // ─── Pre-Response Action Executor ────────────────────────────────
+          // Execute workspace actions BEFORE the LLM generates its response,
+          // then inject context so the LLM naturally acknowledges the action.
+          const preActionResult = await executeWorkspaceActions(content);
+          const actionParts: string[] = [];
+          if (preActionResult.browser) {
+            actionParts.push(preActionResult.browserUrl ? `Browser→${preActionResult.browserUrl}` : 'Browser opened');
+          }
+          if (preActionResult.terminals > 0) {
+            actionParts.push(`Spawned ${preActionResult.terminals}× ${preActionResult.terminalTool || 'shell'} terminal(s)`);
+          }
+          if (preActionResult.terminalsKilled > 0) {
+            actionParts.push(`Killed ${preActionResult.terminalsKilled} terminal(s)`);
+          }
+          if (actionParts.length > 0) {
+            apiMessages.push({
+              role: 'system',
+              content: `[ACTION DONE]: ${actionParts.join('; ')}. Confirm concisely. Do not suggest commands for these.`
+            });
+          }
+          // ─── End Pre-Response Action Executor ───────────────────────────
+          // ─── End Pre-Response Action Executor ───────────────────────────
+
+          // Normalize model ID for Google Gemini if legacy or invalid
+          let resolvedModelId = selectedModelId;
+          if (selectedProviderId === 'google') {
+            if (selectedModelId === 'gemini-2.5-flash' || selectedModelId.includes('2.5-flash')) {
+              resolvedModelId = 'gemini-1.5-flash';
+            } else if (selectedModelId === 'gemini-2.5-pro' || selectedModelId.includes('2.5-pro')) {
+              resolvedModelId = 'gemini-1.5-pro';
+            }
+          }
+
           // Determine endpoint, headers, and body for provider
-          let endpoint = 'https://api.openai.com/v1/chat/completions';
-          let headers: Record<string, string> = {
+          endpoint = 'https://api.openai.com/v1/chat/completions';
+          headers = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${activeApiKey}`
           };
-          let bodyPayload: any = {
-            model: selectedModelId,
+          bodyPayload = {
+            model: resolvedModelId,
             messages: apiMessages,
             stream: true
           };
@@ -219,6 +611,9 @@ export const useChatStore = create<ChatState>((set, get) => {
           } else if (selectedProviderId === 'ollama') {
             endpoint = 'http://localhost:11434/v1/chat/completions';
             headers = { 'Content-Type': 'application/json' };
+          } else if (selectedProviderId === 'lmstudio') {
+            endpoint = 'http://localhost:1234/v1/chat/completions';
+            headers = { 'Content-Type': 'application/json' };
           } else if (selectedProviderId === 'anthropic') {
             endpoint = 'https://api.anthropic.com/v1/messages';
             headers = {
@@ -227,6 +622,12 @@ export const useChatStore = create<ChatState>((set, get) => {
               'anthropic-version': '2023-06-01',
               'dangerously-allow-browser': 'true'
             };
+            // Anthropic requires system messages as a top-level 'system' field, not in messages array
+            const anthropicSystemContent = apiMessages
+              .filter(m => m.role === 'system')
+              .map(m => typeof m.content === 'string' ? m.content : '')
+              .filter(Boolean)
+              .join('\n\n');
             const anthropicMessages = apiMessages.filter(m => m.role !== 'system').map(m => ({
               role: m.role,
               content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map((c: any) => {
@@ -247,6 +648,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             bodyPayload = {
               model: anthropicModel,
               max_tokens: 4096,
+              system: anthropicSystemContent || undefined,
               messages: anthropicMessages,
               stream: true
             };
@@ -261,15 +663,41 @@ export const useChatStore = create<ChatState>((set, get) => {
           if (!response.ok || !response.body) {
             const errorText = await response.text().catch(() => '');
             let errorMsg = errorText;
+            let retryInfo = '';
+
             try {
               const errJson = JSON.parse(errorText);
-              errorMsg = errJson.error?.message || errJson.message || errorText;
+              const errObj = errJson.error || errJson;
+              errorMsg = errObj.message || errorText;
+
+              if (response.status === 429) {
+                const retryMatch = errorMsg.match(/retry in ([0-9.]+)s/i);
+                if (retryMatch) {
+                  retryInfo = `\n\n> ⏱️ **Retry Recommendation**: Please wait **${Math.ceil(parseFloat(retryMatch[1]))} seconds** before sending your next prompt.`;
+                }
+              }
             } catch {}
 
-            kernel.updateStreamingMessage(activeSessionId, assistantMsgId, {
-              type: 'content',
-              content: `### ❌ API Connection Error (${response.status} ${response.statusText})\n\n${errorMsg ? `\`\`\`\n${errorMsg}\n\`\`\`` : 'Failed to establish connection to AI provider endpoint.'}\n\nPlease check your **${selectedProviderId.toUpperCase()}** API key in **Settings ⚙️ → AI Runtime → API Keys**.`
-            });
+            if (response.status === 429) {
+              kernel.updateStreamingMessage(activeSessionId, assistantMsgId, {
+                type: 'content',
+                content: `### ⏳ Rate Limit / Free Tier Quota Exceeded (HTTP 429)
+
+You have hit the API request rate limit or daily quota limit for **\`${selectedModelId}\`** on **${selectedProviderId.toUpperCase()}**.
+${retryInfo}
+
+### Recommended Actions:
+1. **Switch to Gemini 1.5 Flash**: Select **Gemini 1.5 Flash** from the model dropdown at top-left — Flash models have significantly higher free-tier request limits (15 Requests Per Minute / 1,500 RPD).
+2. **Switch Provider**: Try **OpenAI**, **Anthropic**, **DeepSeek**, or **Ollama (Free Unlimited Local)**.
+3. **Wait & Retry**: Wait ~45 seconds for your rate limit window to reset, then send your message again.`
+              });
+            } else {
+              kernel.updateStreamingMessage(activeSessionId, assistantMsgId, {
+                type: 'content',
+                content: `### ❌ API Connection Error (${response.status} ${response.statusText})\n\n${errorMsg ? `\`\`\`\n${errorMsg}\n\`\`\`` : 'Failed to establish connection to AI provider endpoint.'}\n\nPlease check your **${selectedProviderId.toUpperCase()}** API key in **Settings ⚙️ → AI Runtime → API Keys**.`
+              });
+            }
+
             kernel.updateStreamingMessage(activeSessionId, assistantMsgId, { type: 'done', content: '' });
             kernel.transition(activeSessionId, 'idle');
             set({ isStreaming: false, streamingMessageId: null });
@@ -310,6 +738,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           }
 
           kernel.updateStreamingMessage(activeSessionId, assistantMsgId, { type: 'done', content: '' });
+
           kernel.transition(activeSessionId, 'plan_auto_approved');
           kernel.transition(activeSessionId, 'execution_dispatched');
           kernel.transition(activeSessionId, 'execution_finished');
@@ -318,9 +747,40 @@ export const useChatStore = create<ChatState>((set, get) => {
           return;
         } catch (err: any) {
           console.warn('[chatStore] Live LLM API stream network error:', err);
+
+          // Fallback to Rust curl_post if browser fetch fails for local endpoints (LM Studio / Ollama)
+          if (selectedProviderId === 'lmstudio' || selectedProviderId === 'ollama') {
+            try {
+              const headersArr = Object.entries(headers);
+              const rawResponse = await invoke<string>('curl_post', {
+                url: endpoint,
+                headers: headersArr,
+                body: JSON.stringify({ ...bodyPayload, stream: false })
+              });
+
+              if (rawResponse) {
+                const parsed = JSON.parse(rawResponse);
+                const text = parsed.choices?.[0]?.message?.content || parsed.choices?.[0]?.message?.reasoning_content || parsed.message?.content || parsed.response || '';
+                if (text) {
+                  kernel.updateStreamingMessage(activeSessionId, assistantMsgId, { type: 'content', content: text });
+                  kernel.updateStreamingMessage(activeSessionId, assistantMsgId, { type: 'done', content: '' });
+
+                  kernel.transition(activeSessionId, 'plan_auto_approved');
+                  kernel.transition(activeSessionId, 'execution_dispatched');
+                  kernel.transition(activeSessionId, 'execution_finished');
+                  kernel.transition(activeSessionId, 'reflection_passed');
+                  set({ isStreaming: false, streamingMessageId: null });
+                  return;
+                }
+              }
+            } catch (curlErr: any) {
+              console.warn('[chatStore] Rust curl_post fallback failed for local model:', curlErr);
+            }
+          }
+
           kernel.updateStreamingMessage(activeSessionId, assistantMsgId, {
             type: 'content',
-            content: `### ⚠️ Network Error\n\nFailed to connect to **${selectedProviderId}** endpoint: ${err?.message || 'Network request failed.'}\n\nPlease check your internet connection and API key in Settings.`
+            content: `### ⚠️ Network Error\n\nFailed to connect to **${selectedProviderId}** endpoint (${endpoint}): ${err?.message || 'Network request failed.'}\n\nPlease check that **${selectedProviderId === 'lmstudio' ? 'LM Studio' : 'Ollama'}** server is running and local server CORS is enabled.`
           });
           kernel.updateStreamingMessage(activeSessionId, assistantMsgId, { type: 'done', content: '' });
           set({ isStreaming: false, streamingMessageId: null });
@@ -335,26 +795,29 @@ export const useChatStore = create<ChatState>((set, get) => {
       const lowerContent = content.toLowerCase();
 
       // 🌐 INTENT 1: Browser Actions
-      if (lowerContent.includes('browser') || lowerContent.includes('web') || lowerContent.includes('site') || lowerContent.includes('url')) {
+      if (lowerContent.includes('browser') || lowerContent.includes('web') || lowerContent.includes('site') || lowerContent.includes('url') ||
+          (lowerContent.match(/\b(open|go to|navigate|visit|browse)\b/) && lowerContent.match(/\b[a-z0-9-]+\.[a-z]{2,}\b/))) {
         const propId = `tool-${Date.now()}-1`;
+        const extractedUrl = extractUrlFromMessage(content);
         toolProposals.push({
           id: propId,
           toolId: 'browser.open',
-          arguments: { action: 'toggle_panel', target: 'embedded_electron_browser' }
+          arguments: { action: 'toggle_panel', target: 'embedded_electron_browser', url: extractedUrl }
         });
 
         try {
-          // ACTUALLY OPEN THE BROWSER PANEL AND LAUNCH ELECTRON
-          useBrowserStore.getState().openBrowserPanel();
+          useBrowserStore.getState().openBrowserPanel(extractedUrl);
           
           toolResults.push({
             proposalId: propId,
             toolId: 'browser.open',
             status: 'success',
-            output: 'Browser panel successfully launched and visible.',
+            output: `Browser panel launched${extractedUrl ? ` and navigated to ${extractedUrl}` : ''}.`,
             durationMs: 65
           });
-          responseText = `Opened the **Embedded Web Browser Panel** inside Nexora. You can now preview local dev servers or navigate web URLs.`;
+          responseText = extractedUrl
+            ? `Opened the **Embedded Web Browser** and navigated to **${extractedUrl}**.`
+            : `Opened the **Embedded Web Browser Panel** inside Nexora. You can now preview local dev servers or navigate web URLs.`;
         } catch (err: any) {
           toolResults.push({
             proposalId: propId,
@@ -369,43 +832,40 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
       // 💻 INTENT 2: Terminal Actions
       else if (lowerContent.includes('terminal') || lowerContent.includes('cli') || lowerContent.includes('pty') || lowerContent.includes('command')) {
-        const countMatch = lowerContent.match(/(\d+)\s*terminal/);
-        const count = countMatch ? parseInt(countMatch[1]) : 1;
+        // Use the shared action executor for consistent behavior (CLI tool detection, agent creation, kill)
+        const actionResult = await executeWorkspaceActions(content);
         const propId = `tool-${Date.now()}-1`;
 
-        toolProposals.push({
-          id: propId,
-          toolId: 'terminal.exec',
-          arguments: { count, action: 'spawn_pty_sessions', shell: 'powershell' }
-        });
-
-        try {
-          // ACTUALLY CREATE TERMINAL SESSIONS IN ORCHESTRATOR STORE
-          const orchestrator = useOrchestratorStore.getState();
-          const projectId = orchestrator.projects[0]?.id || 'default-project';
-
-          for (let i = 0; i < count; i++) {
-            await orchestrator.spawnTerminal(projectId);
-          }
-
+        if (actionResult.terminals > 0) {
+          toolProposals.push({
+            id: propId,
+            toolId: 'terminal.exec',
+            arguments: { count: actionResult.terminals, tool: actionResult.terminalTool || 'shell', action: 'spawn_pty_sessions' }
+          });
           toolResults.push({
             proposalId: propId,
             toolId: 'terminal.exec',
             status: 'success',
-            output: `Successfully spawned ${count} PTY terminal session(s).`,
+            output: `Successfully spawned ${actionResult.terminals} ${actionResult.terminalTool || 'shell'} terminal session(s).`,
             durationMs: 110
           });
-          responseText = `Successfully created and initialized **${count} PTY terminal session(s)** for execution.`;
-        } catch (err: any) {
+          responseText = `Successfully created **${actionResult.terminals} ${actionResult.terminalTool || 'PTY'} terminal session(s)**.`;
+        } else if (actionResult.terminalsKilled > 0) {
+          toolProposals.push({
+            id: propId,
+            toolId: 'terminal.kill',
+            arguments: { count: actionResult.terminalsKilled, action: 'kill_sessions' }
+          });
           toolResults.push({
             proposalId: propId,
-            toolId: 'terminal.exec',
-            status: 'error',
-            output: '',
-            error: err?.message || 'Failed to spawn terminal sessions',
-            durationMs: 40
+            toolId: 'terminal.kill',
+            status: 'success',
+            output: `Successfully closed ${actionResult.terminalsKilled} terminal session(s).`,
+            durationMs: 80
           });
-          responseText = `Attempted to open ${count} terminal session(s), but encountered an error: ${err?.message || 'Unknown error'}`;
+          responseText = `Closed **${actionResult.terminalsKilled} terminal session(s)**.`;
+        } else {
+          responseText = `No terminal action could be performed. Try "open terminal" or "close terminal".`;
         }
       }
       // 📁 INTENT 3: File / Workspace Search
@@ -549,6 +1009,10 @@ To get intelligent AI responses, code generation, debugging help, and image anal
       if (activeSessionId) {
         kernel.switchModel(activeSessionId, modelId, providerId);
       }
+      try {
+        localStorage.setItem('nexora_selected_model', JSON.stringify({ modelId, providerId }));
+      } catch {}
+      AIKernel.getInstance().updateConfig({ defaultProviderId: providerId, defaultModelId: modelId });
       const key = loadApiKeyForProvider(providerId);
       set({ selectedModelId: modelId, selectedProviderId: providerId, apiKey: key });
     },

@@ -64,6 +64,19 @@ export class TerminalBufferManager {
     return TerminalBufferManager.instance;
   }
 
+  private sanitizeTerminalOutput(text: string): string {
+    if (!text) return text;
+    // Filter out ConPTY mangled OSC 133 shell integration sequence fragments
+    // and random command tokens that leak as raw text on narrow grid viewports
+    // e.g. "is33sB___A2i", "Z4/lz4R", "Xpg7wguD", "ib4/179Z", "e]133;D;0"
+    return text
+      .replace(/(?:e|i?s)?\]133;[A-Z0-9;=_-]+/gi, '')
+      .replace(/is33s[A-Z]___[a-zA-Z0-9+\/]+/gi, '')
+      .replace(/\b[A-Za-z0-9]{3,6}7[a-zA-Z0-9]{3,8}\b/g, '')
+      .replace(/\b[a-zA-Z0-9+\/]{2,6}(?:\/|pg)[a-zA-Z0-9+\/]{3,10}[A-Za-z0-9]?\b/g, '')
+      .replace(/\b[A-Z0-9]{2,4}\/[a-zA-Z0-9+\/]{4,8}[A-Z]\b/g, '');
+  }
+
   private async setupGlobalListeners() {
     if (this.isListening) return;
     this.isListening = true;
@@ -72,7 +85,9 @@ export class TerminalBufferManager {
       'terminal:stdout',
       (event) => {
         const { sessionId, data } = event.payload;
-        this.append(sessionId, data);
+        const cleanData = this.sanitizeTerminalOutput(data);
+        if (!cleanData) return;
+        this.append(sessionId, cleanData);
 
         // 1. Block parser integration (OSC 133 semantic zones)
         let parser = this.blockParsers.get(sessionId);
@@ -293,12 +308,26 @@ export class TerminalBufferManager {
     }
   }
 
+  public getTailSnapshot(sessionId: string, maxChars: number = 1000): { tail: string; totalLength: number } {
+    const buffer = this.buffers.get(sessionId);
+    if (!buffer || buffer.chunks.length === 0) return { tail: '', totalLength: 0 };
+
+    let acc = '';
+    for (let i = buffer.chunks.length - 1; i >= 0; i--) {
+      acc = buffer.chunks[i].data + acc;
+      if (acc.length >= maxChars) break;
+    }
+    return {
+      tail: acc.length > maxChars ? acc.slice(-maxChars) : acc,
+      totalLength: buffer.totalBytes
+    };
+  }
+
   private handleAutoResponders(sessionId: string) {
     try {
-      const snapshot = this.getSnapshot(sessionId);
-      if (!snapshot) return;
+      const { tail: lastText, totalLength } = this.getTailSnapshot(sessionId, 1000);
+      if (!lastText) return;
 
-      const lastText = snapshot.slice(-1000);
       const allPlugins = PluginRegistry.getAll();
 
       // Scan all plugins to ensure auto-responders work dynamically regardless of command naming overrides
@@ -308,10 +337,10 @@ export class TerminalBufferManager {
         for (const responder of plugin.autoResponders) {
           if (lastText.includes(responder.pattern)) {
             const lastTriggerKey = `${sessionId}:${responder.pattern}`;
-            if (this.lastTriggerOffsets.get(lastTriggerKey) === snapshot.length) {
+            if (this.lastTriggerOffsets.get(lastTriggerKey) === totalLength) {
               continue; // Already triggered for this exact state
             }
-            this.lastTriggerOffsets.set(lastTriggerKey, snapshot.length);
+            this.lastTriggerOffsets.set(lastTriggerKey, totalLength);
 
             // Invoke PTY write asynchronously to send input
             import('@tauri-apps/api/core').then(({ invoke }) => {
@@ -329,10 +358,9 @@ export class TerminalBufferManager {
 
   private handleConversationParser(sessionId: string) {
     try {
-      const snapshot = this.getSnapshot(sessionId);
-      if (!snapshot) return;
+      const { tail: lastText } = this.getTailSnapshot(sessionId, 1000);
+      if (!lastText) return;
 
-      const lastText = snapshot.slice(-1000);
       const allPlugins = PluginRegistry.getAll();
 
       for (const plugin of allPlugins) {
@@ -377,16 +405,15 @@ export class TerminalBufferManager {
 
   private handleProjectNotFoundError(sessionId: string) {
     try {
-      const snapshot = this.getSnapshot(sessionId);
-      if (!snapshot) return;
+      const { tail: lastText, totalLength } = this.getTailSnapshot(sessionId, 500);
+      if (!lastText) return;
 
-      const lastText = snapshot.slice(-500);
       if (lastText.includes("Project Not Found") || (lastText.includes("not found") && lastText.includes("Project"))) {
         const lastTriggerKey = `${sessionId}:project_not_found`;
-        if (this.lastTriggerOffsets.get(lastTriggerKey) === snapshot.length) {
+        if (this.lastTriggerOffsets.get(lastTriggerKey) === totalLength) {
           return; // Already triggered for this exact state
         }
-        this.lastTriggerOffsets.set(lastTriggerKey, snapshot.length);
+        this.lastTriggerOffsets.set(lastTriggerKey, totalLength);
 
         console.warn(`[Self-Healing] Detected Project Not Found error in session ${sessionId}. Attempting auto-recovery by spawning with --new-project.`);
         

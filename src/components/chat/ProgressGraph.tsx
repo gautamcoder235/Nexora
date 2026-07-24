@@ -44,7 +44,7 @@ export const ProgressGraph: React.FC<ProgressGraphProps> = ({ phase }) => {
                 ${status === 'done' ? 'bg-[var(--accent-primary)] text-[var(--text-inverse)] shadow-sm' : 
                   status === 'active' ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-[var(--accent-primary)] border border-[var(--accent-primary)]' : 
                   status === 'failed' ? 'bg-rose-500 text-white' : 
-                  'bg-[#141419] text-zinc-500 border border-[#22222e]'}
+                  'bg-[var(--bg-secondary)] text-zinc-500 border border-[var(--border-glass)]'}
               `}>
                 {status === 'done' && <Check size={11} strokeWidth={3} />}
                 {status === 'active' && <Loader2 size={11} className="animate-spin" />}
@@ -67,7 +67,7 @@ export const ProgressGraph: React.FC<ProgressGraphProps> = ({ phase }) => {
             {/* Edge */}
             {!isLast && (
               <div className="flex-1 min-w-[8px] max-w-[24px] h-[1.5px] mx-1 relative -top-2">
-                <div className="absolute inset-0 bg-[#22222e] rounded-full"></div>
+                <div className="absolute inset-0 bg-[var(--border-glass)] rounded-full"></div>
                 <div className={`absolute left-0 top-0 bottom-0 bg-[var(--accent-primary)] rounded-full transition-all duration-500 ${
                   status === 'done' ? 'w-full' : 'w-0'
                 }`}></div>

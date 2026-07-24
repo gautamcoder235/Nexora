@@ -261,19 +261,6 @@
   box-shadow: var(--shadow-inset-highlight), var(--glow-indigo), 0 4px 20px rgba(99, 102, 241, 0.08) !important;
 }
 
-/* Premium Left Accent glow for active cards */
-.glass-card--active::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 15%;
-  height: 70%;
-  width: 3px;
-  border-radius: 0 4px 4px 0;
-  background: linear-gradient(to bottom, var(--accent-primary), var(--accent-secondary));
-  box-shadow: 0 0 8px var(--accent-primary);
-}
-
 
 /* ── Input ───────────────────────────────────────────────── */
 .glass-input {

@@ -5,13 +5,15 @@ import {
   Globe, Terminal, FileText, Search, GitBranch, Brain, CornerDownRight, Copy, Check, Trash2,
   Pin, PinOff, SidebarClose, Edit2, Image as ImageIcon, File as FileIcon
 } from 'lucide-react';
-import { useChatStore } from '../../stores/chatStore';
+import { useChatStore, fetchModelsForProvider } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { EntityMentionPicker } from './EntityMentionPicker';
 import { ProgressGraph } from './ProgressGraph';
 import { ConversationMessage, ToolProposal, ToolResult } from '../../core/ai/protocol';
 
 export const ChatPanel: React.FC = () => {
+  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+
   const {
     sessions,
     activeSessionId,
@@ -106,30 +108,32 @@ export const ChatPanel: React.FC = () => {
     };
   }, []);
 
-  const PROVIDER_GROUPS = [
+  const DEFAULT_PROVIDER_GROUPS = [
     {
       providerId: 'openai',
       providerName: 'OpenAI',
       models: [
         { id: 'gpt-4o', name: 'GPT-4o' },
         { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-        { id: 'o3', name: 'o3 Reasoning' },
+        { id: 'o3-mini', name: 'o3-mini' },
       ]
     },
     {
       providerId: 'anthropic',
       providerName: 'Anthropic',
       models: [
-        { id: 'claude-sonnet-4', name: 'Claude Sonnet 4' },
-        { id: 'claude-opus-4', name: 'Claude Opus 4' },
+        { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
+        { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
       ]
     },
     {
       providerId: 'google',
       providerName: 'Google Gemini',
       models: [
-        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+        { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+        { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+        { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash (Experimental)' },
       ]
     },
     {
@@ -147,8 +151,30 @@ export const ChatPanel: React.FC = () => {
         { id: 'llama3', name: 'Llama 3' },
         { id: 'qwen2.5-coder', name: 'Qwen 2.5 Coder' },
       ]
+    },
+    {
+      providerId: 'lmstudio',
+      providerName: 'LM Studio (Local)',
+      models: [
+        { id: 'local-model', name: 'LM Studio Loaded Model' },
+      ]
     }
   ];
+
+  // Fetch live models for each provider when API keys exist
+  useEffect(() => {
+    DEFAULT_PROVIDER_GROUPS.forEach(async (group) => {
+      const fetched = await fetchModelsForProvider(group.providerId);
+      if (fetched && fetched.length > 0) {
+        setDynamicModels(prev => ({ ...prev, [group.providerId]: fetched }));
+      }
+    });
+  }, []);
+
+  const PROVIDER_GROUPS = DEFAULT_PROVIDER_GROUPS.map(group => ({
+    ...group,
+    models: dynamicModels[group.providerId] || group.models
+  }));
 
   // Auto-create initial session if none exists on mount
   useEffect(() => {
@@ -329,15 +355,15 @@ export const ChatPanel: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#0D0D10]/95 text-zinc-100 font-sans shadow-2xl relative select-none rounded-[inherit] overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-[var(--bg-primary)]/95 text-zinc-100 font-sans shadow-2xl relative select-none rounded-[inherit] overflow-hidden">
       {/* Header - Glassmorphism */}
-      <div className="flex items-center justify-between px-3.5 py-2.5 bg-[#08080a]/90 backdrop-blur-xl border-b border-[#1B1B22] z-20">
+      <div className="flex items-center justify-between px-3.5 py-2.5 bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border-glass)] z-20">
         
         {/* Model Selector */}
         <div ref={modelDropdownRef} className="relative">
           <button 
             onClick={() => setModelDropdownOpen(!isModelDropdownOpen)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#141419] hover:bg-[#1c1c24] border border-[#22222e] transition-all text-xs font-mono text-[var(--accent-primary)] shadow-sm cursor-pointer"
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--border-glass)] border border-[var(--border-glass)] transition-all text-xs font-mono text-[var(--accent-primary)] shadow-sm cursor-pointer"
           >
             <Cpu size={14} className="text-[var(--accent-primary)]" />
             <span className="font-semibold">{selectedModelId}</span>
@@ -345,13 +371,13 @@ export const ChatPanel: React.FC = () => {
           </button>
           
           {isModelDropdownOpen && (
-            <div className="absolute top-full left-0 mt-1.5 w-56 max-h-72 overflow-y-auto bg-[#141419]/98 border border-[#22222e] rounded-xl shadow-2xl py-1.5 z-50 backdrop-blur-xl font-mono text-xs animate-in fade-in duration-150 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="absolute top-full left-0 mt-1.5 w-56 max-h-72 overflow-y-auto bg-[var(--bg-secondary)]/98 border border-[var(--border-glass)] rounded-xl shadow-2xl py-1.5 z-50 backdrop-blur-xl font-mono text-xs animate-in fade-in duration-150 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {PROVIDER_GROUPS.map((group, groupIdx) => (
-                <div key={group.providerId} className={groupIdx > 0 ? "border-t border-[#22222e] mt-1 pt-1.5" : ""}>
+                <div key={group.providerId} className={groupIdx > 0 ? "border-t border-[var(--border-glass)] mt-1 pt-1.5" : ""}>
                   <div className="px-3 py-1 text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
                     {group.providerName}
                   </div>
-                  {group.models.map((model) => {
+                  {group.models.map((model: { id: string; name: string }) => {
                     const isActive = selectedModelId === model.id;
                     return (
                       <button
@@ -391,8 +417,8 @@ export const ChatPanel: React.FC = () => {
             </button>
             
             {isSessionDropdownOpen && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-64 bg-[#141419]/98 border border-[#22222e] rounded-xl shadow-2xl py-1.5 z-50 backdrop-blur-xl animate-in fade-in duration-150">
-                <div className="flex items-center justify-between px-3 pb-1.5 mb-1 border-b border-[#22222e]">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-64 bg-[var(--bg-secondary)]/98 border border-[var(--border-glass)] rounded-xl shadow-2xl py-1.5 z-50 backdrop-blur-xl animate-in fade-in duration-150">
+                <div className="flex items-center justify-between px-3 pb-1.5 mb-1 border-b border-[var(--border-glass)]">
                   <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-wider">Recent Conversations</span>
                   <button 
                     onClick={() => {
@@ -423,7 +449,7 @@ export const ChatPanel: React.FC = () => {
                     sessions.map(s => (
                       <div key={s.id} className="group relative flex items-center px-1">
                         {editingSessionId === s.id ? (
-                          <div className="flex items-center space-x-1.5 w-full py-1 px-2 bg-[#1c1c28] border border-[var(--accent-primary)] rounded-lg">
+                          <div className="flex items-center space-x-1.5 w-full py-1 px-2 bg-[var(--bg-tertiary)] border border-[var(--accent-primary)] rounded-lg">
                             <MessageSquare size={13} className="text-[var(--accent-primary)] flex-shrink-0" />
                             <input
                               type="text"
@@ -478,7 +504,7 @@ export const ChatPanel: React.FC = () => {
                                 </span>
                               )}
                             </button>
-                            <div className="opacity-0 group-hover:opacity-100 flex items-center space-x-1 absolute right-2 bg-[#141419] px-1 rounded transition-all">
+                            <div className="opacity-0 group-hover:opacity-100 flex items-center space-x-1 absolute right-2 bg-[var(--bg-secondary)] px-1 rounded transition-all">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -548,7 +574,7 @@ export const ChatPanel: React.FC = () => {
 
       {/* Progress Graph (if not idle) */}
       {phase !== 'idle' && (
-        <div className="bg-[#08080a]/60 border-b border-[#1B1B22]">
+        <div className="bg-[var(--bg-secondary)]/60 border-b border-[var(--border-glass)]">
           <ProgressGraph phase={phase} />
         </div>
       )}
@@ -575,7 +601,7 @@ export const ChatPanel: React.FC = () => {
       </div>
 
       {/* Input Area */}
-      <div className="p-3 bg-[#08080a]/95 backdrop-blur-xl border-t border-[#1B1B22] relative">
+      <div className="p-3 bg-[var(--bg-secondary)]/95 backdrop-blur-xl border-t border-[var(--border-glass)] relative">
         <EntityMentionPicker onSelect={handleMentionSelect} />
         <input
           ref={fileInputRef}
@@ -586,7 +612,7 @@ export const ChatPanel: React.FC = () => {
           className="hidden"
         />
         
-        <div className="relative flex flex-col bg-[#141419]/90 border border-[#22222e] focus-within:border-[rgba(var(--accent-primary-rgb),0.5)] focus-within:shadow-[0_0_15px_rgba(var(--accent-primary-rgb),0.1)] rounded-xl transition-all">
+        <div className="relative flex flex-col bg-[var(--bg-tertiary)]/90 border border-[var(--border-glass)] focus-within:border-[rgba(var(--accent-primary-rgb),0.5)] focus-within:shadow-[0_0_15px_rgba(var(--accent-primary-rgb),0.1)] rounded-xl transition-all">
           
           {/* Attachment Chips — shown above input like ChatGPT/Claude */}
           {attachments.length > 0 && (
@@ -594,11 +620,11 @@ export const ChatPanel: React.FC = () => {
               {attachments.map((attachment) => (
                 <div 
                   key={attachment.id}
-                  className="group/chip relative flex items-center gap-2 bg-[#1c1c26] border border-[#2a2a38] hover:border-[rgba(var(--accent-primary-rgb),0.3)] rounded-lg px-2 py-1.5 transition-all max-w-[200px]"
+                  className="group/chip relative flex items-center gap-2 bg-[var(--bg-secondary)] border border-[var(--border-glass)] hover:border-[rgba(var(--accent-primary-rgb),0.3)] rounded-lg px-2 py-1.5 transition-all max-w-[200px]"
                 >
                   {/* Thumbnail or Icon */}
                   {attachment.isImage && attachment.previewUrl ? (
-                    <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 border border-[#2a2a38]">
+                    <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 border border-[var(--border-glass)]">
                       <img 
                         src={attachment.previewUrl} 
                         alt={attachment.name}
@@ -606,7 +632,7 @@ export const ChatPanel: React.FC = () => {
                       />
                     </div>
                   ) : (
-                    <div className="w-8 h-8 rounded-md flex-shrink-0 bg-[#0e0e14] border border-[#2a2a38] flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-md flex-shrink-0 bg-[var(--bg-tertiary)] border border-[var(--border-glass)] flex items-center justify-center">
                       <FileIcon size={14} className="text-zinc-400" />
                     </div>
                   )}
@@ -679,7 +705,7 @@ export const ChatPanel: React.FC = () => {
         
         {/* Phase Badge */}
         {phase !== 'idle' && (
-          <div className={`absolute -top-3 left-1/2 -translate-x-1/2 flex items-center space-x-1.5 bg-[#141419] border px-3 py-0.5 rounded-full shadow-lg text-[10px] font-mono ${
+          <div className={`absolute -top-3 left-1/2 -translate-x-1/2 flex items-center space-x-1.5 bg-[var(--bg-secondary)] border px-3 py-0.5 rounded-full shadow-lg text-[10px] font-mono ${
             phase === 'completed' 
               ? 'border-emerald-500/40 text-emerald-400' 
               : phase === 'failed' 
@@ -710,7 +736,7 @@ const MessageBubble: React.FC<{ message: ConversationMessage }> = ({ message }) 
   if (isSystem) {
     return (
       <div className="flex justify-center my-3">
-        <span className="px-3 py-1 bg-[#141419] border border-[#22222e] rounded-full text-[10px] font-mono text-zinc-400">
+        <span className="px-3 py-1 bg-[var(--bg-secondary)] border border-[var(--border-glass)] rounded-full text-[10px] font-mono text-zinc-400">
           {message.content}
         </span>
       </div>
@@ -737,15 +763,15 @@ const MessageBubble: React.FC<{ message: ConversationMessage }> = ({ message }) 
           </div>
         ) : (
           /* Assistant Unified Card (Thinking & Output joined in one card) */
-          <div className="w-full bg-[#141419]/90 border border-[#22222e] rounded-2xl rounded-tl-xs p-3.5 space-y-3 shadow-md backdrop-blur-md">
+          <div className="w-full bg-[var(--bg-secondary)]/90 border border-[var(--border-glass)] rounded-2xl rounded-tl-xs p-3.5 space-y-3 shadow-md backdrop-blur-md">
             {/* Thinking Process (Collapsible section at top of card) */}
             {message.thinking && (
-              <details className="w-full text-[11px] text-zinc-400 bg-[#09090d]/90 border border-[#1e1e28] rounded-xl overflow-hidden group">
+              <details className="w-full text-[11px] text-zinc-400 bg-[var(--bg-tertiary)]/90 border border-[var(--border-glass)] rounded-xl overflow-hidden group">
                 <summary className="px-3 py-1.5 cursor-pointer hover:bg-[var(--border-glass)] flex items-center space-x-2 select-none font-mono text-[10px] text-zinc-400">
                   <ChevronDown size={12} className="group-open:-rotate-180 transition-transform text-[var(--accent-primary)]" />
                   <span>Thinking Process</span>
                 </summary>
-                <div className="p-3 pt-1 border-t border-[#1e1e28] font-mono text-[11px] text-zinc-400 italic opacity-85 whitespace-pre-wrap leading-relaxed">
+                <div className="p-3 pt-1 border-t border-[var(--border-glass)] font-mono text-[11px] text-zinc-400 italic opacity-85 whitespace-pre-wrap leading-relaxed">
                   {message.thinking}
                 </div>
               </details>
@@ -862,11 +888,11 @@ const ToolCallCard: React.FC<{ tool: ToolProposal; result?: ToolResult }> = ({ t
   const argEntries = Object.entries(argsObj);
 
   return (
-    <div className="w-full bg-[#141419]/90 border border-[#22222e] hover:border-[#2e2e3e] rounded-xl p-3.5 flex flex-col space-y-3 shadow-lg backdrop-blur-md transition-all">
+    <div className="w-full bg-[var(--bg-secondary)]/90 border border-[var(--border-glass)] hover:border-[var(--border-glass-hover)] rounded-xl p-3.5 flex flex-col space-y-3 shadow-lg backdrop-blur-md transition-all">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#1f1f2b] pb-2.5">
+      <div className="flex items-center justify-between border-b border-[var(--border-glass)] pb-2.5">
         <div className="flex items-center space-x-2.5">
-          <div className="p-1.5 rounded-lg bg-[#0b0b0f] border border-[#22222e] flex items-center justify-center shadow-inner">
+          <div className="p-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-glass)] flex items-center justify-center shadow-inner">
             {getToolIcon(tool.toolId)}
           </div>
           <div className="flex flex-col">
@@ -909,7 +935,7 @@ const ToolCallCard: React.FC<{ tool: ToolProposal; result?: ToolResult }> = ({ t
           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-semibold">
             Arguments
           </span>
-          <div className="bg-[#0b0b0f]/90 border border-[#1e1e2a] rounded-lg p-2.5 space-y-2">
+          <div className="bg-[var(--bg-tertiary)]/90 border border-[var(--border-glass)] rounded-lg p-2.5 space-y-2">
             {argEntries.map(([key, val]) => (
               <div key={key} className="flex flex-col text-xs space-y-1 font-mono">
                 <div className="flex items-center space-x-2 flex-wrap gap-y-1">
@@ -925,13 +951,13 @@ const ToolCallCard: React.FC<{ tool: ToolProposal; result?: ToolResult }> = ({ t
                       {val}
                     </span>
                   ) : typeof val === 'string' && !val.includes('\n') && val.length < 60 ? (
-                    <span className="text-zinc-200 bg-[#121218] border border-[#22222e] px-2 py-0.5 rounded text-[11px] break-all">
+                    <span className="text-zinc-200 bg-[var(--bg-secondary)] border border-[var(--border-glass)] px-2 py-0.5 rounded text-[11px] break-all">
                       {val}
                     </span>
                   ) : null}
                 </div>
                 {(typeof val === 'object' && val !== null) || (typeof val === 'string' && (val.includes('\n') || val.length >= 60)) ? (
-                  <div className="text-[11px] text-zinc-300 bg-[#101015] border border-[#1e1e28] rounded p-2 overflow-x-auto whitespace-pre-wrap max-h-40 leading-relaxed scrollbar-thin">
+                  <div className="text-[11px] text-zinc-300 bg-[var(--bg-tertiary)] border border-[var(--border-glass)] rounded p-2 overflow-x-auto whitespace-pre-wrap max-h-40 leading-relaxed scrollbar-thin">
                     {typeof val === 'string' ? val : JSON.stringify(val, null, 2)}
                   </div>
                 ) : null}
@@ -983,7 +1009,7 @@ const ToolCallCard: React.FC<{ tool: ToolProposal; result?: ToolResult }> = ({ t
           </div>
 
           {isOutputExpanded && (
-            <div className="text-[11px] font-mono text-zinc-200 bg-[#0a0a0e] border border-[#1b1b26] rounded-lg p-2.5 overflow-x-auto whitespace-pre-wrap max-h-56 leading-relaxed scrollbar-thin shadow-inner">
+            <div className="text-[11px] font-mono text-zinc-200 bg-[var(--bg-tertiary)] border border-[var(--border-glass)] rounded-lg p-2.5 overflow-x-auto whitespace-pre-wrap max-h-56 leading-relaxed scrollbar-thin shadow-inner">
               {result.output}
             </div>
           )}
@@ -1005,8 +1031,8 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
   };
 
   return (
-    <div className="my-2 bg-[#09090d] border border-[#22222e] rounded-xl overflow-hidden shadow-lg font-mono">
-      <div className="flex items-center justify-between px-3 py-1 bg-[#101017] border-b border-[#22222e] text-[10px] text-zinc-400 select-none">
+    <div className="my-2 bg-[var(--bg-tertiary)] border border-[var(--border-glass)] rounded-xl overflow-hidden shadow-lg font-mono">
+      <div className="flex items-center justify-between px-3 py-1 bg-[var(--bg-secondary)] border-b border-[var(--border-glass)] text-[10px] text-zinc-400 select-none">
         <span className="uppercase tracking-wider font-semibold text-[var(--accent-primary)]">{language || 'code'}</span>
         <button
           onClick={handleCopy}
@@ -1031,7 +1057,7 @@ const renderInlineFormatting = (text: string): React.ReactNode => {
     if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
       const codeText = part.slice(1, -1);
       return (
-        <code key={idx} className="bg-[#09090d] text-[var(--accent-primary)] border border-[#22222e] px-1.5 py-0.5 rounded font-mono text-[11px] mx-0.5">
+        <code key={idx} className="bg-[var(--bg-tertiary)] text-[var(--accent-primary)] border border-[var(--border-glass)] px-1.5 py-0.5 rounded font-mono text-[11px] mx-0.5">
           {codeText}
         </code>
       );
@@ -1064,7 +1090,7 @@ const renderFormattedText = (text: string, keyPrefix: string) => {
     // Headers
     if (trimmed.startsWith('### ')) {
       elements.push(
-        <h3 key={`${keyPrefix}-h3-${lineIdx}`} className="text-xs font-bold text-zinc-100 mt-2 mb-1 border-b border-[#22222e] pb-1 font-sans">
+        <h3 key={`${keyPrefix}-h3-${lineIdx}`} className="text-xs font-bold text-zinc-100 mt-2 mb-1 border-b border-[var(--border-glass)] pb-1 font-sans">
           {renderInlineFormatting(trimmed.slice(4))}
         </h3>
       );

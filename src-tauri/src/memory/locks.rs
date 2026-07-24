@@ -25,7 +25,8 @@ impl ProjectLock {
         if lock_path.exists() {
             if let Ok(content) = fs::read_to_string(&lock_path) {
                 if let Ok(lock_data) = serde_json::from_str::<LockData>(&content) {
-                    let sys = System::new_all();
+                    let mut sys = Box::new(System::new());
+                    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
                     
                     let pid_alive = sys.process(sysinfo::Pid::from(lock_data.pid as usize)).is_some();
                     let same_machine = lock_data.machine == System::host_name().unwrap_or_default();

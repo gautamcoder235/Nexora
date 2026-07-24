@@ -67,8 +67,8 @@ export const EntityMentionPicker: React.FC<EntityMentionPickerProps> = ({ onSele
   if (!isMentionPickerOpen || filteredEntities.length === 0) return null;
 
   return (
-    <div className="absolute bottom-full left-0 mb-2 w-64 max-h-64 overflow-y-auto bg-[#141419]/98 border border-[#22222e] rounded-xl shadow-2xl z-50 backdrop-blur-xl animate-in fade-in duration-150">
-      <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-bold border-b border-[#22222e]">Mention Entity Context</div>
+    <div className="absolute bottom-full left-0 mb-2 w-64 max-h-64 overflow-y-auto bg-[var(--bg-secondary)]/98 border border-[var(--border-glass)] rounded-xl shadow-2xl z-50 backdrop-blur-xl animate-in fade-in duration-150">
+      <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-bold border-b border-[var(--border-glass)]">Mention Entity Context</div>
       <div ref={containerRef} className="p-1 space-y-0.5 font-sans">
         {filteredEntities.map((entity, index) => {
           const Icon = entity.icon;

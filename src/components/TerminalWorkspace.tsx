@@ -176,12 +176,12 @@ const GlassyResizeHandle = ({ id, isVertical }: { id?: string, isVertical: boole
   <PanelResizeHandle
     id={id}
     className={`flex items-center justify-center group z-40 relative ${
-      isVertical ? 'cursor-col-resize w-[6px] h-full mx-[0px]' : 'cursor-row-resize h-[6px] w-full my-[0px]'
+      isVertical ? 'cursor-col-resize w-[8px] h-full mx-[0px]' : 'cursor-row-resize h-[8px] w-full my-[0px]'
     }`}
   >
     <div 
-      className={`bg-[var(--border-glass)] group-hover:bg-[var(--accent-primary)] group-active:bg-[var(--accent-primary)] transition-colors duration-150 ${
-        isVertical ? 'w-[2px] h-full' : 'h-[2px] w-full'
+      className={`rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] group-active:bg-[var(--accent-primary)] transition-colors ${
+        isVertical ? 'w-1 h-8' : 'h-1 w-8'
       }`} 
     />
   </PanelResizeHandle>
@@ -578,6 +578,7 @@ export const TerminalWorkspace: React.FC = () => {
                     width: '100%',
                     height: '100%',
                     opacity: 0,
+                    display: 'none',
                     pointerEvents: 'none',
                   };
                 }
