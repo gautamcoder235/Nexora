@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal, GitBranch } from "lucide-react";
+import { FolderOpen, BarChart2, Cpu, HardDrive, Layers, Trash2, Plus, Save, Pin, PinOff, LayoutGrid, FileText, ChevronDown, Keyboard, SidebarClose, Edit2, ChevronRight, Power, Settings, Import, Sparkles, Folder, Search, X, Terminal, GitBranch, PanelTop, PanelTopClose } from "lucide-react";
 import { ActivityBar } from "./components/ActivityBar";
 import { TitleBar } from "./components/TitleBar";
 import { AgentGrid } from "./components/AgentGrid";
@@ -11,7 +11,7 @@ const TerminalWorkspace = React.lazy(() => import("./components/TerminalWorkspac
 
 const TeamDashboard = React.lazy(() => import("./components/NexoraTeam/TeamDashboard").then(m => ({ default: m.TeamDashboard })));
 const AgentReviewCenter = React.lazy(() => import("./components/ExecutionReview/AgentReviewCenter").then(m => ({ default: m.AgentReviewCenter })));
-import { AgentInspector } from "./components/AgentInspector";
+import { StartupSplash } from "./components/StartupSplash";
 import { useOrchestratorStore } from "./stores/orchestratorStore";
 
 import { useTeamStore } from "./stores/teamStore";
@@ -659,145 +659,7 @@ function App() {
     }
   };
   if (showSplash) {
-    return (
-      <div 
-        data-tauri-drag-region
-        className={`h-screen w-screen bg-[#0a0d16] flex flex-col justify-center items-center font-sans overflow-hidden select-none relative transition-opacity duration-500 ease-out z-[9999] cursor-default ${
-          splashFade ? "opacity-0" : "opacity-100"
-        }`}
-      >
-        <TitleBar />
-        <style dangerouslySetInnerHTML={{ __html: `
-          @keyframes splashLogoBounce {
-            0% { transform: scale(0.3); opacity: 0; filter: blur(10px); }
-            70% { transform: scale(1.1); opacity: 0.9; filter: blur(0px); }
-            100% { transform: scale(1); opacity: 1; }
-          }
-          @keyframes splashLogoGlow {
-            0%, 100% { filter: drop-shadow(0 0 10px rgba(37, 99, 235, 0.35)) drop-shadow(0 8px 24px rgba(10, 13, 22, 0.45)); }
-            50% { filter: drop-shadow(0 0 20px rgba(37, 99, 235, 0.65)) drop-shadow(0 8px 24px rgba(10, 13, 22, 0.45)); }
-          }
-          @keyframes splashProgress {
-            0% { width: 0%; }
-            40% { width: 45%; }
-            70% { width: 85%; }
-            100% { width: 100%; }
-          }
-          @keyframes splashTextTracking {
-            0% { letter-spacing: -0.15em; opacity: 0; filter: blur(4px); transform: translateY(-4px); }
-            100% { letter-spacing: 0.25em; opacity: 1; filter: blur(0px); transform: translateY(0); }
-          }
-          @keyframes splashSubtextFade {
-            0% { opacity: 0; filter: blur(2px); transform: translateY(12px); }
-            100% { opacity: 0.7; filter: blur(0px); transform: translateY(0); }
-          }
-          @keyframes splashOrbit {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-          @keyframes splashParticleFloat {
-            0%, 100% { transform: translateY(0px) translateX(0px); }
-            50% { transform: translateY(-12px) translateX(8px); }
-          }
-          @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-          }
-          
-          .splash-logo-container {
-            animation: splashLogoBounce 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-          }
-          .splash-logo-card {
-            animation: splashLogoGlow 3s ease-in-out infinite;
-          }
-          .splash-text-brand {
-            animation: splashTextTracking 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
-          }
-          .splash-subtext {
-            animation: splashSubtextFade 1.5s ease-out 1.2s both;
-          }
-          .splash-progress-fill {
-            background-color: #ffffff !important;
-            box-shadow: 0 0 12px rgba(255, 255, 255, 0.95), 0 0 4px rgba(255, 255, 255, 0.5);
-            animation: splashProgress 3.8s cubic-bezier(0.22, 1, 0.36, 1) both;
-          }
-          .splash-orbiting-ring {
-            animation: splashOrbit 16s linear infinite;
-          }
-          .splash-particle-float {
-            animation: splashParticleFloat 9s ease-in-out infinite;
-          }
-        `}} />
-
-        {/* Ambient Glowing Background (Refined Spacing) */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-          <div className="absolute top-[-5%] left-[-5%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-tr from-blue-600/12 to-indigo-600/8 opacity-40 blur-[130px]" />
-          <div className="absolute bottom-[-15%] right-[-15%] w-[65vw] h-[65vw] rounded-full bg-gradient-to-br from-cyan-600/12 to-blue-600/8 opacity-40 blur-[130px]" />
-          
-          {/* Subtle Grid Overlay */}
-          <div 
-            className="absolute inset-0 opacity-[0.012]" 
-            style={{
-              backgroundImage: `
-                linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)
-              `,
-              backgroundSize: '32px 32px',
-              maskImage: 'radial-gradient(circle at center, black 10%, transparent 85%)',
-              WebkitMaskImage: 'radial-gradient(circle at center, black 10%, transparent 85%)',
-            }}
-          />
-          
-          {/* Floating splash particles */}
-          <div className="absolute top-[25%] left-[30%] w-2 h-2 rounded-full bg-cyan-400/25 blur-[1px] splash-particle-float" style={{ animationDelay: '0s', animationDuration: '8s' }} />
-          <div className="absolute top-[60%] right-[35%] w-1.5 h-1.5 rounded-full bg-indigo-400/25 blur-[1px] splash-particle-float" style={{ animationDelay: '1s', animationDuration: '9s' }} />
-          <div className="absolute bottom-[20%] left-[45%] w-1.5 h-1.5 rounded-full bg-blue-400/25 blur-[1px] splash-particle-float" style={{ animationDelay: '2s', animationDuration: '10s' }} />
-        </div>
-
-        {/* Splash Content Container */}
-        <div className="flex flex-col items-center justify-center z-10 space-y-10 -translate-y-12">
-          
-          {/* Outer Rotating Dotted Rings (CENTERED) */}
-          <div className="relative w-48 h-48">
-            <div className="absolute left-0 top-0 w-full h-full rounded-full border border-dashed border-blue-500/10 splash-orbiting-ring" />
-            <div className="absolute left-[12px] top-[12px] w-[168px] h-[168px] rounded-full border border-dashed border-cyan-500/5 splash-orbiting-ring" style={{ animationDirection: 'reverse', animationDuration: '24s' }} />
-            
-            <div className="splash-logo-container absolute left-12 top-12 w-24 h-24">
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 opacity-45 blur-xl" />
-              
-              <img 
-                src="/logo_refined.png" 
-                className="splash-logo-card w-full h-full absolute inset-0 z-10 object-contain rounded-2xl" 
-                alt="Nexora Logo" 
-              />
-            </div>
-          </div>
-
-          {/* Brand Name & Quote Stack */}
-          <div className="flex flex-col items-center justify-center space-y-3.5">
-            <h1 className="splash-text-brand text-5xl md:text-6xl font-black tracking-[0.25em] text-white uppercase select-none filter drop-shadow-[0_0_20px_rgba(37,99,235,0.25)] pl-[0.25em]">
-              Nexora
-            </h1>
-
-            <p className="splash-subtext text-xs md:text-sm font-bold tracking-[0.45em] text-blue-400/60 uppercase pl-[0.45em]">
-              Orchestrating the Future of Software
-            </p>
-          </div>
-
-          {/* Progress loader bar */}
-          <div className="flex flex-col items-center justify-center space-y-6 pt-4">
-            <div className="w-60 h-[4px] bg-white/5 rounded-full overflow-hidden relative shadow-inner">
-              <div className="splash-progress-fill h-full rounded-full" />
-            </div>
-
-            {/* Initializing label */}
-            <span className="splash-subtext text-[11px] font-mono tracking-[0.2em] text-blue-400/50 uppercase">
-              Initializing System...
-            </span>
-          </div>
-        </div>
-      </div>
-    );
+    return <StartupSplash onComplete={() => setShowSplash(false)} />;
   }
 
   // If no workspace is active/defined, prompt to create a Workspace Session
@@ -1418,7 +1280,7 @@ function App() {
             <div 
               className={`flex flex-col glass-panel shadow-2xl bg-bg-glass backdrop-blur-xl overflow-hidden ${
                 isTaskPanelPinned ? 'relative z-10 flex-shrink-0' : '!absolute top-0 left-0 right-0 z-20'
-              } ${isHeightDragging ? '' : 'transition-all duration-300 ease-out'} p-2 border-b border-border-glass`}
+              } ${isHeightDragging ? '' : 'transition-[height,opacity,transform] duration-300 ease-out'} p-2 border-b border-border-glass`}
               style={
                 isTaskPanelPinned 
                   ? { 
@@ -1525,24 +1387,21 @@ function App() {
 
                   <div className="w-px h-3.5 bg-border-glass mx-0.5"></div>
 
-                  {/* Pin Panel Toggle */}
+                  {/* Dock / Undock Panel Toggle */}
                   <button
                     onClick={() => {
                       if (terminals.length <= 8) setTaskPanelPinned(!isTaskPanelPinned);
                     }}
-                    className={`flex items-center justify-center w-[30px] h-[30px] rounded-lg border transition-colors ${terminals.length > 8 ? 'opacity-50 cursor-not-allowed border-border-glass text-text-muted' : isTaskPanelPinned ? 'bg-accent-primary/10 border-accent-primary/30 text-accent-primary' : 'bg-bg-secondary/60 border border-border-glass text-text-muted hover:text-text-primary hover:border-border-glass-hover'}`}
-                    title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isTaskPanelPinned ? "Unpin Panel (Float)" : "Pin Panel (Dock)"}
+                    className={`flex items-center justify-center w-[30px] h-[30px] rounded-lg border transition-colors cursor-pointer ${
+                      terminals.length > 8 
+                        ? 'opacity-50 cursor-not-allowed border-border-glass text-text-muted' 
+                        : isTaskPanelPinned 
+                          ? 'bg-accent-primary/10 border-accent-primary/30 text-accent-primary hover:bg-accent-primary/20' 
+                          : 'bg-bg-secondary/60 border border-border-glass text-text-muted hover:text-text-primary hover:border-border-glass-hover'
+                    }`}
+                    title={terminals.length > 8 ? "Docking disabled (> 8 terminals)" : isTaskPanelPinned ? "Undock Panel (Float)" : "Dock Panel"}
                   >
-                    {isTaskPanelPinned ? <Pin size={12} /> : <PinOff size={12} />}
-                  </button>
-
-                  {/* Hide Panel Toggle */}
-                  <button
-                    onClick={() => setTaskCenterVisible(false)}
-                    className="flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg bg-bg-secondary/60 border border-border-glass text-text-muted hover:text-text-primary hover:border-border-glass-hover text-[10px] font-bold tracking-wider uppercase transition-colors"
-                  >
-                    <SidebarClose size={12} className="rotate-180" />
-                    <span>Hide</span>
+                    {isTaskPanelPinned ? <PanelTopClose size={14} /> : <PanelTop size={14} />}
                   </button>
                 </div>
               </header>
@@ -1576,7 +1435,7 @@ function App() {
             <div
               onMouseDown={startHeightResize}
               onDoubleClick={() => setTaskCenterVisible(false)}
-              className={`absolute left-0 right-0 z-40 h-3 bg-transparent ${isHeightDragging ? '' : 'hover:bg-accent-primary/10 transition-all duration-200'} cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
+              className={`absolute left-0 right-0 z-40 h-3 bg-transparent ${isHeightDragging ? '' : 'hover:bg-accent-primary/10 transition-colors duration-200'} cursor-row-resize flex items-center justify-center group select-none flex-shrink-0`}
               style={{
                 top: isTaskPanelPinned 
                   ? 'calc(var(--top-panel-height) + (var(--pane-spacing) / 2) - 6px)' 
@@ -1803,7 +1662,6 @@ function App() {
       <SettingsModalBoundary>
         <SettingsModal />
       </SettingsModalBoundary>
-      <AgentInspector />
       <PerformanceOverlay />
       </div>
     </div>

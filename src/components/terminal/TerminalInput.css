@@ -7,7 +7,7 @@
   align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  background-color: var(--bg-glass-light) !important;
+  background-color: rgba(10, 10, 15, 0.2) !important;
   border-top: 1px solid var(--border-glass) !important;
   border-left: none !important;
   border-right: none !important;
@@ -21,7 +21,7 @@
 
 .terminal-input:focus-within {
   border-top-color: rgba(var(--accent-primary-rgb), 0.45) !important;
-  background-color: var(--bg-glass-hover) !important;
+  background-color: rgba(10, 10, 15, 0.35) !important;
 }
 
 .terminal-input__prompt {

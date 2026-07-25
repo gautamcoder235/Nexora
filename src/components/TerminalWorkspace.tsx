@@ -62,13 +62,13 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
     });
   }, [isHidden, session.id]);
 
-  let borderClass = "border-[var(--border-glass)] hover:border-[var(--border-glass-hover)]";
+  let borderClass = "border-border-glass hover:border-border-glass-hover";
   if (isHighlighted) {
-    borderClass = "border-[var(--accent-primary)] shadow-[0_0_12px_rgba(var(--accent-primary-rgb),0.3)]";
+    borderClass = "border-[#f59e0b] shadow-[0_0_12px_rgba(245,158,11,0.3)]";
   } else if (isCompleted) {
     borderClass = "terminal-border-pulse";
   } else if (isFocused) {
-    borderClass = "border-[rgba(var(--accent-primary-rgb),0.8)] shadow-[0_0_8px_rgba(255,255,255,0.05)]";
+    borderClass = "border-zinc-500/80 shadow-[0_0_8px_rgba(255,255,255,0.05)]";
   }
   
   return (
@@ -80,19 +80,19 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
           clearTerminalCompleted(session.id);
         }
       }}
-      className={`flex-grow flex flex-col bg-[var(--bg-primary)] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${borderClass}`}
+      className={`flex-grow flex flex-col bg-[#000000] rounded border overflow-hidden relative group font-mono min-w-0 transition-all duration-300 h-full min-h-0 ${borderClass}`}
     >
       {/* Title / Action bar */}
       {settings.appearance?.layout?.showTerminalTitleBar !== false && (
-        <div className="flex items-center justify-between px-2.5 h-[26px] bg-gradient-to-r from-[var(--bg-primary)]/80 to-[var(--bg-secondary)]/30 backdrop-blur-md border-b border-[var(--border-glass)] text-[9.5px] select-none text-[var(--text-secondary)] flex-shrink-0 rounded-t-[inherit]">
+        <div className="flex items-center justify-between px-2.5 h-[26px] bg-gradient-to-r from-zinc-950/60 to-zinc-900/30 backdrop-blur-md border-b border-border-glass/40 text-[9.5px] select-none text-zinc-400 flex-shrink-0 rounded-t-[inherit]">
           <div className="flex items-center gap-2 truncate group/title">
             {/* Left Status Indicator */}
             {isWorking ? (
-              <Loader2 size={11} className="text-[var(--accent-warning)] animate-spin" />
+              <Loader2 size={11} className="text-amber-500 animate-spin" />
             ) : isCompleted ? (
-              <Check size={11} className="text-[var(--agent-status-success)] drop-shadow-[0_0_2px_rgba(52,211,153,0.4)]" />
+              <Check size={11} className="text-emerald-400 drop-shadow-[0_0_2px_rgba(52,211,153,0.4)]" />
             ) : (
-              <TerminalIcon size={11} className="text-[var(--text-muted)]" />
+              <TerminalIcon size={11} className="text-zinc-500" />
             )}
 
             {isEditing ? (
@@ -108,14 +108,14 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
                     setIsEditing(false);
                   }
                 }}
-                className="bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[var(--border-glass)] px-1 py-0.5 rounded text-[9.5px] font-mono focus:outline-none focus:border-[var(--accent-primary)]"
+                className="bg-zinc-900 text-zinc-100 border border-zinc-700 px-1 py-0.5 rounded text-[9.5px] font-mono focus:outline-none focus:border-[#38bdf8]"
                 autoFocus
                 onClick={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
               />
             ) : (
               <span 
-                className="truncate font-bold font-sans tracking-wide text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none"
+                className="truncate font-bold font-sans tracking-wide text-zinc-300 hover:text-white cursor-pointer select-none"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setIsEditing(true);
@@ -127,31 +127,31 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
             )}
             
             {/* Compact ID Tag */}
-            <span className="text-[7.5px] font-mono tracking-widest bg-[var(--bg-glass-light)]/20 border border-[var(--border-glass)] text-[var(--text-muted)] px-1.5 py-0.5 rounded uppercase opacity-0 group-hover/title:opacity-100 transition-opacity duration-200">
+            <span className="text-[7.5px] font-mono tracking-widest bg-white/[0.03] border border-white/[0.04] text-zinc-500 px-1.5 py-0.5 rounded uppercase opacity-0 group-hover/title:opacity-100 transition-opacity duration-200">
               {session.id.substring(0, 6)}
             </span>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-1.5 text-[var(--text-secondary)] opacity-60 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1.5 text-zinc-400 opacity-60 group-hover:opacity-100 transition-opacity">
             <button 
               onClick={(e) => { e.stopPropagation(); setLocalRefreshKey(prev => prev + 1); }} 
               title="Refresh Terminal Display"
-              className="hover:text-[var(--text-primary)] p-1 hover:bg-[var(--border-glass)] rounded transition-colors cursor-pointer"
+              className="hover:text-zinc-200 p-1 hover:bg-white/5 rounded transition-colors cursor-pointer"
             >
               <RotateCcw size={10} />
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); onFocusToggle(frameRef.current); }} 
               title={isFocused ? "Exit Focus Mode" : "Focus Session"}
-              className="hover:text-[var(--text-primary)] p-1 hover:bg-[var(--border-glass)] rounded transition-colors cursor-pointer"
+              className="hover:text-zinc-200 p-1 hover:bg-white/5 rounded transition-colors cursor-pointer"
             >
               {isFocused ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); killTerminal(session.id); }} 
               title="Kill Terminal Session"
-              className="hover:text-[var(--accent-error)] p-1 hover:bg-[rgba(var(--accent-error-rgb),0.1)] rounded transition-colors cursor-pointer"
+              className="hover:text-rose-400 p-1 hover:bg-rose-500/10 rounded transition-colors cursor-pointer"
             >
               <X size={10} />
             </button>
@@ -160,7 +160,7 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
       )}
 
       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
-      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[var(--bg-primary)]">
+      <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#000000]">
         <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} refreshKey={refreshKey} dragFileType={dragFileType} />
       </div>
     </div>
@@ -175,13 +175,21 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
 const GlassyResizeHandle = ({ id, isVertical }: { id?: string, isVertical: boolean }) => (
   <PanelResizeHandle
     id={id}
-    className={`flex items-center justify-center group z-40 relative ${
-      isVertical ? 'cursor-col-resize w-[8px] h-full mx-[0px]' : 'cursor-row-resize h-[8px] w-full my-[0px]'
+    className={`flex items-center justify-center group z-40 relative select-none ${
+      isVertical ? 'cursor-col-resize w-[8px] h-full mx-0' : 'cursor-row-resize h-[8px] w-full my-0'
     }`}
   >
+    {/* Vertical / Horizontal line divider */}
     <div 
-      className={`rounded-full bg-zinc-700/50 group-hover:bg-[var(--accent-primary)] group-active:bg-[var(--accent-primary)] transition-colors ${
-        isVertical ? 'w-1 h-8' : 'h-1 w-8'
+      className={`absolute bg-border-glass group-hover:bg-amber-500/50 group-active:bg-amber-500 transition-colors duration-150 ${
+        isVertical ? 'inset-y-0 left-1/2 -translate-x-1/2 w-[1px] h-full' : 'inset-x-0 top-1/2 -translate-y-1/2 h-[1px] w-full'
+      }`} 
+    />
+    
+    {/* Centered drag handle pill indicator button */}
+    <div 
+      className={`rounded-full bg-zinc-700/60 group-hover:bg-amber-500 group-active:bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.2)] transition-colors duration-150 z-10 ${
+        isVertical ? 'w-1 h-7' : 'h-1 w-7'
       }`} 
     />
   </PanelResizeHandle>
@@ -453,29 +461,29 @@ export const TerminalWorkspace: React.FC = () => {
   return (
     <div className="flex-grow flex flex-col h-full space-y-1 relative">
       {/* Terminal Workspace Controls Header */}
-      <div className="flex items-center justify-between px-3 h-[28px] bg-[var(--bg-primary)]/40 backdrop-blur-md border border-[var(--border-glass)] rounded-lg select-none flex-shrink-0">
+      <div className="flex items-center justify-between px-3 h-[28px] bg-zinc-950/40 backdrop-blur-md border border-border-glass/40 rounded-lg select-none flex-shrink-0">
         <div className="flex items-center gap-2">
-          <TerminalIcon size={12.5} className="text-[var(--accent-primary)] drop-shadow-[0_0_4px_rgba(var(--accent-primary-rgb),0.4)]" />
+          <TerminalIcon size={12.5} className="text-[#38bdf8] drop-shadow-[0_0_4px_rgba(56,189,248,0.4)]" />
           <span 
             className="text-[10px] font-extrabold font-mono tracking-widest uppercase bg-clip-text text-transparent"
             style={{
-              backgroundImage: "linear-gradient(to right, var(--text-primary), var(--text-secondary))",
+              backgroundImage: "linear-gradient(to right, #ffffff, #d4d4d8)",
             }}
           >
             Terminal Workspace
           </span>
-          <span className="text-[9px] bg-[var(--bg-glass-light)]/20 border border-[var(--border-glass)] text-[var(--text-secondary)] font-semibold px-2 py-0.5 rounded-full font-mono">
+          <span className="text-[9px] bg-white/[0.04] border border-white/[0.02] text-zinc-400 font-semibold px-2 py-0.5 rounded-full font-mono">
             {terminals.length} Session{terminals.length !== 1 ? "s" : ""}
           </span>
         </div>
 
         {/* Action Controls & Layout Toggles */}
-        <div className="flex items-center gap-1 bg-[var(--bg-secondary)] border border-[var(--border-glass)] p-0.5 rounded-md">
+        <div className="flex items-center gap-1 bg-white/[0.02] p-0.5 border border-white/[0.04] rounded-md">
           {/* Refresh Controls */}
           <button
             onClick={() => setGlobalRefreshKey(prev => prev + 1)}
             title="Refresh All Terminals"
-            className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] cursor-pointer transition-colors"
+            className="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-white/5 cursor-pointer transition-colors"
           >
             <RefreshCw size={11.5} />
           </button>
@@ -485,15 +493,15 @@ export const TerminalWorkspace: React.FC = () => {
             title={isTaskCenterVisible ? "Hide Task Board" : "Show Task Board"}
             className={`p-1 rounded cursor-pointer transition-all ${
               isTaskCenterVisible 
-                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
+                ? 'bg-white/[0.06] text-[#38bdf8]' 
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
             }`}
           >
             <ClipboardList size={11.5} />
           </button>
 
           {/* Vertical divider separator */}
-          <div className="w-[1px] h-[12px] bg-[var(--border-glass)] mx-0.5" />
+          <div className="w-[1px] h-[12px] bg-white/[0.06] mx-0.5" />
 
           {/* Layout Toggles */}
           <button
@@ -501,8 +509,8 @@ export const TerminalWorkspace: React.FC = () => {
             title="Grid Layout"
             className={`p-1 rounded transition-all cursor-pointer ${
               layout.type === 'grid' 
-                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
+                ? 'bg-white/[0.06] text-white' 
+                : 'text-zinc-500 hover:text-zinc-305'
             }`}
           >
             <LayoutGrid size={11.5} />
@@ -512,8 +520,8 @@ export const TerminalWorkspace: React.FC = () => {
             title="Vertical Splits"
             className={`p-1 rounded transition-all cursor-pointer ${
               layout.type === 'vertical' 
-                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
+                ? 'bg-white/[0.06] text-white' 
+                : 'text-zinc-500 hover:text-zinc-305'
             }`}
           >
             <Columns2 size={11.5} />
@@ -523,8 +531,8 @@ export const TerminalWorkspace: React.FC = () => {
             title="Horizontal Splits"
             className={`p-1 rounded transition-all cursor-pointer ${
               layout.type === 'horizontal' 
-                ? 'bg-[rgba(var(--accent-primary-rgb),0.18)] text-[var(--accent-primary)] border border-[rgba(var(--accent-primary-rgb),0.35)] shadow-[0_0_8px_rgba(var(--accent-primary-rgb),0.15)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-glass-hover)] border border-transparent'
+                ? 'bg-white/[0.06] text-white' 
+                : 'text-zinc-500 hover:text-zinc-305'
             }`}
           >
             <Rows2 size={11.5} />
@@ -534,10 +542,10 @@ export const TerminalWorkspace: React.FC = () => {
 
       {/* Render Grid/Splits of active terminals with smooth expand animation */}
       {terminals.length === 0 ? (
-        <div className="flex-grow flex flex-col items-center justify-center bg-[var(--bg-primary)]/20 border border-[var(--border-glass)] border-dashed rounded-lg h-full p-8 text-center text-[var(--text-muted)] font-mono select-none">
-          <TerminalIcon size={36} className="text-[var(--text-muted)] mb-3 animate-pulse" />
-          <p className="text-xs font-semibold text-[var(--text-secondary)]">Terminal Panel Idle</p>
-          <p className="text-[10px] text-[var(--text-muted)] mt-1 max-w-[280px]">
+        <div className="flex-grow flex flex-col items-center justify-center bg-bg-primary/20 border border-border-glass border-dashed rounded-lg h-full p-8 text-center text-zinc-500 font-mono select-none">
+          <TerminalIcon size={36} className="text-zinc-850 mb-3 animate-pulse" />
+          <p className="text-xs font-semibold text-zinc-450">Terminal Panel Idle</p>
+          <p className="text-[10px] text-zinc-650 mt-1 max-w-[280px]">
             Launch an Agent CLI or click "+" in the Agent Panel to spawn interactive shells.
           </p>
         </div>
@@ -578,7 +586,6 @@ export const TerminalWorkspace: React.FC = () => {
                     width: '100%',
                     height: '100%',
                     opacity: 0,
-                    display: 'none',
                     pointerEvents: 'none',
                   };
                 }
@@ -602,7 +609,7 @@ export const TerminalWorkspace: React.FC = () => {
                       key={`placeholder-${session.id}`}
                       data-placeholder-id={session.id}
                       style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
-                      className="border border-dashed border-[var(--border-glass)] rounded bg-[var(--bg-primary)]/40 min-h-0 min-w-0 h-full"
+                      className="border border-dashed border-border-glass rounded bg-[#000000]/40 min-h-0 min-w-0 h-full"
                     />
                   )}
                   <div

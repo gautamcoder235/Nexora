@@ -4,7 +4,7 @@ export const codexPlugin: AgentPlugin = {
   id: "codex",
   name: "Codex CLI",
   cliCommand: "codex",
-  defaultArgs: ["--", "--test-first"],
+  defaultArgs: [],
   capabilities: { coding: true, review: false, testing: true, planning: false },
   checkCmd: "codex",
   installHelp: {

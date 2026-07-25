@@ -63,6 +63,13 @@ export interface DialogConfig {
   onConfirmPrompt?: (value: string) => void;
 }
 
+export interface PtyWarmupState {
+  isPrewarming: boolean;
+  totalSessionsToWarm: number;
+  readySessionsCount: number;
+  isWarmupComplete: boolean;
+}
+
 interface OrchestratorState {
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
@@ -82,6 +89,10 @@ interface OrchestratorState {
   sidebarWidth: number;
   topPanelHeight: number;
   
+  // Background PTY Warmup State
+  ptyWarmupState: PtyWarmupState;
+  startBackgroundPtyWarmup: (workspaceId: string) => Promise<void>;
+
   // Settings
   settings: AppSettings;
   isSettingsModalOpen: boolean;
@@ -505,32 +516,83 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         settings: sanitized
       });
 
-      // Apply theme styles on startup
-      import('../services/ThemeManager').then(({ ThemeManager }) => {
-        ThemeManager.applyAppearance(sanitized.appearance, get().sidebarWidth, get().topPanelHeight);
-      });
+      // Auto-resolve last opened workspace and trigger background PTY warmup microtask during splash screen
+      const sortedWorkspaces = [...workspaces].sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+      const targetWorkspace = sortedWorkspaces[0];
 
-      // Initialize runtime ticker for active running agents
-      if (runtimeInterval) clearInterval(runtimeInterval);
-      runtimeInterval = setInterval(() => {
-        set((state) => {
-          let changed = false;
-          const updatedAgents = state.agents.map((agent) => {
-            if (agent.status === "running") {
-              changed = true;
-              return {
-                ...agent,
-                runtimeSeconds: agent.runtimeSeconds + 1,
-                lastActive: new Date().toISOString()
-              };
-            }
-            return agent;
-          });
-          return changed ? { agents: updatedAgents } : {};
+      if (targetWorkspace) {
+        set({ activeWorkspaceId: targetWorkspace.id });
+        queueMicrotask(() => {
+          get().startBackgroundPtyWarmup(targetWorkspace.id);
         });
-      }, 1000);
+      }
     } catch (e) {
       console.error("Failed to initialize Orchestrator Store:", e);
+    }
+  },
+
+  ptyWarmupState: {
+    isPrewarming: false,
+    totalSessionsToWarm: 0,
+    readySessionsCount: 0,
+    isWarmupComplete: true
+  },
+
+  startBackgroundPtyWarmup: async (workspaceId: string) => {
+    try {
+      const snapStr = await invoke<string>("load_config", { filename: `${workspaceId}_snapshot.json` });
+      if (!snapStr || snapStr === "{}") {
+        set({ ptyWarmupState: { isPrewarming: false, totalSessionsToWarm: 0, readySessionsCount: 0, isWarmupComplete: true } });
+        return;
+      }
+
+      const snapshot = JSON.parse(snapStr) as WorkspaceSnapshot;
+      const restoredTerminals = (snapshot.terminals || []).map(t => {
+        const { history, ...term } = t;
+        return { ...term, status: 'connecting' as const };
+      });
+
+      if (restoredTerminals.length === 0) {
+        set({ ptyWarmupState: { isPrewarming: false, totalSessionsToWarm: 0, readySessionsCount: 0, isWarmupComplete: true } });
+        return;
+      }
+
+      set({
+        terminals: restoredTerminals,
+        layout: snapshot.layout || { type: 'grid', panels: [] },
+        ptyWarmupState: {
+          isPrewarming: true,
+          totalSessionsToWarm: restoredTerminals.length,
+          readySessionsCount: 0,
+          isWarmupComplete: false
+        }
+      });
+
+      // Parallel background PTY spawning with 50ms microtask stagger
+      restoredTerminals.forEach((term, idx) => {
+        setTimeout(async () => {
+          try {
+            await get().reconnectTerminal(term.id);
+            set((state) => {
+              const nextReady = state.ptyWarmupState.readySessionsCount + 1;
+              const complete = nextReady >= state.ptyWarmupState.totalSessionsToWarm;
+              return {
+                ptyWarmupState: {
+                  ...state.ptyWarmupState,
+                  readySessionsCount: nextReady,
+                  isWarmupComplete: complete,
+                  isPrewarming: !complete
+                }
+              };
+            });
+          } catch (e) {
+            console.warn(`[Pre-warm] Session ${term.id} failed:`, e);
+          }
+        }, idx * 50);
+      });
+    } catch (e) {
+      console.error("[Pre-warm] Workspace snapshot load failed:", e);
+      set({ ptyWarmupState: { isPrewarming: false, totalSessionsToWarm: 0, readySessionsCount: 0, isWarmupComplete: true } });
     }
   },
 
@@ -1399,10 +1461,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
           activeTabId: snapshot.activeBrowserTabId || null
         });
 
-        // Trigger reconnect for each restored terminal session asynchronously to spawn fresh PTYs
-        for (const term of restoredTerminals) {
-          get().reconnectTerminal(term.id);
-        }
+        // Trigger reconnect for each restored terminal session asynchronously with staggered background warmup during startup animation
+        restoredTerminals.forEach((term, idx) => {
+          setTimeout(() => {
+            get().reconnectTerminal(term.id);
+          }, idx * 100);
+        });
       } else {
         // Reset state for new or empty workspace to prevent leaking session states from other workspaces
         set({
