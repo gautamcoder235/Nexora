@@ -26,6 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ContextMenu } from "./components/ContextMenu";
 import { CustomDialog } from "./components/CustomDialog";
 import { SettingsModal } from "./components/SettingsModal";
+import { CommandPalette } from "./components/CommandPalette";
 import { EventBus } from "./core/events";
 import { DEFAULT_APP_SETTINGS } from "./types";
 import { AIKernel } from "./core/ai/kernel/AIKernel";
@@ -76,6 +77,7 @@ class SettingsModalBoundary extends React.Component<
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [splashFade, setSplashFade] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     const fadeTimer = setTimeout(() => {
@@ -478,7 +480,10 @@ function App() {
         return e.key.toLowerCase() === key || (e.code || '').toLowerCase() === 'key' + key;
       };
 
-      if (checkShortcut(shortcuts.toggleSidebar)) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      } else if (checkShortcut(shortcuts.toggleSidebar)) {
         e.preventDefault();
         state.setSidebarVisible(!state.isSidebarVisible);
       } else if (checkShortcut(shortcuts.toggleTaskCenter)) {
@@ -1662,6 +1667,26 @@ function App() {
       <SettingsModalBoundary>
         <SettingsModal />
       </SettingsModalBoundary>
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigate={(view) => {
+          if (view === 'terminal') {
+            useOrchestratorStore.getState().setSidebarVisible(true);
+          } else if (view === 'agents') {
+            useOrchestratorStore.getState().setTaskCenterVisible(true);
+          } else if (view === 'review') {
+            useChangesetStore.getState().setReviewCenterOpen(true);
+          } else if (view === 'team') {
+            useTeamStore.getState().setTeamPanelVisible(true);
+          }
+        }}
+        onOpenSettings={() => useOrchestratorStore.getState().setSettingsModalOpen(true)}
+        onTogglePerformance={() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F12', ctrlKey: true, shiftKey: true }));
+        }}
+        onClearLogs={() => useOrchestratorStore.getState().clearActivityFeed()}
+      />
       <PerformanceOverlay />
       </div>
     </div>

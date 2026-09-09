@@ -4,11 +4,20 @@ import App from "./App";
 import "./index.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-// Block reload/refresh shortcuts (F5, Ctrl+F5, Ctrl+R, Cmd+R, etc.)
+// Block reload/refresh shortcuts and default browser DevTools shortcuts (F5, Ctrl+R, Ctrl+Shift+I, F12, etc.)
 window.addEventListener("keydown", (e) => {
+  const isCmdOrCtrl = e.ctrlKey || e.metaKey;
+  const keyUpper = e.key.toUpperCase();
+
+  // Block F5, Ctrl+R / Cmd+R reload
+  if (e.key === "F5" || (isCmdOrCtrl && keyUpper === "R")) {
+    e.preventDefault();
+  }
+
+  // Block Ctrl+Shift+I, Cmd+Option+I, Cmd+Shift+I, and F12 browser DevTools
   if (
-    e.key === "F5" ||
-    ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))
+    (isCmdOrCtrl && e.shiftKey && keyUpper === "I") ||
+    (e.metaKey && e.altKey && keyUpper === "I")
   ) {
     e.preventDefault();
   }

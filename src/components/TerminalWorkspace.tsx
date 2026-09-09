@@ -6,6 +6,7 @@ import { TerminalSession } from "../types";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { EventBus } from "../core/events";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 // ==========================================
 // Single Terminal Panel Component
@@ -54,12 +55,10 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
   };
   
   useEffect(() => {
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('set_terminal_visibility', { 
-        sessionId: session.id, 
-        visibility: isHidden ? 'Hidden' : 'Visible' 
-      }).catch(err => console.error('Failed to set terminal visibility:', err));
-    });
+    invoke('set_terminal_visibility', { 
+      sessionId: session.id, 
+      visibility: isHidden ? 'Hidden' : 'Visible' 
+    }).catch(err => console.error('Failed to set terminal visibility:', err));
   }, [isHidden, session.id]);
 
   let borderClass = "border-border-glass hover:border-border-glass-hover";
@@ -161,7 +160,7 @@ const TerminalFrame: React.FC<TerminalFrameProps> = React.memo(({ session, isFoc
 
       {/* Terminal Viewport Container (Renders our block-based TerminalPane) */}
       <div className="flex-grow flex-1 min-h-0 w-full overflow-hidden relative bg-[#000000]">
-        <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} refreshKey={refreshKey} dragFileType={dragFileType} />
+        <TerminalPane paneId={session.id} isFocused={isFocused} isAnimating={isAnimating} isHidden={isHidden} refreshKey={refreshKey} dragFileType={dragFileType} />
       </div>
     </div>
   );

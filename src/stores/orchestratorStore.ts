@@ -30,6 +30,8 @@ const invoke = async <T>(cmd: string, args?: Record<string, any>): Promise<T> =>
     throw err;
   }
 };
+
+let lastSpawnTimestamp = 0;
 import { 
   Workspace, 
   Project, 
@@ -866,6 +868,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   },
 
   spawnTerminal: async (projectId, agentId, customCommand, customArgs, startupInstruction) => {
+    const now = Date.now();
+    if (now - lastSpawnTimestamp < 120) {
+      return undefined;
+    }
+    lastSpawnTimestamp = now;
+
     if (get().terminals.length >= 16) {
       get().showAlertDialog(
         "Maximum Sessions Reached",

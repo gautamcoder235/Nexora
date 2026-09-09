@@ -24,11 +24,12 @@ interface TerminalPaneProps {
   paneId: string;
   isFocused: boolean;
   isAnimating: boolean;
+  isHidden?: boolean;
   refreshKey?: number;
   dragFileType?: 'image' | 'file' | null;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, refreshKey, dragFileType = null }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, isFocused, isAnimating, isHidden = false, refreshKey, dragFileType = null }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -124,12 +125,22 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     if (isAnimating) {
       startBlackout();
     } else {
-      endBlackoutAfterDelay(400);
+      endBlackoutAfterDelay(800);
     }
     return () => {
       if (blackoutTimerRef.current) clearTimeout(blackoutTimerRef.current);
     };
   }, [isAnimating]);
+
+  useEffect(() => {
+    if (!isHidden) {
+      if (fitAddonRef.current && termRef.current) {
+        try {
+          fitAddonRef.current.fit();
+        } catch (e) {}
+      }
+    }
+  }, [isHidden]);
 
   useEffect(() => {
     let t1: any = null;
@@ -317,52 +328,47 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
     let activeWebglAddon: WebglAddon | null = null;
     let activeCanvasAddon: CanvasAddon | null = null;
 
-    // Load WebGL / Canvas renderer addon for smooth rendering, high FPS up to 240, and crisp text
-    // MUST be called AFTER term.open() according to xterm.js spec!
+    // Defer WebGL / Canvas GPU addon initialization to requestAnimationFrame to keep terminal mounting non-blocking
     const useGpu = settings?.appearance?.terminal?.hardwareAcceleration ?? settings?.hardwareAcceleration ?? true;
-    if (useGpu && isWebGL2Supported()) {
-      try {
-        const webglAddon = new WebglAddon();
-        activeWebglAddon = webglAddon;
-        
-        // Safely handle WebGL context loss
-        webglAddon.onContextLoss(() => {
-          console.warn('WebGL context lost. Disposing and falling back to Canvas renderer.');
-          // Defer to avoid crashing xterm's internal event dispatcher during the event
-          setTimeout(() => {
-            try { webglAddon.dispose(); } catch (e) {}
-            activeWebglAddon = null;
+    let gpuRafId: number | null = null;
+    
+    if (useGpu) {
+      gpuRafId = requestAnimationFrame(() => {
+        if (!termRef.current) return;
+        if (isWebGL2Supported()) {
+          try {
+            const webglAddon = new WebglAddon();
+            activeWebglAddon = webglAddon;
+            webglAddon.onContextLoss(() => {
+              console.warn('WebGL context lost. Disposing and falling back to Canvas renderer.');
+              setTimeout(() => {
+                try { webglAddon.dispose(); } catch (e) {}
+                activeWebglAddon = null;
+                try {
+                  const canvasAddon = new CanvasAddon();
+                  activeCanvasAddon = canvasAddon;
+                  term.loadAddon(canvasAddon);
+                } catch (e) {
+                  console.warn('Canvas fallback failed. Using standard DOM renderer.', e);
+                }
+              }, 0);
+            });
+            term.loadAddon(webglAddon);
+          } catch (e) {
             try {
               const canvasAddon = new CanvasAddon();
               activeCanvasAddon = canvasAddon;
               term.loadAddon(canvasAddon);
-            } catch (e) {
-              console.warn('Canvas fallback failed. Using standard DOM renderer.', e);
-            }
-          }, 0);
-        });
-
-        term.loadAddon(webglAddon);
-      } catch (e) {
-        console.warn('WebGL renderer initialization failed:', e);
-        try {
-          const canvasAddon = new CanvasAddon();
-          activeCanvasAddon = canvasAddon;
-          term.loadAddon(canvasAddon);
-        } catch (err) {
-          console.warn('Canvas initialization failed, falling back to standard DOM renderer:', err);
+            } catch (err) {}
+          }
+        } else {
+          try {
+            const canvasAddon = new CanvasAddon();
+            activeCanvasAddon = canvasAddon;
+            term.loadAddon(canvasAddon);
+          } catch (err) {}
         }
-      }
-    } else {
-      // If WebGL2 is not supported, fallback cleanly without attempting initialization
-      console.warn('WebGL2 not supported. Falling back to Canvas renderer.');
-      try {
-        const canvasAddon = new CanvasAddon();
-        activeCanvasAddon = canvasAddon;
-        term.loadAddon(canvasAddon);
-      } catch (err) {
-        console.warn('Canvas initialization failed, falling back to standard DOM renderer:', err);
-      }
+      });
     }
     
     // Fit to parent container dimensions and initialize size in PTY
@@ -475,14 +481,34 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       return true;
     });
 
-    const doCopy = settings?.appearance?.terminal?.copyOnSelect ?? settings?.copyOnSelect ?? true;
+    const doCopy = settings?.appearance?.terminal?.copyOnSelect ?? (settings as any)?.copyOnSelect ?? true;
+    let handleMouseUpCopy: (() => void) | null = null;
+    let selDisposable: { dispose: () => void } | null = null;
+
     if (doCopy) {
-      term.onSelectionChange(() => {
-        const selection = term.getSelection();
-        if (selection) {
-          navigator.clipboard.writeText(selection).catch(() => {});
+      const copySelectedText = () => {
+        if (!termRef.current) return;
+        let selection = termRef.current.getSelection();
+        if (!selection || selection.length === 0) {
+          selection = window.getSelection()?.toString() || '';
         }
-      });
+        if (selection && selection.length > 0) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(selection).catch(() => {
+              try { document.execCommand('copy'); } catch (e) {}
+            });
+          } else {
+            try { document.execCommand('copy'); } catch (e) {}
+          }
+        }
+      };
+
+      selDisposable = term.onSelectionChange(copySelectedText);
+
+      handleMouseUpCopy = () => {
+        setTimeout(copySelectedText, 10);
+      };
+      window.addEventListener('mouseup', handleMouseUpCopy);
     }
 
     // Listen to user input and write directly to PTY
@@ -615,7 +641,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
           if (containerRef.current) {
             try {
               fitAddon.fit();
-              endBlackoutAfterDelay(400);
+              endBlackoutAfterDelay(800);
             } catch (e) {}
           }
           resizeFrame = null;
@@ -636,6 +662,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ paneId, i
       if (coalesceFrameId !== null) cancelAnimationFrame(coalesceFrameId);
       if (resizeFrame) cancelAnimationFrame(resizeFrame);
       onDataDisposable.dispose();
+      if (selDisposable) selDisposable.dispose();
+      if (handleMouseUpCopy) window.removeEventListener('mouseup', handleMouseUpCopy);
       if (ptyResizeTimeout) clearTimeout(ptyResizeTimeout);
       onResizeDisposable.dispose();
       resizeObserver.disconnect();

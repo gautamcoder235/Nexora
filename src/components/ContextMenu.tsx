@@ -150,7 +150,12 @@ export const ContextMenu: React.FC = () => {
   if (!visible) return null;
 
   const handleCopy = () => {
-    document.execCommand("copy");
+    const sel = window.getSelection()?.toString();
+    if (sel) {
+      navigator.clipboard.writeText(sel).catch(() => {});
+    } else {
+      try { document.execCommand("copy"); } catch (e) {}
+    }
     setVisible(false);
   };
 

@@ -1,8 +1,10 @@
 [package]
 name = "nexora"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Tier-1 AI-Native Coding Assistant & Multi-Agent Desktop Orchestrator"
+authors = ["Gautam <gautamcoder235>"]
+license = "MIT"
+repository = "https://github.com/gautamcoder235/Nexora"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

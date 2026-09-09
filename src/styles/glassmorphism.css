@@ -985,3 +985,73 @@ body.resizing * {
   background: var(--bg-glass, rgba(6, 6, 9, 0.97)) !important;
 }
 
+/* ============================================================
+ * Tier-1 Command Palette & Slide-Over Drawer Styles
+ * ============================================================ */
+
+/* Right-Anchored Slide-Over Drawer Container */
+.glass-drawer-right {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-modal, 400);
+  background: rgba(7, 8, 15, 0.92);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border-left: 1px solid var(--border-glass-hover, rgba(255, 255, 255, 0.12));
+  box-shadow: -12px 0 48px rgba(0, 0, 0, 0.65);
+  animation: drawerSlideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  contain: layout style;
+}
+
+@keyframes drawerSlideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Universal Command Palette Overlay & Glass Panel */
+.glass-command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popover, 500);
+  background: rgba(3, 4, 8, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  animation: paletteFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-command-palette {
+  width: 100%;
+  max-width: 640px;
+  background: rgba(10, 11, 20, 0.94);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75), 0 0 32px rgba(99, 102, 241, 0.15);
+  overflow: hidden;
+  animation: paletteScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes paletteFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes paletteScaleUp {
+  from { transform: scale(0.96) translateY(-8px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+

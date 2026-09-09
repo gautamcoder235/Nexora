@@ -635,8 +635,13 @@ export const SettingsModal: React.FC = () => {
   if (!isSettingsModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center">
-      <div className={`glass-modal glass-noise-base h-[680px] flex overflow-hidden border border-border-glass transition-all duration-300 ${activeCategory === 'appearance' ? 'w-[1100px]' : 'w-[950px]'}`}>
+    <div 
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex justify-end"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setSettingsModalOpen(false);
+      }}
+    >
+      <div className="glass-drawer-right w-[680px] md:w-[760px] max-w-full h-full flex overflow-hidden border-l border-white/10 shadow-2xl">
         
         {/* Left Sidebar Navigation */}
         <div className="w-[280px] bg-[#070709]/75 border-r border-border-glass flex flex-col">

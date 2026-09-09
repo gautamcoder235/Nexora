@@ -1,3 +1,9 @@
+# Environment & Secrets (NEVER COMMIT REAL API KEYS)
+.env
+.env.*
+!.env.example
+*.local
+
 # Logs
 logs
 *.log
@@ -5,41 +11,32 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Node & Frontend Build Outputs
+node_modules/
+dist/
+dist-ssr/
+.vite/
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Rust Build Targets
+target/
+Cargo.lock
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# OS Metadata & Junk
 .DS_Store
+desktop.ini
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-target/
+
+# IDE & Workspace
+.vscode/*
+!.vscode/extensions.json
+.idea/
 .nexora/
+
+# Standalone builds
 Nexora Voice/

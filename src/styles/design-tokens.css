@@ -158,3 +158,20 @@
   --topbar-height: 48px;
   --bottombar-height: 24px;
 }
+
+/* ── Tier-1 Accessibility Focus Rings (WCAG 2.1 AAA) ───────── */
+:focus-visible {
+  outline: 2px solid var(--accent-primary) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 12px rgba(var(--accent-primary-rgb), 0.35) !important;
+}
+
+/* ── Microinteraction Tactile State Feedback ────────────────── */
+button, [role="button"] {
+  transition: transform var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+button:active:not(:disabled), [role="button"]:active:not(:disabled) {
+  transform: scale(0.97) translateY(1px);
+}
+

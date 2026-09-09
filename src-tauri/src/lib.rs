@@ -1683,7 +1683,7 @@ fn exit_app(app_handle: AppHandle) {
 pub fn run() {
     std::env::set_var(
         "TAURI_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-        "--disable-web-security",
+        "--disable-web-security --allow-running-insecure-content --enable-features=ClipboardReadWrite,AsyncClipboard --unsafely-treat-insecure-origin-as-secure=http://localhost:3000,http://127.0.0.1:3000 --use-fake-ui-for-media-stream",
     );
     let app = tauri::Builder::default()
         .manage(BrowserStateWrapper(Mutex::new(BrowserState::default())))
