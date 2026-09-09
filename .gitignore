@@ -38,5 +38,9 @@ Thumbs.db
 .idea/
 .nexora/
 
+# Internal Engineering Handbooks
+Tier1-Engineering-Handbooks/
+tier1-engineering-handbooks/
+
 # Standalone builds
 Nexora Voice/
