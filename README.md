@@ -16,20 +16,6 @@
 
 ---
 
-<div align="center">
-
-### 🖥️ Multi-Agent Terminal Workspace
-
-<img src="docs/screenshots/workspace.jpg" alt="Nexora Terminal Workspace — Multi-agent grid layout with glassmorphic UI" width="800" />
-
-### ⌨️ Universal Command Palette (`Ctrl+K`)
-
-<img src="docs/screenshots/command-palette.jpg" alt="Nexora Command Palette — Instant fuzzy search over commands and settings" width="800" />
-
-</div>
-
----
-
 ## 🌟 Overview
 
 **Nexora** is a high-craft AI development application built with a **shared Rust core engine**, a **Tauri v2 Desktop GUI**, and a **Rust TUI CLI**. It combines the responsiveness of desktop native tools (like Linear, Cursor, and Raycast) with a multi-provider AI model orchestration layer.
